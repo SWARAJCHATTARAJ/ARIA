@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.chroma/
+.aria_chroma_db/
+.aria_memory.json
+.streamlit/secrets.toml
+aria_report.md
+aria_report.pdf
+streamlit.*.log
