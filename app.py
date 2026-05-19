@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+# Streamlit Cloud workaround for ChromaDB SQLite requirement
+try:
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    pass
+
 from collections import Counter
 from html import escape
 from html.parser import HTMLParser
