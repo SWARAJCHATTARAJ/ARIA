@@ -7,7 +7,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
-from aria.models import ResearchResult
+from .models import ResearchResult
 
 
 def build_markdown_report(result: ResearchResult) -> str:

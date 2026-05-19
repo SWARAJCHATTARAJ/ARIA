@@ -16,9 +16,9 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 import fitz
 
-from aria.config import Settings
-from aria.models import Evidence
-from aria.security import MAX_PDF_PAGES, safe_temp_pdf_path
+from .config import Settings
+from .models import Evidence
+from .security import MAX_PDF_PAGES, safe_temp_pdf_path
 
 
 class VectorMemory:

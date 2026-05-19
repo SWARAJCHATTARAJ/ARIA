@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import requests
 
-from aria.models import Evidence
+from .models import Evidence
 
 
 HEADERS = {"User-Agent": "ARIA-Free-Research-Demo/1.0"}

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import re
 
-from aria.config import Settings
-from aria.llm import LLMClient
-from aria.models import Evidence, ResearchResult
-from aria.rag import VectorMemory
-from aria.tools import free_web_search, get_market_snapshot
+from .config import Settings
+from .llm import LLMClient
+from .models import Evidence, ResearchResult
+from .rag import VectorMemory
+from .tools import free_web_search, get_market_snapshot
 
 from typing import TypedDict, Annotated
 import operator

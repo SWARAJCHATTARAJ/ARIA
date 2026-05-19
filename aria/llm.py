@@ -4,7 +4,7 @@ import os
 
 import requests
 
-from aria.config import Settings
+from .config import Settings
 
 
 class LLMClient:
