@@ -8,6 +8,9 @@ try:
 except ImportError:
     pass
 
+import streamlit as st
+print("--- DEPLOYMENT VERSION: 2026-05-20-V2 ---")
+
 from collections import Counter
 from html import escape
 from html.parser import HTMLParser
