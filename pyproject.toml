@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aria-research-assistant"
+version = "1.0.0"
+description = "ARIA: Autonomous Research & Intelligence Assistant. An AI-powered RAG agent utilizing LangGraph and Streamlit to execute deep research loops with self-correcting verifiers."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Swaraj Chattaraj" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+dependencies = [
+    "streamlit>=1.35.0",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.0",
+    "PyMuPDF>=1.24.0",
+    "reportlab>=4.2.0",
+    "chromadb>=0.5.0",
+    "langgraph>=0.0.35",
+    "langchain-core>=0.1.40",
+    "yfinance>=0.2.30",
+    "pysqlite3-binary; sys_platform == 'linux'"
+]
+
+[project.urls]
+Homepage = "https://github.com/SWARAJCHATTARAJ/ARIA"
+Repository = "https://github.com/SWARAJCHATTARAJ/ARIA"
+Bug-Tracker = "https://github.com/SWARAJCHATTARAJ/ARIA/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aria"]

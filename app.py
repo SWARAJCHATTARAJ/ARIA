@@ -34,17 +34,16 @@ from dotenv import load_dotenv
 import os
 
 from aria.agent import ResearchAgent
-from aria.config import Settings
+from aria.core import Settings, MAX_PDF_PAGES, MAX_UPLOAD_MB, validate_pdf_upload
 from aria.rag import VectorMemory
 from aria.reports import build_markdown_report, markdown_to_pdf_bytes
-from aria.security import MAX_PDF_PAGES, MAX_UPLOAD_MB, validate_pdf_upload
 
 
 load_dotenv()
 
 st.set_page_config(
     page_title="ARIA Agent Console",
-    page_icon="A",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -136,7 +135,7 @@ def fetch_url_text(url: str) -> tuple[str, str]:
 
     response = requests.get(
         url,
-        headers={"User-Agent": "ARIA-Agent-Console/1.0"},
+        headers={"User-Agent": "Aria-Agent-Console/1.0"},
         timeout=20,
     )
     response.raise_for_status()
@@ -155,16 +154,128 @@ def fetch_url_text(url: str) -> tuple[str, str]:
     return parsed.netloc, text[:80_000]
 
 
-def run_research(question: str, use_web: bool, use_finance: bool, max_iterations: int) -> None:
-    result = get_agent().run(
-        question=question,
-        use_web=use_web,
-        use_finance=use_finance,
-        max_iterations=max_iterations,
+def run_research_streamed(question: str, use_local: bool, use_web: bool, use_finance: bool, max_iterations: int) -> None:
+    agent = get_agent()
+    initial_state = {
+        "question": question,
+        "plan": [],
+        "evidence": [],
+        "answer": "",
+        "verification": "No verification run.",
+        "events": [],
+        "iteration": 0,
+        "use_web": use_web,
+        "use_local": use_local,
+        "use_finance": use_finance,
+        "max_iterations": max_iterations
+    }
+    
+    # Create empty placeholders for UI
+    pipeline_placeholder = st.empty()
+    console_placeholder = st.empty()
+    
+    def render_pipeline(active_step: str):
+        steps = ["Planning", "Retrieval", "Synthesis", "Verification", "Complete"]
+        step_status = {step: "pending" for step in steps}
+        
+        # Map node name to pipeline step name
+        node_map = {
+            "plan": "Planning",
+            "search": "Retrieval",
+            "draft": "Synthesis",
+            "verify": "Verification",
+        }
+        
+        current_step = node_map.get(active_step, active_step)
+        
+        # Determine status
+        for s in steps:
+            if s == current_step:
+                step_status[s] = "active"
+                break
+            else:
+                step_status[s] = "completed"
+                
+        if current_step == "Complete":
+            for s in steps:
+                step_status[s] = "completed"
+        
+        cols = pipeline_placeholder.columns(len(steps))
+        for col, s in zip(cols, steps):
+            status = step_status[s]
+            if status == "completed":
+                badge_style = "background-color: rgba(46, 204, 113, 0.15); border: 1px solid #2ecc71; color: #2ecc71; text-align: center; padding: 10px; border-radius: 8px;"
+                icon = "✓"
+            elif status == "active":
+                badge_style = "background-color: rgba(0, 230, 255, 0.15); border: 1px solid #00e6ff; color: #00e6ff; text-align: center; padding: 10px; border-radius: 8px; box-shadow: 0 0 10px rgba(0, 230, 255, 0.3);"
+                icon = "⚡"
+            else:
+                badge_style = "background-color: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); color: #64748b; text-align: center; padding: 10px; border-radius: 8px;"
+                icon = "○"
+            col.markdown(
+                f"""
+                <div style="{badge_style}">
+                    <div style="font-size: 16px; font-weight: bold; margin-bottom: 2px;">{icon}</div>
+                    <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; font-family: 'Outfit', sans-serif;">{s}</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+    # Initial status
+    render_pipeline("plan")
+    
+    events_list = ["Initializing ARIA Agent Console..."]
+    
+    def update_console(new_event: str = None):
+        if new_event:
+            events_list.append(new_event)
+        log_content = "\n".join(f"[ARIA] > {event}" for event in events_list)
+        console_placeholder.markdown(
+            f"""
+            <div class="console-log-window">
+                <pre><code>{escape(log_content)}</code></pre>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    update_console()
+    
+    # Run the graph streaming events
+    final_state = initial_state
+    for output in agent.graph.stream(initial_state):
+        for node_name, state_update in output.items():
+            final_state = {**final_state, **state_update}
+            
+            # Map node to timeline status
+            render_pipeline(node_name)
+            
+            # Print execution events to our terminal log
+            if "events" in state_update:
+                for ev in state_update["events"]:
+                    update_console(ev)
+                    
+    # Finished
+    render_pipeline("Complete")
+    update_console("Design Brief synthesis completed. Evidence registry compiled.")
+    
+    from aria.agent import dedupe_evidence
+    from aria.core import ResearchResult
+    
+    result = ResearchResult(
+        question=final_state["question"],
+        plan=final_state["plan"],
+        answer=final_state["answer"],
+        verification=final_state["verification"],
+        evidence=dedupe_evidence(final_state["evidence"]),
+        events=final_state["events"]
     )
     st.session_state["aria_result"] = result
     st.session_state["aria_report"] = build_markdown_report(result)
     st.session_state["last_question"] = question
+    st.rerun()
+
 
 
 def source_counts() -> Counter:
@@ -205,14 +316,14 @@ def render_results(result, report: str) -> None:
         d1.download_button(
             "Download Markdown",
             data=report,
-            file_name="aria_report.md",
+            file_name="aria_research_brief.md",
             mime="text/markdown",
             use_container_width=True,
         )
         d2.download_button(
             "Download PDF",
             data=markdown_to_pdf_bytes(report),
-            file_name="aria_report.pdf",
+            file_name="aria_research_brief.pdf",
             mime="application/pdf",
             use_container_width=True,
         )
@@ -220,19 +331,50 @@ def render_results(result, report: str) -> None:
         with st.expander("Verification"):
             st.write(result.verification)
         with st.expander("Execution Trace"):
-            for event in result.events:
-                st.write(event)
+            log_lines = "\n".join(f"[ARIA] > {event}" for event in result.events)
+            st.markdown(
+                f"""
+                <div class="console-log-window" style="height: 300px;">
+                    <pre><code>{escape(log_lines)}</code></pre>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
 
     with evidence_col:
         st.markdown('<div class="console-card">', unsafe_allow_html=True)
         st.subheader("Evidence Register")
+        
+        # Advanced Filtering & Sorting UI
         source_options = ["all"] + sorted({item.source_type for item in result.evidence})
-        selected_source = st.selectbox("Filter", source_options)
+        
+        c1, c2 = st.columns(2)
+        selected_source = c1.selectbox("Source Type", source_options, key="ev_source")
+        sort_by = c2.selectbox("Sort Order", ["Retrieval Order", "Relevance Score"], key="ev_sort")
+        
+        c3, c4 = st.columns([1.2, 0.8])
+        keyword_filter = c3.text_input("Keyword Search", placeholder="Filter by keyword...", key="ev_keyword")
+        score_threshold = c4.slider("Min Relevance", min_value=0.0, max_value=1.0, value=0.0, step=0.05, key="ev_score_slider")
+        
         st.markdown("</div>", unsafe_allow_html=True)
 
+        # Filter and sort logic
+        filtered_evidence = []
         for item in result.evidence:
             if selected_source != "all" and item.source_type != selected_source:
                 continue
+            if keyword_filter and (keyword_filter.lower() not in item.title.lower() and keyword_filter.lower() not in item.summary.lower()):
+                continue
+            if getattr(item, "score", 0.75) < score_threshold:
+                continue
+            filtered_evidence.append(item)
+            
+        if sort_by == "Relevance Score":
+            # Sort descending by score
+            filtered_evidence.sort(key=lambda x: getattr(x, "score", 0.75), reverse=True)
+
+        for item in filtered_evidence:
             title = escape(item.title)
             source_type = escape(item.source_type)
             summary = escape(item.summary[:520] + ("..." if len(item.summary) > 520 else ""))
@@ -241,10 +383,15 @@ def render_results(result, report: str) -> None:
                 if item.url
                 else ""
             )
+            item_score = getattr(item, "score", 0.75)
+            score_badge = f'<span style="background: rgba(56, 239, 125, 0.15); border: 1px solid #38ef7d; color: #38ef7d; border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: 800; margin-left: 8px;">SCORE {item_score:.2f}</span>'
             st.markdown(
                 f"""
                 <div class="source-card">
-                    <small>{source_type}</small>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <small>{source_type}</small>
+                        {score_badge}
+                    </div>
                     <h4>{title}</h4>
                     <p>{summary}</p>
                     {link}
@@ -254,134 +401,8 @@ def render_results(result, report: str) -> None:
             )
 
 
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background:
-            linear-gradient(180deg, rgba(5,12,26,0.96), rgba(9,16,32,0.98)),
-            radial-gradient(circle at 20% 0%, rgba(31, 185, 255, 0.14), transparent 32%),
-            radial-gradient(circle at 90% 18%, rgba(70, 255, 189, 0.09), transparent 28%);
-        color: #d7e3f4;
-    }
-    .block-container { max-width: 1240px; padding-top: 1.4rem; padding-bottom: 3rem; }
-    [data-testid="stSidebar"] {
-        background: #07101f;
-        border-right: 1px solid rgba(120, 159, 205, 0.22);
-    }
-    [data-testid="stSidebar"] * { color: #d7e3f4; }
-    h1, h2, h3 { color: #f4f8ff; letter-spacing: 0; }
-    p, label, .stMarkdown, .stText { color: #c6d3e5; }
-    .agent-shell {
-        border: 1px solid rgba(99, 179, 237, 0.28);
-        background: linear-gradient(135deg, rgba(12, 23, 42, 0.96), rgba(8, 15, 29, 0.96));
-        border-radius: 8px;
-        padding: 22px 24px;
-        margin-bottom: 18px;
-        box-shadow: 0 18px 50px rgba(0,0,0,0.28);
-    }
-    .agent-kicker {
-        color: #58d6ff;
-        font-size: 12px;
-        font-weight: 800;
-        letter-spacing: .16em;
-        text-transform: uppercase;
-        margin-bottom: 8px;
-    }
-    .agent-title {
-        display: flex;
-        justify-content: space-between;
-        gap: 20px;
-        align-items: flex-start;
-    }
-    .agent-title h1 { margin: 0; font-size: 42px; line-height: 1; }
-    .agent-title p { max-width: 760px; margin: 12px 0 0; color: #9fb0c7; }
-    .status-pill {
-        border: 1px solid rgba(88, 214, 255, 0.35);
-        background: rgba(88, 214, 255, 0.08);
-        color: #8ce6ff;
-        border-radius: 999px;
-        padding: 7px 11px;
-        white-space: nowrap;
-        font-size: 12px;
-        font-weight: 800;
-        text-transform: uppercase;
-    }
-    .metric-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 12px;
-        margin: 14px 0 20px;
-    }
-    .metric-card {
-        border: 1px solid rgba(120, 159, 205, 0.22);
-        background: rgba(9, 19, 36, 0.78);
-        border-radius: 8px;
-        padding: 14px 16px;
-        min-height: 92px;
-    }
-    .metric-card span {
-        color: #8da4c0;
-        font-size: 12px;
-        text-transform: uppercase;
-        font-weight: 800;
-        letter-spacing: .08em;
-    }
-    .metric-card strong {
-        display: block;
-        color: #f4f8ff;
-        font-size: 28px;
-        margin-top: 4px;
-        line-height: 1.1;
-    }
-    .metric-card small { color: #7f91aa; }
-    .console-card {
-        border: 1px solid rgba(120, 159, 205, 0.22);
-        background: rgba(6, 13, 25, 0.72);
-        border-radius: 8px;
-        padding: 18px;
-        margin-bottom: 16px;
-    }
-    .source-card {
-        border: 1px solid rgba(120, 159, 205, 0.22);
-        background: rgba(7, 15, 30, 0.82);
-        border-radius: 8px;
-        padding: 15px 16px;
-        margin-bottom: 10px;
-    }
-    .source-card small {
-        color: #58d6ff;
-        text-transform: uppercase;
-        font-weight: 800;
-        letter-spacing: .08em;
-    }
-    .source-card h4 { color: #f4f8ff; margin: 6px 0; }
-    .source-card p { color: #aebdd1; margin-bottom: 8px; }
-    .source-card a { color: #7ee7c5; font-weight: 700; text-decoration: none; }
-    .stButton > button, .stDownloadButton > button {
-        border-radius: 8px !important;
-        border: 1px solid rgba(88, 214, 255, 0.26) !important;
-        font-weight: 800 !important;
-    }
-    .stTextArea textarea, .stTextInput input {
-        background: #07101f !important;
-        color: #f4f8ff !important;
-        border: 1px solid rgba(120, 159, 205, 0.28) !important;
-        border-radius: 8px !important;
-    }
-    div[data-testid="stExpander"] {
-        border-color: rgba(120, 159, 205, 0.22) !important;
-        background: rgba(7, 15, 30, 0.45) !important;
-    }
-    @media (max-width: 900px) {
-        .agent-title { display: block; }
-        .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .agent-title h1 { font-size: 34px; }
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+with open("style.css", "r", encoding="utf-8") as f:
+    st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 
 if "view" not in st.session_state:
@@ -475,7 +496,17 @@ if view == "Mission":
     with ops_col:
         st.markdown('<div class="console-card">', unsafe_allow_html=True)
         st.subheader("Agent Controls")
-        use_web = st.toggle("Live web retrieval", value=True)
+        
+        search_base = st.selectbox(
+            "Search Base / Source",
+            options=["Hybrid (Local + Web)", "Local Knowledge Base Only", "Web Search Only"],
+            index=0,
+            help="Select where the agent should look for evidence to answer your query."
+        )
+        
+        use_local = "Local" in search_base or "Hybrid" in search_base
+        use_web = "Web" in search_base or "Hybrid" in search_base
+        
         use_finance = st.toggle("Market data snapshots", value=False)
         max_iterations = st.slider("Verification passes", min_value=1, max_value=3, value=2)
         run = st.button("Execute mission", type="primary", use_container_width=True)
@@ -494,16 +525,8 @@ if view == "Mission":
             st.warning("Enter a research objective first.")
         else:
             st.session_state["question"] = question.strip()
-            with st.status("Agent running", expanded=True) as status:
-                st.write("Planning research strategy")
-                st.write("Querying vector memory")
-                if use_web:
-                    st.write("Calling public research endpoints")
-                if use_finance:
-                    st.write("Checking market snapshots")
-                st.write("Synthesizing and verifying report")
-                run_research(question.strip(), use_web, use_finance, max_iterations)
-                status.update(label="Mission complete", state="complete")
+            run_research_streamed(question.strip(), use_local, use_web, use_finance, max_iterations)
+
 
     result = st.session_state.get("aria_result")
     report = st.session_state.get("aria_report")

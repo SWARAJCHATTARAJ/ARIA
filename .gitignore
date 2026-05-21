@@ -1,11 +1,44 @@
+# Virtual Environments
 .venv/
+venv/
+ENV/
+env/
+
+# Python Cache & Compiled Files
 __pycache__/
 *.py[cod]
+*$py.class
+
+# Local Environment Variables / Credentials
 .env
+.streamlit/secrets.toml
+
+# Databases & Vector Stores
 .chroma/
 .aria_chroma_db/
 .aria_memory.json
-.streamlit/secrets.toml
-aria_report.md
-aria_report.pdf
-streamlit.*.log
+
+# Reports & Outputs
+*.pdf
+*.md
+!README.md
+!walkthrough.md
+!implementation_plan.md
+!task.md
+
+# Log Files
+*.log
+streamlit.server.log
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+.project
+.pydevproject
+.settings/
+
+# OS Files
+.DS_Store
+Thumbs.db

@@ -1,25 +1,27 @@
 from __future__ import annotations
 
 import requests
+import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 
-from .models import Evidence
+from .core import Evidence
 
 
 HEADERS = {"User-Agent": "ARIA-Free-Research-Demo/1.0"}
 
 
-from concurrent.futures import ThreadPoolExecutor
-
 def free_web_search(query: str, max_results: int = 5) -> list[Evidence]:
     evidence: list[Evidence] = []
     
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         f_wiki = executor.submit(wikipedia_search, query, 2)
         f_openalex = executor.submit(openalex_search, query, 2)
+        f_arxiv = executor.submit(arxiv_search, query, 2)
         f_ddg = executor.submit(duckduckgo_instant_answer, query)
         
         evidence.extend(f_wiki.result())
         evidence.extend(f_openalex.result())
+        evidence.extend(f_arxiv.result())
         evidence.extend(f_ddg.result())
         
     if not evidence:
@@ -31,9 +33,56 @@ def free_web_search(query: str, max_results: int = 5) -> list[Evidence]:
                     "Check your internet connection, try a more specific query, or upload PDFs."
                 ),
                 source_type="system",
+                score=0.0,
             )
         )
     return evidence[:max_results]
+
+
+def arxiv_search(query: str, max_results: int = 2) -> list[Evidence]:
+    url = "https://export.arxiv.org/api/query"
+    params = {
+        "search_query": query,
+        "max_results": max_results,
+        "sortBy": "relevance",
+        "sortOrder": "descending",
+    }
+    try:
+        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        response.raise_for_status()
+        root = ET.fromstring(response.content)
+    except Exception as exc:
+        return [
+            Evidence(
+                title="arXiv search unavailable",
+                summary=f"arXiv API request failed: {type(exc).__name__}.",
+                source_type="system",
+                score=0.0,
+            )
+        ]
+
+    evidence = []
+    # The entries are under the namespace http://www.w3.org/2005/Atom
+    namespace = {"atom": "http://www.w3.org/2005/Atom"}
+    for entry in root.findall("atom:entry", namespace):
+        title_el = entry.find("atom:title", namespace)
+        summary_el = entry.find("atom:summary", namespace)
+        id_el = entry.find("atom:id", namespace)
+        
+        title = title_el.text.replace("\n", " ").strip() if (title_el is not None and title_el.text) else "arXiv research source"
+        summary = summary_el.text.replace("\n", " ").strip() if (summary_el is not None and summary_el.text) else ""
+        url_link = id_el.text.strip() if (id_el is not None and id_el.text) else None
+        
+        evidence.append(
+            Evidence(
+                title=title,
+                summary=summary[:1200],
+                url=url_link,
+                source_type="research",
+                score=0.85,
+            )
+        )
+    return evidence
 
 
 def wikipedia_search(query: str, max_results: int = 2) -> list[Evidence]:
@@ -59,6 +108,7 @@ def wikipedia_search(query: str, max_results: int = 2) -> list[Evidence]:
                 title="Wikipedia search unavailable",
                 summary=f"Wikipedia API request failed: {type(exc).__name__}.",
                 source_type="system",
+                score=0.0,
             )
         ]
 
@@ -72,6 +122,7 @@ def wikipedia_search(query: str, max_results: int = 2) -> list[Evidence]:
                     summary=extract[:1200],
                     url=page.get("fullurl"),
                     source_type="wikipedia",
+                    score=0.80,
                 )
             )
     return evidence
@@ -90,6 +141,7 @@ def openalex_search(query: str, max_results: int = 2) -> list[Evidence]:
                 title="OpenAlex search unavailable",
                 summary=f"OpenAlex API request failed: {type(exc).__name__}.",
                 source_type="system",
+                score=0.0,
             )
         ]
 
@@ -105,6 +157,7 @@ def openalex_search(query: str, max_results: int = 2) -> list[Evidence]:
                 summary=abstract[:1200],
                 url=work.get("doi") or work.get("id"),
                 source_type="research",
+                score=0.70,
             )
         )
     return evidence
@@ -127,6 +180,7 @@ def duckduckgo_instant_answer(query: str) -> list[Evidence]:
                 title="DuckDuckGo search unavailable",
                 summary=f"DuckDuckGo API request failed: {type(exc).__name__}.",
                 source_type="system",
+                score=0.0,
             )
         ]
 
@@ -139,6 +193,7 @@ def duckduckgo_instant_answer(query: str) -> list[Evidence]:
             summary=abstract[:1200],
             url=data.get("AbstractURL"),
             source_type="web",
+            score=0.75,
         )
     ]
 
@@ -152,6 +207,7 @@ def get_market_snapshot(tickers: list[str]) -> list[Evidence]:
                 title="Market data unavailable",
                 summary="Install yfinance only if you need market snapshots: pip install yfinance",
                 source_type="system",
+                score=0.0,
             )
         ]
 
@@ -172,6 +228,7 @@ def get_market_snapshot(tickers: list[str]) -> list[Evidence]:
                     f"One-month change: {change:.2f}%."
                 ),
                 source_type="finance",
+                score=0.85,
             )
         )
     return snapshots

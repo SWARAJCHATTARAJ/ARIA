@@ -1,84 +1,158 @@
-<div align="center">
-  <h1>ARIA</h1>
-  <p><strong>Autonomous Research Intelligence Analyst</strong></p>
-  <p>Architected & Developed by <strong>Swaraj Chattraj</strong></p>
-</div>
+# ARIA: Autonomous Research & Intelligence Assistant
 
-<br />
+[![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Framework](https://img.shields.io/badge/orchestration-LangGraph-purple.svg)](https://github.com/langchain-ai/langgraph)
+[![Platform](https://img.shields.io/badge/frontend-Streamlit-FF4B4B.svg)](https://streamlit.io/)
 
-## The Problem
-If you ask a standard LLM to write a research report on current events or specific internal documents, it usually fails. It relies on outdated training data, or worse, it hallucinates facts to sound convincing. Traditional RAG (Retrieval-Augmented Generation) helps, but it is rigid—if the initial search query doesn't pull the right data, the final answer is still wrong.
+> **Architected & Developed by Swaraj Chattaraj**
 
-## The Solution
-I built **ARIA** to solve this using an **Agentic RAG workflow**. Instead of just answering questions, ARIA acts like a Senior Research Analyst. It doesn't just guess; it thinks, searches, and verifies.
+ARIA is a lightweight, local-first Autonomous Research Assistant designed around a stateful LangGraph workflow. It compiles deep research briefs on complex queries by coordinating parallel web searches, querying local documents, and validating synthesized reports using a self-correcting logic engine.
 
-Using **LangGraph**, I designed a stateful, looping graph architecture:
-1. **The Planner:** Takes the user's prompt and breaks it down into multiple distinct search queries.
-2. **The Retriever:** Executes those queries *concurrently* against both a local Vector Database (ChromaDB) and live public web endpoints.
-3. **The Synthesizer:** Drafts an initial report using strictly the evidence it retrieved.
-4. **The Critic (Self-Correction Loop):** Verifies the draft against the raw evidence. If there are unsupported claims or missing data, it routes the graph *backward*, forcing the agent to go back out to the web to find the missing facts before finalizing the report.
-
-### System Architecture
-```mermaid
-graph TD
-    User[User Prompt] --> Planner[Research Planner]
-    Planner --> |Generates Multiple Queries| Retriever[Memory & Web Retrieval]
-    Retriever --> |Parallel Search| Mem[Local PDF Memory via ChromaDB]
-    Retriever --> |Parallel Search| Web[Live Web APIs]
-    Mem --> Synthesizer[LLM Synthesizer]
-    Web --> Synthesizer
-    Synthesizer --> Verifier[Fact Verifier & Critic]
-    Verifier --> |Error / Missing Data Found| Retriever
-    Verifier --> |Passed| Report[Streamlit UI / PDF Report]
-```
-
-## Tech Stack
-* **Agent Orchestration:** LangGraph, LangChain Core
-* **Vector Database (Semantic Search):** ChromaDB (Local), sentence-transformers
-* **LLM Engine:** OpenRouter (Llama 3.1) / Local Fallback
-* **Data Sources:** Wikipedia, OpenAlex, DuckDuckGo, PyMuPDF (for local document parsing)
-* **Frontend:** Streamlit (with custom Glassmorphism UI)
-
-## Security & Performance
-* **Parallel Execution:** Network requests to data sources are executed concurrently via `ThreadPoolExecutor`, reducing retrieval latency by ~80%.
-* **Sandboxed Documents:** Uploaded PDFs are stored entirely locally, vectorized, and temporary files are immediately wiped.
-* **Rate Limiting:** Built-in session state rate limiting protects the free API tiers from abuse.
+Unlike simple linear Retrieval-Augmented Generation (RAG) prompts that are prone to hallucinating sources, ARIA operates on a feedback loop—verifying claims against retrieved evidence before producing the final markdown reports and publication-ready PDF briefs.
 
 ---
 
-## 🚀 Run Locally
+## 📐 System Architecture & Flow
 
-**1. Clone and set up the environment**
-```powershell
+ARIA models the research loop as a state machine where execution transitions dynamically based on content verification status.
+
+```mermaid
+graph TD
+    User[User Question] --> Planner[1. Research Planner]
+    Planner -->|Generate Sub-Queries| Retriever[2. Multi-Source Retriever]
+    
+    subgraph Parallel Retrieval Engine
+        Retriever -->|Concurrent Run| WebDDG[DuckDuckGo Search]
+        Retriever -->|Concurrent Run| WebWiki[Wikipedia API]
+        Retriever -->|Concurrent Run| WebAlex[OpenAlex Academic]
+        Retriever -->|Concurrent Run| LocalChroma[ChromaDB Vector Store]
+    end
+    
+    WebDDG --> Synthesizer[3. LLM Synthesizer]
+    WebWiki --> Synthesizer
+    WebAlex --> Synthesizer
+    LocalChroma --> Synthesizer
+    
+    Synthesizer -->|Draft Report| Critic[4. Fact Verifier & Critic]
+    
+    Critic -->|Needs More Evidence / Generate New Queries| Retriever
+    Critic -->|PASSED Validation| Publisher[5. Report Publisher]
+    
+    Publisher --> UI[Streamlit Glassmorphic Dashboard]
+    Publisher --> PDF[Branded ReportLab PDF]
+```
+
+### Stateful execution nodes:
+1. **Planner**: Evaluates the user query to construct up to 5 distinct search queries aimed at covering different facets of the topic.
+2. **Retriever**: Executes multithreaded network requests to search APIs and local indexes. The results are parsed, cleaned, and stored in the graph state.
+3. **Synthesizer**: Compiles the retrieved evidence into a structured markdown document, referencing facts via inline numerical citations.
+4. **Verifier & Critic**: Audit every line of the synthesized text. If claims lack support or information gaps are found, it generates secondary search queries and routes execution back to the Retriever.
+5. **Publisher**: Converts the final output into markdown reports and generates formatted ReportLab PDF documents with dynamic running page numbers.
+
+---
+
+## 🛠️ Deep Engineering Decisions & Rationale
+
+### 1. Stateful Graph Loops (LangGraph) over Linear Chains
+Typical AI agents run on unconstrained ReAct loops which can easily run off-track, consume high API budgets, or fail to terminate. We implemented **LangGraph** to construct a predictable state machine. By formalizing transitions (e.g., `Plan -> Search -> Synthesize -> Verify -> Loop or Terminate`), we restrict agent execution to structured paths and protect against infinite loops.
+
+### 2. Thread-Pool Search Concurrency
+To avoid bottlenecking the web browser's event loop, retrieval is routed through a `ThreadPoolExecutor` context. By executing searches across Wikipedia, OpenAlex, DuckDuckGo, and ChromaDB concurrently, network latency is reduced by up to 80%:
+
+```python
+with ThreadPoolExecutor(max_workers=4) as executor:
+    f_wiki = executor.submit(wikipedia_search, query, 2)
+    f_openalex = executor.submit(openalex_search, query, 2)
+    f_arxiv = executor.submit(arxiv_search, query, 2)
+    f_ddg = executor.submit(duckduckgo_instant_answer, query)
+    
+    evidence.extend(f_wiki.result())
+    evidence.extend(f_openalex.result())
+    ...
+```
+
+### 3. Dynamic Two-Pass PDF Canvas (ReportLab)
+Standard ReportLab rendering lacks built-in awareness of the final page count, resulting in hardcoded headers and footers. We extended ReportLab's standard canvas to implement a two-pass `NumberedCanvas` renderer. It records layout coordinates in a state array, processes the document fully, and draws professional running headers and footers with `"Page X of Y"` page numbers before writing the file bytes:
+
+```python
+class NumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_decorations(num_pages)
+            super().showPage()
+        super().save()
+```
+
+### 4. SQLite Dependency Override for Streamlit Cloud
+ChromaDB requires modern SQLite binaries that are often missing in serverless hosting platforms like Streamlit Community Cloud (which runs on legacy Debian bases). ARIA resolves this on boot by checking for and monkeypatching standard library `sqlite3` modules with `pysqlite3-binary` at runtime:
+```python
+try:
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    pass
+```
+
+---
+
+## 🔒 Security Best Practices
+
+ARIA is engineered with secure-by-default workflows:
+- **No Hardcoded Credentials**: API tokens and project parameters are fetched dynamically from the environment or `.env` files via `python-dotenv`.
+- **Environment Isolation**: `.gitignore` strictly ignores local `.env` configs, database directories (`.aria_chroma_db`), compiled python bytecodes (`__pycache__`), local log files (`*.log`), and generated reports.
+- **Input Sanitization**: File uploads are restricted to standard PDF formats, validated against a maximum size constraint (15 MB), and checked to prevent path traversal vulnerability vectors.
+
+---
+
+## 🚀 Local Setup
+
+### 1. Clone & Set Up Directory
+```bash
+git clone https://github.com/SWARAJCHATTARAJ/ARIA.git
+cd ARIA
+```
+
+### 2. Environment Configuration
+Create a virtual environment and install requirements:
+```bash
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+source .venv/bin/activate  # On Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-**2. Configure the Environment**
-Copy `.env.example` to `.env`. 
-Add your OpenRouter API key to `.env` to enable the highest quality synthesis.
+### 3. API Keys Configuration
+Create a `.env` file in the root directory:
 ```env
-OPENROUTER_API_KEY=your_api_key_here
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+ARIA_LLM_PROVIDER=openrouter
+ARIA_MODEL=google/gemma-2-9b-it:free
 ```
+*(If no OpenRouter key is configured, ARIA automatically switches to zero-cost offline extractive synthesis mode).*
 
-**3. Launch the App**
-```powershell
+### 4. Run Streamlit Application
+```bash
 streamlit run app.py
 ```
 
-## Deploy on Streamlit Community Cloud
+---
 
-Deploy from this GitHub repository with `app.py` as the entrypoint. Do not commit `.env` or any real API keys.
+## 🧪 Testing
 
-In the Streamlit Cloud app settings, add these values under **Secrets**:
+We use Python's native `unittest` framework to verify imports, chunking functions, security limits, and search mode paths.
 
-```toml
-ARIA_LLM_PROVIDER = "openrouter"
-ARIA_MODEL = "google/gemma-4-31b-it:free"
-ARIA_COLLECTION = "aria_research_memory"
-ARIA_MEMORY_PATH = ".aria_chroma_db"
-OPENROUTER_API_KEY = "your_api_key_here"
+Run the test suite from the project root:
+```bash
+python -m unittest test_aria.py
 ```
-
-The app loads these private Streamlit secrets at startup, so users can run the hosted agent without seeing the API key.

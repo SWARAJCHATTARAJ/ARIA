@@ -1,23 +1,17 @@
 from __future__ import annotations
 
+import os
 import re
-
-try:
-    from aria.config import Settings
-    from aria.llm import LLMClient
-    from aria.models import Evidence, ResearchResult
-    from aria.rag import VectorMemory
-    from aria.tools import free_web_search, get_market_snapshot
-except (ImportError, ModuleNotFoundError):
-    from .config import Settings
-    from .llm import LLMClient
-    from .models import Evidence, ResearchResult
-    from .rag import VectorMemory
-    from .tools import free_web_search, get_market_snapshot
-
-from typing import TypedDict, Annotated
 import operator
+import requests
+from typing import TypedDict, Annotated
+from concurrent.futures import ThreadPoolExecutor
 from langgraph.graph import StateGraph, END
+
+from .core import Settings, Evidence, ResearchResult
+from .rag import VectorMemory
+from .tools import free_web_search, get_market_snapshot
+
 
 class AgentState(TypedDict):
     question: str
@@ -28,8 +22,101 @@ class AgentState(TypedDict):
     events: Annotated[list[str], operator.add]
     iteration: int
     use_web: bool
+    use_local: bool
     use_finance: bool
     max_iterations: int
+
+
+class LLMClient:
+    """Optional free-tier API client with a deterministic local fallback."""
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+
+    def complete(self, system: str, user: str) -> str:
+        if self.settings.llm_provider == "openrouter" and self.openrouter_api_key:
+            response = self._openrouter(system, user)
+            if response:
+                return response
+        return self._fallback(user)
+
+    def _openrouter(self, system: str, user: str) -> str:
+        payload = {
+            "model": self.settings.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.2,
+        }
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:8501",
+                    "X-Title": "ARIA Free Research Demo",
+                },
+                json=payload,
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except (requests.RequestException, KeyError, IndexError):
+            return ""
+
+    def _fallback(self, user: str) -> str:
+        evidence = user.split("Evidence:", 1)[-1].strip()
+        snippets = [block.strip() for block in evidence.split("\n\n") if block.strip()]
+        if not snippets:
+            return (
+                "### Executive View\n\n"
+                "No usable evidence was retrieved from your search base.\n\n"
+                "### About ARIA\n\n"
+                "ARIA (Autonomous Research Intelligence Analyst) is built to search, retrieve, synthesize, and verify "
+                "information from your local documents (PDFs, notes) and live web sources to write structured executive briefs.\n\n"
+                "### Required Action\n\n"
+                "- Select 'Hybrid' or 'Web Search Only' if you want live web results.\n"
+                "- Upload PDFs or paste text in the 'Knowledge Base' tab to populate your local database.\n"
+                "- Ensure the search queries match the content of your indexed documents."
+            )
+
+        source_blocks = [
+            item for item in snippets if "search unavailable" not in item.lower()
+        ]
+        if not source_blocks:
+            source_blocks = snippets
+
+        top = source_blocks[:6]
+        bullets = []
+        for item in top:
+            first_line, _, rest = item.partition("\n")
+            sentence = first_sentence(rest or first_line)
+            bullets.append(f"- {sentence}")
+        return (
+            "### Executive View\n\n"
+            "ARIA found the following evidence-backed points:\n\n"
+            + "\n".join(bullets)
+            + "\n\n### Source Coverage\n\n"
+            f"- Evidence items reviewed: {len(snippets)}\n"
+            "- Synthesis mode: lightweight extractive analysis\n\n"
+            "### Analyst Caveat\n\n"
+            "This zero-cost mode uses extractive synthesis, so it avoids inventing claims. "
+            "For presentation-quality prose, add an optional free-tier OpenRouter key and keep the same lightweight stack."
+        )
+
+
+def first_sentence(text: str) -> str:
+    text = " ".join(text.split())
+    if not text:
+        return "Evidence item collected, but no summary text was available."
+    for marker in [". ", "? ", "! "]:
+        if marker in text:
+            return text.split(marker, 1)[0].strip() + marker.strip()
+    return text[:240]
 
 
 class ResearchAgent:
@@ -64,6 +151,7 @@ class ResearchAgent:
         self,
         question: str,
         use_web: bool = True,
+        use_local: bool = True,
         use_finance: bool = False,
         max_iterations: int = 2,
     ) -> ResearchResult:
@@ -76,6 +164,7 @@ class ResearchAgent:
             "events": [],
             "iteration": 0,
             "use_web": use_web,
+            "use_local": use_local,
             "use_finance": use_finance,
             "max_iterations": max_iterations
         }
@@ -101,29 +190,82 @@ class ResearchAgent:
         plan = state["plan"]
         iteration = state["iteration"]
         use_web = state["use_web"]
+        use_local = state.get("use_local", True)
         use_finance = state["use_finance"]
-        
-        from concurrent.futures import ThreadPoolExecutor
         
         new_evidence: list[Evidence] = []
         new_events: list[str] = []
         
-        if iteration > 0 and use_web:
-            follow_up = f"{question} latest official data report"
-            new_events.append("Verification requested more research. Searching: " + follow_up)
-            new_evidence.extend(free_web_search(follow_up))
+        # Check if this is a global summary query of the local knowledge base on the first iteration
+        is_global_summary = False
+        if use_local and iteration == 0:
+            q_lower = question.lower().strip()
+            keywords = [
+                "summarize my indexed documents", "summarize my documents", "summarize indexed documents",
+                "summarize all indexed", "summarize all my documents", "summarize the indexed documents",
+                "summarize my knowledge base", "summarize the knowledge base", "summarize the database",
+                "what is in my knowledge base", "what is in my database", "what documents do i have",
+                "summarize my memory", "summarize the memory"
+            ]
+            if any(kw in q_lower for kw in keywords):
+                is_global_summary = True
+
+        if is_global_summary:
+            new_events.append("Detected global summary request. Retrieving all indexed chunks directly.")
+            all_chunks = self.memory.retrieve_all(limit=30)
+            new_evidence.extend(all_chunks)
+            if not all_chunks:
+                new_events.append("Local knowledge base is empty.")
+            
+            # If web is also enabled, fetch general web context
+            if use_web:
+                queries_to_run = plan if plan else [question]
+                def _fetch_web_only(query: str) -> tuple[list[Evidence], list[str]]:
+                    query_events = [f"Searching free web sources for: {query}"]
+                    return free_web_search(query), query_events
+                with ThreadPoolExecutor(max_workers=len(queries_to_run) if queries_to_run else 1) as executor:
+                    for result, events in executor.map(_fetch_web_only, queries_to_run):
+                        new_evidence.extend(result)
+                        new_events.extend(events)
         else:
+            if iteration > 0:
+                # Extract new queries from the verifier's feedback if available
+                verification = state.get("verification", "")
+                follow_up_queries = []
+                if "NEW_QUERIES:" in verification:
+                    queries_part = verification.split("NEW_QUERIES:", 1)[1].strip()
+                    follow_up_queries = [q.strip() for q in queries_part.splitlines() if q.strip()]
+                
+                # Clean up queries (strip leading numbers, bullets, quotes)
+                cleaned_queries = []
+                for q in follow_up_queries:
+                    q = re.sub(r"^\d+[\.\-\)]\s*", "", q)
+                    q = re.sub(r"^[\-\*\+]\s*", "", q)
+                    q = q.strip('"\'')
+                    if q:
+                        cleaned_queries.append(q)
+                
+                if not cleaned_queries:
+                    cleaned_queries = [f"{question} follow up research"]
+                
+                queries_to_run = cleaned_queries
+                new_events.append(f"Verification requested more research. Iteration {iteration + 1}.")
+            else:
+                queries_to_run = plan if plan else [question]
+
             def _fetch_for_query(query: str) -> tuple[list[Evidence], list[str]]:
-                query_events = [f"Retrieving memory for: {query}"]
+                query_events = []
                 local_evidence: list[Evidence] = []
-                local_evidence.extend(self.memory.retrieve(query))
+                if use_local:
+                    query_events.append(f"Retrieving memory for: {query}")
+                    local_evidence.extend(self.memory.retrieve(query))
                 if use_web:
                     query_events.append(f"Searching free web sources for: {query}")
                     local_evidence.extend(free_web_search(query))
                 return local_evidence, query_events
 
-            with ThreadPoolExecutor(max_workers=len(plan) if plan else 1) as executor:
-                for result, events in executor.map(_fetch_for_query, plan):
+            with ThreadPoolExecutor(max_workers=len(queries_to_run) if queries_to_run else 1) as executor:
+                for result, events in executor.map(_fetch_for_query, queries_to_run):
                     new_evidence.extend(result)
                     new_events.extend(events)
                     
@@ -153,31 +295,81 @@ class ResearchAgent:
         return {"verification": verification, "events": ["Verifying answer against evidence"], "iteration": iteration + 1}
 
     def _plan(self, question: str) -> list[str]:
+        # If openrouter LLM is active and API key is set, use it to plan
+        if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
+            system = (
+                "You are ARIA's Lead Planner. Break down the user's research "
+                "question into 3 to 5 distinct, highly specific search queries targeting technical specifications, "
+                "standards, key developments, risks, or relevant parameters.\n"
+                "Output each query on a new line. Do not include numbers, bullets, or markdown."
+            )
+            user = f"Research Question: {question}"
+            response = self.llm.complete(system, user)
+            queries = [line.strip() for line in response.splitlines() if line.strip()]
+            
+            cleaned_queries = []
+            for q in queries:
+                q = re.sub(r"^\d+[\.\-\)]\s*", "", q)
+                q = re.sub(r"^[\-\*\+]\s*", "", q)
+                q = q.strip('"\'')
+                if q:
+                    cleaned_queries.append(q)
+            if cleaned_queries:
+                return cleaned_queries[:5]
+        
+        # Fallback list of queries
         return [
             question,
-            f"{question} latest data",
-            f"{question} official report PDF",
-            f"{question} government policy",
-            f"{question} risks opportunities",
+            f"{question} key developments risks",
+            f"{question} official reports data pdf",
         ]
 
     def _draft(self, question: str, evidence: list[Evidence]) -> str:
         system = (
-            "You are ARIA, a senior research analyst. Use only the supplied evidence. "
-            "Write concise, professional analysis with caveats where evidence is weak."
+            "You are ARIA, an Autonomous Research Intelligence Analyst. "
+            "Write a highly professional, well-structured, precise, and accurate research brief answering the query. "
+            "For any key product, technology, standard, component, or algorithm discussed in your brief, "
+            "explicitly describe its core purpose—what it was specifically made for, built to do, and its intended function. "
+            "Highlight key specifications, performance characteristics, and parameters where relevant.\n"
+            "Use only the provided evidence. Cite sources using bracketed numbers [1], [2], etc., corresponding "
+            "to the order of evidence provided. If evidence is lacking, state the caveats and assumptions clearly. "
+            "Make the brief sound authoritative, technical, and precise."
         )
         user = f"Question:\n{question}\n\nEvidence:\n{format_evidence(evidence)}"
         return self.llm.complete(system, user)
 
     def _verify(self, question: str, answer: str, evidence: list[Evidence]) -> str:
         if not evidence:
-            return "NEEDS_MORE_RESEARCH: no evidence was available."
+            return "STATUS: NEEDS_MORE_RESEARCH\nREASON: No evidence was retrieved.\nNEW_QUERIES:\n" + question
+            
+        if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
+            system = (
+                "You are ARIA's Grounding & Verification Analyst. Your job is to verify if the draft "
+                "research analysis is fully grounded in the retrieved evidence and completely addresses the user's query.\n"
+                "Review the draft report and the evidence. Ensure that all claims regarding specifications, "
+                "limits, figures, and data are strictly supported. Check if key constraints or details are missing.\n"
+                "Output your findings EXACTLY in this format:\n"
+                "STATUS: [PASSED or NEEDS_MORE_RESEARCH]\n"
+                "REASON: [Brief explanation of verified parameters or what design/research details are missing/incorrect]\n"
+                "NEW_QUERIES:\n"
+                "[List 1 or 2 new search queries to retrieve missing details, each on a new line. Leave empty if status is PASSED]"
+            )
+            evidence_str = format_evidence(evidence, limit=15)
+            user = (
+                f"Research Question:\n{question}\n\n"
+                f"Draft Report:\n{answer}\n\n"
+                f"Evidence:\n{evidence_str}"
+            )
+            return self.llm.complete(system, user)
+            
+        # Fallback verification check
         official = sum(1 for item in evidence if item.source_type in {"pdf", "research", "finance"})
         web = sum(1 for item in evidence if item.source_type in {"wikipedia", "web"})
         return (
-            f"Grounding check passed against {len(evidence)} evidence items "
-            f"({official} high-signal document/research/market items, {web} web summary items). "
-            "Unsupported claims are avoided in free extractive mode; use the evidence register for audit."
+            f"STATUS: PASSED\n"
+            f"REASON: Grounding check passed (extractive fallback). Reviewed {len(evidence)} evidence items "
+            f"({official} high-signal document/research/market items, {web} web summary items).\n"
+            f"NEW_QUERIES:\n"
         )
 
 

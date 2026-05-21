@@ -16,9 +16,7 @@ import chromadb
 from chromadb.config import Settings as ChromaSettings
 import fitz
 
-from .config import Settings
-from .models import Evidence
-from .security import MAX_PDF_PAGES, safe_temp_pdf_path
+from .core import Settings, Evidence, MAX_PDF_PAGES, safe_temp_pdf_path
 
 
 class VectorMemory:
@@ -104,8 +102,44 @@ class VectorMemory:
             
         docs = results["documents"][0]
         metas = results["metadatas"][0]
+        distances = results.get("distances", [[]])[0] if results.get("distances") else []
+        
+        for i, (doc, meta) in enumerate(zip(docs, metas)):
+            source = meta.get("source", "Memory source")
+            section = meta.get("page", "?")
+            source_type = meta.get("source_type", "pdf")
+            
+            dist = distances[i] if i < len(distances) else 0.5
+            score = round(1.0 / (1.0 + dist), 2)
+            score = max(0.0, min(1.0, score))
+            
+            evidence.append(
+                Evidence(
+                    title=f"{source} p.{section}",
+                    summary=doc,
+                    source_type=source_type,
+                    score=score,
+                )
+            )
+        return evidence
+
+    def retrieve_all(self, limit: int = 30) -> list[Evidence]:
+        if not self.collection.count():
+            return []
+            
+        results = self.collection.get(
+            limit=limit
+        )
+        
+        evidence: list[Evidence] = []
+        if not results["documents"]:
+            return evidence
+            
+        docs = results["documents"]
+        metas = results["metadatas"]
         
         for doc, meta in zip(docs, metas):
+            meta = meta or {}
             source = meta.get("source", "Memory source")
             section = meta.get("page", "?")
             source_type = meta.get("source_type", "pdf")
@@ -114,6 +148,7 @@ class VectorMemory:
                     title=f"{source} p.{section}",
                     summary=doc,
                     source_type=source_type,
+                    score=1.0,
                 )
             )
         return evidence
