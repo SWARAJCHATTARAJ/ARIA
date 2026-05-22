@@ -4,8 +4,11 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Framework](https://img.shields.io/badge/orchestration-LangGraph-purple.svg)](https://github.com/langchain-ai/langgraph)
 [![Platform](https://img.shields.io/badge/frontend-Streamlit-FF4B4B.svg)](https://streamlit.io/)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://emoaswda2wujafzekfe3pv.streamlit.app/)
 
 > **Architected & Developed by Swaraj Chattaraj**
+
+⚡ **Live Demo:** [Open ARIA on Streamlit Community Cloud](https://emoaswda2wujafzekfe3pv.streamlit.app/)
 
 ARIA is a lightweight, local-first Autonomous Research Assistant designed around a stateful LangGraph workflow. It compiles deep research briefs on complex queries by coordinating parallel web searches, querying local documents, and validating synthesized reports using a self-correcting logic engine.
 
