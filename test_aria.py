@@ -1,4 +1,5 @@
 import os
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 import unittest
 from aria.core import Settings, MAX_UPLOAD_BYTES, validate_pdf_upload
 from aria.rag import split_text, VectorMemory

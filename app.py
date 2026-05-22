@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 import sys
 
+# Force protobuf to use pure Python implementation to prevent descriptor errors on Streamlit Cloud
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
 # Streamlit Cloud workaround for ChromaDB SQLite requirement
 try:
     __import__('pysqlite3')
