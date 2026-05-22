@@ -8,3 +8,4 @@ langgraph>=0.0.35
 langchain-core>=0.1.40
 yfinance>=0.2.30
 pysqlite3-binary; sys_platform == 'linux'
+protobuf==3.20.3
