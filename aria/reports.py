@@ -453,7 +453,11 @@ def build_pdf_report(result: ResearchResult) -> bytes:
         ]]
 
         for idx, item in enumerate(result.evidence, start=1):
-            link_str = f'<br/><font color="#3B82F6" size="8">URL: <a href="{item.url}">{item.url}</a></font>' if item.url else ""
+            if item.url:
+                escaped_url = escape(item.url)
+                link_str = f'<br/><font color="#3B82F6" size="8">URL: <a href="{escaped_url}">{escaped_url}</a></font>'
+            else:
+                link_str = ""
             title_text = f"<b>{clean_markdown_text(item.title)}</b>{link_str}"
 
             table_data.append([

@@ -3,13 +3,6 @@ from __future__ import annotations
 import os
 import sys
 
-# DEBUG: Print environment info to Streamlit logs
-print("--- DEBUG START ---")
-print(f"Current Directory: {os.getcwd()}")
-print(f"Directory Contents: {os.listdir('.')}")
-print(f"Sys Path: {sys.path}")
-print("--- DEBUG END ---")
-
 # Streamlit Cloud workaround for ChromaDB SQLite requirement
 try:
     __import__('pysqlite3')
@@ -19,7 +12,7 @@ except ImportError:
     pass
 
 import streamlit as st
-print("--- DEPLOYMENT VERSION: 2026-05-20-V2 ---")
+print("--- DEPLOYMENT VERSION: 2026-05-22 ---")
 
 from collections import Counter
 from html import escape

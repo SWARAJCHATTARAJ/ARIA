@@ -90,5 +90,29 @@ class SearchModesTestCase(unittest.TestCase):
         self.assertIn("Secret Project X", result.evidence[0].summary)
 
 
+class ReportTests(unittest.TestCase):
+    def test_pdf_report_with_query_params_url(self) -> None:
+        from aria.reports import build_pdf_report
+        from aria.core import ResearchResult, Evidence
+        
+        result = ResearchResult(
+            question="What is the stock price of AAPL?",
+            plan=["AAPL stock price"],
+            answer="Here is the report.",
+            verification="Passed.",
+            evidence=[
+                Evidence(
+                    title="Yahoo Finance AAPL",
+                    summary="AAPL is trading at 180.",
+                    source_type="web",
+                    url='https://finance.yahoo.com/quote/AAPL?p="AAPL"&other=1'
+                )
+            ]
+        )
+        pdf_bytes = build_pdf_report(result)
+        self.assertTrue(len(pdf_bytes) > 0)
+
+
 if __name__ == "__main__":
     unittest.main()
+
