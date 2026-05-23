@@ -7,6 +7,9 @@ import sys
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
 # Streamlit Cloud workaround for ChromaDB SQLite requirement
+# Note: ChromaDB requires SQLite >= 3.35.0, but Streamlit Cloud runs on an older Debian base.
+# Replacing sys.modules['sqlite3'] with pysqlite3-binary forces Chroma to run on the modern binary,
+# preventing a crash on boot. Nasty runtime patch but it works.
 try:
     __import__('pysqlite3')
     import sys
@@ -150,6 +153,9 @@ def fetch_url_text(url: str) -> tuple[str, str]:
     return parsed.netloc, text[:80_000]
 
 
+# Streamlit executes top-to-bottom on every user interaction. To show the agent's progress
+# live (Planning -> Retrieval -> Synthesis -> Verification), I hook into the graph stream
+# and output UI steps sequentially, otherwise the user is left looking at a frozen page.
 def run_research_streamed(question: str, use_local: bool, use_web: bool, use_finance: bool, max_iterations: int) -> None:
     agent = get_agent()
     initial_state = {

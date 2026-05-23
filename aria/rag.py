@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 # Streamlit Cloud workaround for ChromaDB SQLite requirement
+# Same monkeypatch as in app.py to prevent deployment crashes due to outdated SQLite versions on Debian.
 try:
     __import__('pysqlite3')
     import sys
@@ -27,6 +28,8 @@ class VectorMemory:
         self.path = Path(settings.memory_path)
         self.path.mkdir(parents=True, exist_ok=True)
         
+        # ChromaDB persistent client stores vector indices locally under .aria_chroma_db.
+        # I did this to keep user documents private rather than hosting them on an expensive cloud DB.
         self.client = chromadb.PersistentClient(
             path=str(self.path),
             settings=ChromaSettings(anonymized_telemetry=False)
@@ -160,6 +163,9 @@ def split_text(text: str, chunk_size: int = 1000, overlap: int = 120) -> list[st
     if overlap < 0 or overlap >= chunk_size:
         raise ValueError("overlap must be non-negative and smaller than chunk_size.")
 
+    # Simple character splitter. I chose chunk_size=1000 characters (approx 150-200 words)
+    # with a 120-char overlap. This ensures query results retain enough sentence context 
+    # without splitting ideas in half, while staying small enough for the LLM context window.
     cleaned = " ".join(text.split())
     if not cleaned:
         return []

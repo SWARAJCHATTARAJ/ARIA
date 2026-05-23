@@ -21,6 +21,13 @@ class NumberedCanvas(canvas.Canvas):
     Two-pass canvas to dynamically compute total page count and draw
     matching professional running headers, footers, and page numbers.
     """
+    # ReportLab evaluates pages sequentially and does not know the final page count 
+    # until the document building is finished. To get a dynamic "Page X of Y" format,
+    # I implemented this custom two-pass canvas pattern:
+    # 1. Capture the page state dictionary on showPage() and delay actually outputting the page.
+    # 2. When save() is called (which happens at the very end), determine total pages,
+    #    restore each page state, draw footer/header overlays with the final count, and then 
+    #    delegate to the parent Canvas's showPage() to write the bytes.
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._saved_page_states = []

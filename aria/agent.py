@@ -126,6 +126,10 @@ class ResearchAgent:
         self.llm = LLMClient(settings)
 
         # Build LangGraph
+        # I decided to use a state graph instead of a simple linear chain (like LangChain)
+        # because research is inherently iterative. If the fact verifier node finds that 
+        # the draft is missing crucial information, we need to loop back to the search node.
+        # LangGraph makes these cyclical dependencies and state transitions easy to manage.
         workflow = StateGraph(AgentState)
         
         workflow.add_node("plan", self.node_plan)
@@ -139,6 +143,10 @@ class ResearchAgent:
         workflow.add_edge("draft", "verify")
         
         def should_continue(state: AgentState):
+            # If the grounding verifier determines the draft needs more evidence and we haven't 
+            # hit our max iteration limit, loop back to retrieval.
+            # Adding a hard safety cap on state['iteration'] is crucial to prevent the agent 
+            # from getting stuck in an infinite query-verification loop and draining API credits.
             if "NEEDS_MORE_RESEARCH" in state["verification"].upper() and state["iteration"] < state["max_iterations"]:
                 return "search"
             return END
@@ -264,6 +272,8 @@ class ResearchAgent:
                     local_evidence.extend(free_web_search(query))
                 return local_evidence, query_events
 
+            # To avoid bottlenecking search queries on the web and memory,
+            # execute search requests concurrently across the sub-queries.
             with ThreadPoolExecutor(max_workers=len(queries_to_run) if queries_to_run else 1) as executor:
                 for result, events in executor.map(_fetch_for_query, queries_to_run):
                     new_evidence.extend(result)
