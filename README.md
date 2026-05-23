@@ -72,10 +72,10 @@ By implementing this as a stateful graph workflow, I learned how to orchestrate 
 ## 🛠️ Deep Engineering Decisions & Rationale
 
 ### 1. Stateful Graph Loops (LangGraph) over Linear Chains
-Typical AI agents run on unconstrained ReAct loops which can easily run off-track, consume high API budgets, or fail to terminate. I used **LangGraph** because I wanted to avoid infinite agent loops and build a predictable state machine. By formalizing transitions (e.g., `Plan -> Search -> Synthesize -> Verify -> Loop or Terminate`), I restrict agent execution to structured paths and protect against runaway execution loops.
+Typical AI agents run on unconstrained ReAct loops which can easily run off-track, consume high API budgets, or fail to terminate. I used **LangGraph** to construct a predictable state machine. By formalizing transitions (e.g., `Plan -> Search -> Synthesize -> Verify -> Loop or Terminate`), I restrict agent execution to structured paths and protect against infinite loops.
 
 ### 2. Thread-Pool Search Concurrency
-To avoid bottlenecking the web browser's event loop, retrieval is routed through a `ThreadPoolExecutor` context. By executing searches across Wikipedia, OpenAlex, DuckDuckGo, and ChromaDB concurrently, network latency is reduced significantly, making the UI feel noticeably faster in testing:
+To avoid bottlenecking the web browser's event loop, retrieval is routed through a `ThreadPoolExecutor` context. By executing searches across Wikipedia, OpenAlex, DuckDuckGo, and ChromaDB concurrently, network latency is noticeably faster in testing:
 
 ```python
 with ThreadPoolExecutor(max_workers=4) as executor:
@@ -204,3 +204,11 @@ Run the test suite from the project root:
 ```bash
 python -m unittest test_aria.py
 ```
+
+---
+
+## What I Learned
+
+Building ARIA taught me how agentic RAG differs from simple chatbots.
+The hardest bug I fixed was ChromaDB crashing on Streamlit Cloud due to
+an outdated SQLite version  I solved it by monkeypatching pysqlite3 at runtime.
