@@ -157,7 +157,7 @@ ChromaDB uses SQLite under the hood to store metadata. It requires SQLite versio
 
 ## 🔒 Security Best Practices
 
-ARIA is engineered with secure-by-default workflows:
+I made sure ARIA follows secure defaults:
 - **No Hardcoded Credentials**: API tokens and project parameters are fetched dynamically from the environment or `.env` files via `python-dotenv`.
 - **Environment Isolation**: `.gitignore` strictly ignores local `.env` configs, database directories (`.aria_chroma_db`), compiled python bytecodes (`__pycache__`), local log files (`*.log`), and generated reports.
 - **Input Sanitization**: File uploads are restricted to standard PDF formats, validated against a maximum size constraint (15 MB), and checked to prevent path traversal vulnerability vectors.
@@ -211,4 +211,4 @@ python -m unittest test_aria.py
 
 Building ARIA taught me how agentic RAG differs from simple chatbots.
 The hardest bug I fixed was ChromaDB crashing on Streamlit Cloud due to
-an outdated SQLite version  I solved it by monkeypatching pysqlite3 at runtime.
+an outdated SQLite version. I solved it by monkeypatching pysqlite3 at runtime.
