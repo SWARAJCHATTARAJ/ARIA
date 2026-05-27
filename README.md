@@ -32,15 +32,14 @@ The goal was not just to build a UI around an LLM. The goal was to build a small
 
 ## Product Preview
 
-> Add these assets before sharing with recruiters. Visual proof matters.
-
-| Dashboard | Evidence Register |
+| Preview | Link |
 | --- | --- |
-| `docs/assets/dashboard.png` | `docs/assets/evidence-register.png` |
-
-| Workflow | PDF Export |
-| --- | --- |
-| `docs/assets/workflow.gif` | `docs/assets/sample-report.pdf` |
+| Live dashboard | [Open ARIA on Streamlit](https://emoaswda2wujafzekfe3pv.streamlit.app/) |
+| Source code | [View GitHub repository](https://github.com/SWARAJCHATTARAJ/ARIA) |
+| Dashboard screenshot | Coming soon: `docs/assets/dashboard.png` |
+| Evidence register screenshot | Coming soon: `docs/assets/evidence-register.png` |
+| Workflow GIF | Coming soon: `docs/assets/workflow.gif` |
+| Sample PDF report | Coming soon: `docs/assets/sample-report.pdf` |
 
 ---
 
