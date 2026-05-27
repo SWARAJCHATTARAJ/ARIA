@@ -16,12 +16,16 @@ __pycache__/
 # Databases & Vector Stores
 .chroma/
 .aria_chroma_db/
+.aria_sessions/
 .aria_memory.json
 
 # Reports & Outputs
 *.pdf
 *.md
 !README.md
+!docs/
+!docs/assets/
+!docs/assets/**
 !walkthrough.md
 !implementation_plan.md
 !task.md

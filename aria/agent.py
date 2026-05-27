@@ -28,7 +28,7 @@ class AgentState(TypedDict):
 
 
 class LLMClient:
-    """Optional free-tier API client with a deterministic local fallback."""
+    """Small LLM adapter with a deterministic local fallback."""
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -57,7 +57,7 @@ class LLMClient:
                     "Authorization": f"Bearer {self.openrouter_api_key}",
                     "Content-Type": "application/json",
                     "HTTP-Referer": "http://localhost:8501",
-                    "X-Title": "ARIA Free Research Demo",
+                    "X-Title": "ARIA Research Workspace",
                 },
                 json=payload,
                 timeout=30,
@@ -104,8 +104,8 @@ class LLMClient:
             f"- Evidence items reviewed: {len(snippets)}\n"
             "- Synthesis mode: lightweight extractive analysis\n\n"
             "### Analyst Caveat\n\n"
-            "This zero-cost mode uses extractive synthesis, so it avoids inventing claims. "
-            "For presentation-quality prose, add an optional free-tier OpenRouter key and keep the same lightweight stack."
+            "Local extractive mode keeps the answer grounded in retrieved evidence. "
+            "Connect an OpenRouter key when you want fuller prose and model-backed verification."
         )
 
 
@@ -125,11 +125,6 @@ class ResearchAgent:
         self.memory = memory
         self.llm = LLMClient(settings)
 
-        # Build LangGraph
-        # I decided to use a state graph instead of a simple linear chain (like LangChain)
-        # because research is inherently iterative. If the fact verifier node finds that 
-        # the draft is missing crucial information, we need to loop back to the search node.
-        # LangGraph makes these cyclical dependencies and state transitions easy to manage.
         workflow = StateGraph(AgentState)
         
         workflow.add_node("plan", self.node_plan)
@@ -143,10 +138,6 @@ class ResearchAgent:
         workflow.add_edge("draft", "verify")
         
         def should_continue(state: AgentState):
-            # If the grounding verifier determines the draft needs more evidence and we haven't 
-            # hit our max iteration limit, loop back to retrieval.
-            # Adding a hard safety cap on state['iteration'] is crucial to prevent the agent 
-            # from getting stuck in an infinite query-verification loop and draining API credits.
             if "NEEDS_MORE_RESEARCH" in state["verification"].upper() and state["iteration"] < state["max_iterations"]:
                 return "search"
             return END
@@ -185,13 +176,14 @@ class ResearchAgent:
             answer=final_state["answer"],
             verification=final_state["verification"],
             evidence=dedupe_evidence(final_state["evidence"]),
-            events=final_state["events"]
+            events=final_state["events"],
+            metrics=build_run_metrics(final_state),
         )
 
     def node_plan(self, state: AgentState) -> dict:
         question = state["question"]
         plan = self._plan(question)
-        return {"plan": plan, "events": ["Planning research strategy"]}
+        return {"plan": plan, "events": ["Planner Agent: built research strategy"]}
 
     def node_search(self, state: AgentState) -> dict:
         question = state["question"]
@@ -204,7 +196,6 @@ class ResearchAgent:
         new_evidence: list[Evidence] = []
         new_events: list[str] = []
         
-        # Check if this is a global summary query of the local knowledge base on the first iteration
         is_global_summary = False
         if use_local and iteration == 0:
             q_lower = question.lower().strip()
@@ -219,17 +210,16 @@ class ResearchAgent:
                 is_global_summary = True
 
         if is_global_summary:
-            new_events.append("Detected global summary request. Retrieving all indexed chunks directly.")
+            new_events.append("Research Agent: detected global summary request and retrieved indexed chunks directly")
             all_chunks = self.memory.retrieve_all(limit=30)
             new_evidence.extend(all_chunks)
             if not all_chunks:
-                new_events.append("Local knowledge base is empty.")
+                new_events.append("Research Agent: local knowledge base is empty")
             
-            # If web is also enabled, fetch general web context
             if use_web:
                 queries_to_run = plan if plan else [question]
                 def _fetch_web_only(query: str) -> tuple[list[Evidence], list[str]]:
-                    query_events = [f"Searching free web sources for: {query}"]
+                    query_events = [f"Research Agent: searching free web sources for: {query}"]
                     return free_web_search(query), query_events
                 with ThreadPoolExecutor(max_workers=len(queries_to_run) if queries_to_run else 1) as executor:
                     for result, events in executor.map(_fetch_web_only, queries_to_run):
@@ -237,27 +227,19 @@ class ResearchAgent:
                         new_events.extend(events)
         else:
             if iteration > 0:
-                # Extract new queries from the verifier's feedback if available
                 verification = state.get("verification", "")
                 follow_up_queries = []
                 if "NEW_QUERIES:" in verification:
                     queries_part = verification.split("NEW_QUERIES:", 1)[1].strip()
                     follow_up_queries = [q.strip() for q in queries_part.splitlines() if q.strip()]
                 
-                # Clean up queries (strip leading numbers, bullets, quotes)
-                cleaned_queries = []
-                for q in follow_up_queries:
-                    q = re.sub(r"^\d+[\.\-\)]\s*", "", q)
-                    q = re.sub(r"^[\-\*\+]\s*", "", q)
-                    q = q.strip('"\'')
-                    if q:
-                        cleaned_queries.append(q)
+                cleaned_queries = clean_queries(follow_up_queries)
                 
                 if not cleaned_queries:
                     cleaned_queries = [f"{question} follow up research"]
                 
                 queries_to_run = cleaned_queries
-                new_events.append(f"Verification requested more research. Iteration {iteration + 1}.")
+                new_events.append(f"Citation Auditor: requested more research. Iteration {iteration + 1}.")
             else:
                 queries_to_run = plan if plan else [question]
 
@@ -265,15 +247,13 @@ class ResearchAgent:
                 query_events = []
                 local_evidence: list[Evidence] = []
                 if use_local:
-                    query_events.append(f"Retrieving memory for: {query}")
+                    query_events.append(f"Research Agent: retrieving memory for: {query}")
                     local_evidence.extend(self.memory.retrieve(query))
                 if use_web:
-                    query_events.append(f"Searching free web sources for: {query}")
+                    query_events.append(f"Research Agent: searching free web sources for: {query}")
                     local_evidence.extend(free_web_search(query))
                 return local_evidence, query_events
 
-            # To avoid bottlenecking search queries on the web and memory,
-            # execute search requests concurrently across the sub-queries.
             with ThreadPoolExecutor(max_workers=len(queries_to_run) if queries_to_run else 1) as executor:
                 for result, events in executor.map(_fetch_for_query, queries_to_run):
                     new_evidence.extend(result)
@@ -282,7 +262,7 @@ class ResearchAgent:
             if use_finance:
                 tickers = extract_tickers(question)
                 if tickers:
-                    new_events.append("Fetching market snapshots")
+                    new_events.append("Research Agent: fetching market snapshots")
                     new_evidence.extend(get_market_snapshot(tickers))
         
         return {"evidence": new_evidence, "events": new_events}
@@ -293,7 +273,7 @@ class ResearchAgent:
         iteration = state["iteration"]
         
         answer = self._draft(question, evidence)
-        return {"answer": answer, "events": [f"Drafting answer, pass {iteration + 1}"]}
+        return {"answer": answer, "events": [f"Synthesis Agent: drafted answer, pass {iteration + 1}"]}
 
     def node_verify(self, state: AgentState) -> dict:
         question = state["question"]
@@ -302,10 +282,9 @@ class ResearchAgent:
         iteration = state["iteration"]
         
         verification = self._verify(question, answer, evidence)
-        return {"verification": verification, "events": ["Verifying answer against evidence"], "iteration": iteration + 1}
+        return {"verification": verification, "events": ["Critic Agent: verified answer against evidence"], "iteration": iteration + 1}
 
     def _plan(self, question: str) -> list[str]:
-        # If openrouter LLM is active and API key is set, use it to plan
         if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
             system = (
                 "You are ARIA's Lead Planner. Break down the user's research "
@@ -316,18 +295,10 @@ class ResearchAgent:
             user = f"Research Question: {question}"
             response = self.llm.complete(system, user)
             queries = [line.strip() for line in response.splitlines() if line.strip()]
-            
-            cleaned_queries = []
-            for q in queries:
-                q = re.sub(r"^\d+[\.\-\)]\s*", "", q)
-                q = re.sub(r"^[\-\*\+]\s*", "", q)
-                q = q.strip('"\'')
-                if q:
-                    cleaned_queries.append(q)
+            cleaned_queries = clean_queries(queries)
             if cleaned_queries:
                 return cleaned_queries[:5]
         
-        # Fallback list of queries
         return [
             question,
             f"{question} key developments risks",
@@ -337,13 +308,13 @@ class ResearchAgent:
     def _draft(self, question: str, evidence: list[Evidence]) -> str:
         system = (
             "You are ARIA, an Autonomous Research Intelligence Analyst. "
-            "Write a highly professional, well-structured, precise, and accurate research brief answering the query. "
+            "Write a clear, structured, accurate research brief answering the query. "
             "For any key product, technology, standard, component, or algorithm discussed in your brief, "
             "explicitly describe its core purpose—what it was specifically made for, built to do, and its intended function. "
             "Highlight key specifications, performance characteristics, and parameters where relevant.\n"
             "Use only the provided evidence. Cite sources using bracketed numbers [1], [2], etc., corresponding "
             "to the order of evidence provided. If evidence is lacking, state the caveats and assumptions clearly. "
-            "Make the brief sound authoritative, technical, and precise."
+            "Keep the tone direct, technical, and evidence-led."
         )
         user = f"Question:\n{question}\n\nEvidence:\n{format_evidence(evidence)}"
         return self.llm.complete(system, user)
@@ -372,7 +343,6 @@ class ResearchAgent:
             )
             return self.llm.complete(system, user)
             
-        # Fallback verification check
         official = sum(1 for item in evidence if item.source_type in {"pdf", "research", "finance"})
         web = sum(1 for item in evidence if item.source_type in {"wikipedia", "web"})
         return (
@@ -395,6 +365,17 @@ def extract_tickers(text: str) -> list[str]:
     return sorted(set(re.findall(r"\b[A-Z]{2,5}(?:\.NS)?\b", text)))[:8]
 
 
+def clean_queries(queries: list[str]) -> list[str]:
+    cleaned = []
+    for query in queries:
+        query = re.sub(r"^\d+[\.\-\)]\s*", "", query)
+        query = re.sub(r"^[\-\*\+]\s*", "", query)
+        query = query.strip('"\'')
+        if query:
+            cleaned.append(query)
+    return cleaned
+
+
 def dedupe_evidence(evidence: list[Evidence]) -> list[Evidence]:
     seen: set[str] = set()
     unique: list[Evidence] = []
@@ -405,3 +386,20 @@ def dedupe_evidence(evidence: list[Evidence]) -> list[Evidence]:
         seen.add(key)
         unique.append(item)
     return unique[:30]
+
+
+def estimate_tokens(text: str) -> int:
+    return max(1, round(len(text.split()) * 1.33)) if text else 0
+
+
+def build_run_metrics(state: AgentState) -> dict[str, int | float | str]:
+    evidence = dedupe_evidence(state["evidence"])
+    answer = state.get("answer", "")
+    verification = state.get("verification", "")
+    return {
+        "iterations": state.get("iteration", 0),
+        "evidence_items": len(evidence),
+        "answer_tokens_est": estimate_tokens(answer),
+        "verification_tokens_est": estimate_tokens(verification),
+        "total_output_tokens_est": estimate_tokens(answer) + estimate_tokens(verification),
+    }

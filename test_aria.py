@@ -32,15 +32,13 @@ class SplitTextTests(unittest.TestCase):
 
 class SearchModesTestCase(unittest.TestCase):
     def setUp(self):
-        # Override collection name to avoid polluting production data
         os.environ["ARIA_COLLECTION"] = "aria_test_selective_search"
         self.settings = Settings.from_env()
         self.memory = VectorMemory(self.settings)
         self.memory.reset()
         
-        # Ingest some specific dummy test content
         self.memory.ingest_text(
-            "Secret Project X is a solar powered drone designed by Swaraj in 2026.", 
+            "Secret Project X is a solar powered drone designed for field research in 2026.",
             source_name="project_x.txt", 
             source_type="note"
         )
@@ -50,48 +48,63 @@ class SearchModesTestCase(unittest.TestCase):
         self.memory.reset()
 
     def test_local_only_mode(self):
-        # Local only: should find the local project info
         result = self.agent.run(
             question="What is Secret Project X?", 
             use_web=False, 
             use_local=True, 
             max_iterations=1
         )
-        # Verify local evidence was retrieved
         local_evidences = [e for e in result.evidence if e.source_type == "note"]
         self.assertTrue(len(local_evidences) > 0)
         self.assertIn("Secret Project X", local_evidences[0].summary)
         
-        # Verify no web evidence was retrieved
         web_evidences = [e for e in result.evidence if e.source_type in ("wikipedia", "web", "research")]
         self.assertEqual(len(web_evidences), 0)
 
     def test_web_only_mode(self):
-        # Web only: should NOT retrieve the local project info
         result = self.agent.run(
             question="What is Secret Project X?", 
             use_web=True, 
             use_local=False, 
             max_iterations=1
         )
-        # Verify no local evidence was retrieved
         local_evidences = [e for e in result.evidence if e.source_type == "note"]
         self.assertEqual(len(local_evidences), 0)
 
     def test_global_summary_fallback(self):
-        # A global summary question: should retrieve all local chunks directly
         result = self.agent.run(
             question="Summarize my indexed documents.", 
             use_web=False, 
             use_local=True, 
             max_iterations=1
         )
-        # Verify the chunks were fetched directly and are part of the evidence
         self.assertTrue(len(result.evidence) > 0)
         self.assertIn("Secret Project X", result.evidence[0].summary)
 
 
 class ReportTests(unittest.TestCase):
+    def test_markdown_report_linkifies_inline_citations(self) -> None:
+        from aria.reports import build_markdown_report
+        from aria.core import ResearchResult, Evidence
+
+        result = ResearchResult(
+            question="What changed?",
+            plan=["source query"],
+            answer="The answer cites evidence [1].",
+            verification="Passed.",
+            evidence=[
+                Evidence(
+                    title="Primary source",
+                    summary="Evidence summary.",
+                    source_type="web",
+                    url="https://example.com/source",
+                )
+            ],
+        )
+
+        report = build_markdown_report(result)
+        self.assertIn("[[1]](https://example.com/source)", report)
+
     def test_pdf_report_with_query_params_url(self) -> None:
         from aria.reports import build_pdf_report
         from aria.core import ResearchResult, Evidence
@@ -114,6 +127,39 @@ class ReportTests(unittest.TestCase):
         self.assertTrue(len(pdf_bytes) > 0)
 
 
+class SessionTests(unittest.TestCase):
+    def test_session_round_trip(self) -> None:
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        from aria.core import ResearchResult, Evidence
+        from aria.sessions import save_session, list_sessions, load_session
+
+        with TemporaryDirectory() as tmp:
+            result = ResearchResult(
+                question="Persist this?",
+                plan=["persist query"],
+                answer="Saved answer [1].",
+                verification="Passed.",
+                evidence=[
+                    Evidence(
+                        title="Saved source",
+                        summary="Saved evidence.",
+                        source_type="note",
+                        score=0.9,
+                        source_id="note:1",
+                        retrieved_via="local_vector_memory",
+                    )
+                ],
+                metrics={"answer_tokens_est": 3},
+            )
+            save_session(result, Path(tmp))
+            sessions = list_sessions(Path(tmp))
+            loaded = load_session(sessions[0]["path"])
+
+            self.assertEqual(loaded.question, result.question)
+            self.assertEqual(loaded.evidence[0].source_id, "note:1")
+            self.assertEqual(loaded.metrics["answer_tokens_est"], 3)
+
+
 if __name__ == "__main__":
     unittest.main()
-

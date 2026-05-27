@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
-# Force protobuf to use pure Python implementation to prevent descriptor errors on Streamlit Cloud
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
-# Streamlit Cloud workaround for ChromaDB SQLite requirement
-# Note: ChromaDB requires SQLite >= 3.35.0, but Streamlit Cloud runs on an older Debian base.
-# Replacing sys.modules['sqlite3'] with pysqlite3-binary forces Chroma to run on the modern binary,
-# preventing a crash on boot. Nasty runtime patch but it works.
 try:
     __import__('pysqlite3')
     import sys
@@ -18,7 +14,6 @@ except ImportError:
     pass
 
 import streamlit as st
-print("--- DEPLOYMENT VERSION: 2026-05-22 ---")
 
 from collections import Counter
 from html import escape
@@ -28,14 +23,13 @@ from tempfile import NamedTemporaryFile
 from urllib.parse import urlparse
 
 import requests
-import streamlit as st
 from dotenv import load_dotenv
-import os
 
 from aria.agent import ResearchAgent
 from aria.core import Settings, MAX_PDF_PAGES, MAX_UPLOAD_MB, validate_pdf_upload
 from aria.rag import VectorMemory
-from aria.reports import build_markdown_report, markdown_to_pdf_bytes
+from aria.reports import build_markdown_report, build_pdf_report, linkify_citations_markdown
+from aria.sessions import list_sessions, load_session, save_session
 
 
 load_dotenv()
@@ -110,6 +104,19 @@ def refresh_agent() -> None:
     get_agent.clear()
 
 
+def estimate_tokens(text: str) -> int:
+    return max(1, round(len(text.split()) * 1.33)) if text else 0
+
+
+def result_metrics(result) -> dict[str, int | float | str]:
+    return {
+        "evidence_items": len(result.evidence),
+        "answer_tokens_est": estimate_tokens(result.answer),
+        "verification_tokens_est": estimate_tokens(result.verification),
+        "total_output_tokens_est": estimate_tokens(result.answer) + estimate_tokens(result.verification),
+    }
+
+
 def ingest_uploads(files) -> list[str]:
     memory = get_memory()
     ingested: list[str] = []
@@ -153,9 +160,6 @@ def fetch_url_text(url: str) -> tuple[str, str]:
     return parsed.netloc, text[:80_000]
 
 
-# Streamlit executes top-to-bottom on every user interaction. To show the agent's progress
-# live (Planning -> Retrieval -> Synthesis -> Verification), I hook into the graph stream
-# and output UI steps sequentially, otherwise the user is left looking at a frozen page.
 def run_research_streamed(question: str, use_local: bool, use_web: bool, use_finance: bool, max_iterations: int) -> None:
     agent = get_agent()
     initial_state = {
@@ -172,7 +176,6 @@ def run_research_streamed(question: str, use_local: bool, use_web: bool, use_fin
         "max_iterations": max_iterations
     }
     
-    # Create empty placeholders for UI
     pipeline_placeholder = st.empty()
     console_placeholder = st.empty()
     
@@ -180,7 +183,6 @@ def run_research_streamed(question: str, use_local: bool, use_web: bool, use_fin
         steps = ["Planning", "Retrieval", "Synthesis", "Verification", "Complete"]
         step_status = {step: "pending" for step in steps}
         
-        # Map node name to pipeline step name
         node_map = {
             "plan": "Planning",
             "search": "Retrieval",
@@ -190,7 +192,6 @@ def run_research_streamed(question: str, use_local: bool, use_web: bool, use_fin
         
         current_step = node_map.get(active_step, active_step)
         
-        # Determine status
         for s in steps:
             if s == current_step:
                 step_status[s] = "active"
@@ -224,7 +225,6 @@ def run_research_streamed(question: str, use_local: bool, use_web: bool, use_fin
                 unsafe_allow_html=True
             )
             
-    # Initial status
     render_pipeline("plan")
     
     events_list = ["Initializing ARIA Agent Console..."]
@@ -244,21 +244,22 @@ def run_research_streamed(question: str, use_local: bool, use_web: bool, use_fin
 
     update_console()
     
-    # Run the graph streaming events
     final_state = initial_state
+    node_started_at = time.perf_counter()
     for output in agent.graph.stream(initial_state):
         for node_name, state_update in output.items():
+            elapsed = time.perf_counter() - node_started_at
             final_state = {**final_state, **state_update}
             
-            # Map node to timeline status
             render_pipeline(node_name)
             
-            # Print execution events to our terminal log
             if "events" in state_update:
                 for ev in state_update["events"]:
                     update_console(ev)
+            update_console(f"Timeline: {node_name} completed in {elapsed:.2f}s")
+            final_state["events"] = final_state.get("events", []) + [f"Timeline: {node_name} completed in {elapsed:.2f}s"]
+            node_started_at = time.perf_counter()
                     
-    # Finished
     render_pipeline("Complete")
     update_console("Design Brief synthesis completed. Evidence registry compiled.")
     
@@ -271,11 +272,14 @@ def run_research_streamed(question: str, use_local: bool, use_web: bool, use_fin
         answer=final_state["answer"],
         verification=final_state["verification"],
         evidence=dedupe_evidence(final_state["evidence"]),
-        events=final_state["events"]
+        events=final_state["events"],
     )
+    result.metrics = result_metrics(result)
     st.session_state["aria_result"] = result
     st.session_state["aria_report"] = build_markdown_report(result)
     st.session_state["last_question"] = question
+    session = save_session(result)
+    st.session_state["current_session_id"] = session["id"]
     st.rerun()
 
 
@@ -311,7 +315,7 @@ def render_results(result, report: str) -> None:
     with report_col:
         st.markdown('<div class="console-card">', unsafe_allow_html=True)
         st.subheader("Executive Brief")
-        st.markdown(result.answer)
+        st.markdown(linkify_citations_markdown(result.answer, result.evidence))
         st.markdown("</div>", unsafe_allow_html=True)
 
         d1, d2 = st.columns(2)
@@ -324,7 +328,7 @@ def render_results(result, report: str) -> None:
         )
         d2.download_button(
             "Download PDF",
-            data=markdown_to_pdf_bytes(report),
+            data=build_pdf_report(result),
             file_name="aria_research_brief.pdf",
             mime="application/pdf",
             use_container_width=True,
@@ -342,13 +346,18 @@ def render_results(result, report: str) -> None:
                 """,
                 unsafe_allow_html=True
             )
+        with st.expander("Run Metrics"):
+            metrics = result.metrics or result_metrics(result)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Evidence", metrics.get("evidence_items", len(result.evidence)))
+            c2.metric("Answer tokens", metrics.get("answer_tokens_est", 0))
+            c3.metric("Output tokens", metrics.get("total_output_tokens_est", 0))
 
 
     with evidence_col:
         st.markdown('<div class="console-card">', unsafe_allow_html=True)
         st.subheader("Evidence Register")
         
-        # Advanced Filtering & Sorting UI
         source_options = ["all"] + sorted({item.source_type for item in result.evidence})
         
         c1, c2 = st.columns(2)
@@ -361,7 +370,6 @@ def render_results(result, report: str) -> None:
         
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Filter and sort logic
         filtered_evidence = []
         for item in result.evidence:
             if selected_source != "all" and item.source_type != selected_source:
@@ -373,7 +381,6 @@ def render_results(result, report: str) -> None:
             filtered_evidence.append(item)
             
         if sort_by == "Relevance Score":
-            # Sort descending by score
             filtered_evidence.sort(key=lambda x: getattr(x, "score", 0.75), reverse=True)
 
         for item in filtered_evidence:
@@ -385,6 +392,8 @@ def render_results(result, report: str) -> None:
                 if item.url
                 else ""
             )
+            source_id = escape(item.source_id or "local")
+            retrieved_via = escape(item.retrieved_via or item.source_type)
             item_score = getattr(item, "score", 0.75)
             score_badge = f'<span style="background: rgba(56, 239, 125, 0.15); border: 1px solid #38ef7d; color: #38ef7d; border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: 800; margin-left: 8px;">SCORE {item_score:.2f}</span>'
             st.markdown(
@@ -396,6 +405,7 @@ def render_results(result, report: str) -> None:
                     </div>
                     <h4>{title}</h4>
                     <p>{summary}</p>
+                    <small>Provenance: {retrieved_via} - {source_id}</small><br/>
                     {link}
                 </div>
                 """,
@@ -419,7 +429,7 @@ with st.sidebar:
     st.caption("Agentic research console")
     view = st.radio(
         "Navigation",
-        ["Mission", "Knowledge Base", "Results"],
+        ["Mission", "Knowledge Base", "Results", "History"],
         key="view",
         label_visibility="collapsed",
     )
@@ -441,6 +451,24 @@ with st.sidebar:
         st.session_state.pop("aria_report", None)
         st.success("Memory cleared.")
         st.rerun()
+    st.divider()
+    st.caption("Saved research sessions")
+    saved_sessions = list_sessions(limit=8)
+    if saved_sessions:
+        labels = {
+            f"{item['created_at'][:10]} - {item['title'][:42]}": item["path"]
+            for item in saved_sessions
+        }
+        selected_session = st.selectbox("Load session", [""] + list(labels), label_visibility="collapsed")
+        if selected_session and st.button("Resume selected session", use_container_width=True):
+            loaded = load_session(labels[selected_session])
+            st.session_state["aria_result"] = loaded
+            st.session_state["aria_report"] = build_markdown_report(loaded)
+            st.session_state["question"] = loaded.question
+            st.session_state["view"] = "Results"
+            st.rerun()
+    else:
+        st.caption("No saved sessions yet.")
 
 st.markdown(
     """
@@ -601,3 +629,23 @@ elif view == "Results":
         st.info("No mission report yet. Run a mission from the Mission screen.")
     else:
         render_results(result, report)
+
+elif view == "History":
+    st.markdown('<div class="console-card">', unsafe_allow_html=True)
+    st.subheader("Research History")
+    sessions = list_sessions(limit=50)
+    if not sessions:
+        st.info("No saved sessions yet. Completed missions are saved automatically.")
+    else:
+        for item in sessions:
+            cols = st.columns([1.2, 3, 1])
+            cols[0].caption(item["created_at"])
+            cols[1].write(item["title"])
+            if cols[2].button("Resume", key=f"resume_{item['id']}", use_container_width=True):
+                loaded = load_session(item["path"])
+                st.session_state["aria_result"] = loaded
+                st.session_state["aria_report"] = build_markdown_report(loaded)
+                st.session_state["question"] = loaded.question
+                st.session_state["view"] = "Results"
+                st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)

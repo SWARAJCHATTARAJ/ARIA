@@ -4,7 +4,6 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Security settings
 MAX_UPLOAD_MB = 15
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 MAX_PDF_PAGES = 80
@@ -35,6 +34,8 @@ class Evidence:
     source_type: str
     url: str | None = None
     score: float = 0.75
+    source_id: str | None = None
+    retrieved_via: str | None = None
 
 
 @dataclass
@@ -45,6 +46,7 @@ class ResearchResult:
     verification: str
     evidence: list[Evidence]
     events: list[str] = field(default_factory=list)
+    metrics: dict[str, int | float | str] = field(default_factory=dict)
 
 
 def validate_pdf_upload(name: str, size: int) -> None:
