@@ -362,7 +362,18 @@ def format_evidence(evidence: list[Evidence], limit: int = 20) -> str:
 
 
 def extract_tickers(text: str) -> list[str]:
-    return sorted(set(re.findall(r"\b[A-Z]{2,5}(?:\.NS)?\b", text)))[:8]
+    # Match potential stock symbols: 2 to 5 uppercase characters, with optional .NS NSE suffix
+    raw_tickers = re.findall(r"\b[A-Z]{2,5}(?:\.NS)?\b", text)
+    exclude_words = {
+        "AND", "THE", "FOR", "WHAT", "HOW", "WHY", "WHO", "RISK", "CHIP", 
+        "ARIA", "PDF", "HTML", "API", "HTTP", "DATA", "YEAR", "DATE", 
+        "CASE", "NOTE", "LIST", "SHOW", "OPEN", "LIVE", "FREE", "LLM", 
+        "RAG", "NS", "NEW", "RUN", "GET", "USE", "BASE", "ONLY", "WEB",
+        "INFO", "TIME", "MAIN", "WIKI", "HTTP", "HTTPS", "JSON", "URL",
+        "FILE", "PATH", "PASS", "FAIL", "TRUE", "NONE", "TEST", "PORT"
+    }
+    valid_tickers = [t for t in raw_tickers if t not in exclude_words]
+    return sorted(set(valid_tickers))[:8]
 
 
 def clean_queries(queries: list[str]) -> list[str]:

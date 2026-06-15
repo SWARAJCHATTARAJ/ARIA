@@ -145,12 +145,16 @@ def fetch_url_text(url: str) -> tuple[str, str]:
         timeout=20,
     )
     response.raise_for_status()
+    response.encoding = response.apparent_encoding
 
     content_type = response.headers.get("content-type", "")
     if "text/html" in content_type:
         parser = TextExtractor()
-        parser.feed(response.text)
-        text = parser.text()
+        try:
+            parser.feed(response.text)
+            text = parser.text()
+        except Exception:
+            text = response.text
     else:
         text = response.text
 
@@ -413,7 +417,7 @@ def render_results(result, report: str) -> None:
             )
 
 
-with open("style.css", "r", encoding="utf-8") as f:
+with open("assets/style.css", "r", encoding="utf-8") as f:
     st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 

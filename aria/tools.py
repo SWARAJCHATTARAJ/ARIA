@@ -322,7 +322,7 @@ def wikipedia_search(query: str, max_results: int = 2) -> list[Evidence]:
         response = requests.get(url, params=params, headers=HEADERS, timeout=10)
         response.raise_for_status()
         pages = response.json().get("query", {}).get("pages", {})
-    except requests.RequestException as exc:
+    except Exception as exc:
         return [
             Evidence(
                 title="Wikipedia search unavailable",
@@ -358,7 +358,7 @@ def openalex_search(query: str, max_results: int = 2) -> list[Evidence]:
         response = requests.get(url, params=params, headers=HEADERS, timeout=10)
         response.raise_for_status()
         works = response.json().get("results", [])
-    except requests.RequestException as exc:
+    except Exception as exc:
         return [
             Evidence(
                 title="OpenAlex search unavailable",
@@ -400,7 +400,7 @@ def duckduckgo_instant_answer(query: str) -> list[Evidence]:
         )
         response.raise_for_status()
         data = response.json()
-    except requests.RequestException as exc:
+    except Exception as exc:
         return [
             Evidence(
                 title="DuckDuckGo search unavailable",
@@ -443,26 +443,34 @@ def get_market_snapshot(tickers: list[str]) -> list[Evidence]:
 
     snapshots: list[Evidence] = []
     for ticker in tickers:
-        data = yf.Ticker(ticker)
-        history = data.history(period="1mo")
-        if history.empty:
-            continue
-        latest = history.iloc[-1]
-        first = history.iloc[0]
-        change = ((latest["Close"] - first["Close"]) / first["Close"]) * 100
-        snapshots.append(
-            Evidence(
-                title=f"{ticker} market snapshot",
-                summary=(
-                    f"Latest close: {latest['Close']:.2f}. "
-                    f"One-month change: {change:.2f}%."
-                ),
-                source_type="finance",
-                score=0.85,
-                source_id=ticker,
-                retrieved_via="yfinance",
+        try:
+            data = yf.Ticker(ticker)
+            history = data.history(period="1mo")
+            if history.empty:
+                continue
+            latest = history.iloc[-1]
+            first = history.iloc[0]
+            close_latest = latest["Close"]
+            close_first = first["Close"]
+            if close_first == 0:
+                change = 0.0
+            else:
+                change = ((close_latest - close_first) / close_first) * 100
+            snapshots.append(
+                Evidence(
+                    title=f"{ticker} market snapshot",
+                    summary=(
+                        f"Latest close: {close_latest:.2f}. "
+                        f"One-month change: {change:.2f}%."
+                    ),
+                    source_type="finance",
+                    score=0.85,
+                    source_id=ticker,
+                    retrieved_via="yfinance",
+                )
             )
-        )
+        except Exception:
+            continue
     return snapshots
 
 

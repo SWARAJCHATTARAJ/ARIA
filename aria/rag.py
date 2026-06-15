@@ -33,13 +33,17 @@ class VectorMemory:
         self.collection = self.client.get_or_create_collection(
             name=settings.collection_name or "aria_memory"
         )
-
     def ingest_pdf(self, path: Path, source_name: str) -> int:
         documents = []
         metadatas = []
         ids = []
 
-        with fitz.open(safe_temp_pdf_path(path)) as doc:
+        try:
+            doc = fitz.open(safe_temp_pdf_path(path))
+        except Exception as exc:
+            raise ValueError(f"Could not open PDF '{source_name}': {exc}")
+
+        with doc:
             if doc.page_count > MAX_PDF_PAGES:
                 raise ValueError(f"PDF has {doc.page_count} pages. Limit is {MAX_PDF_PAGES} pages.")
 
