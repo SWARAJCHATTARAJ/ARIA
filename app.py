@@ -30,6 +30,7 @@ from aria.core import Settings, MAX_PDF_PAGES, MAX_UPLOAD_MB, validate_pdf_uploa
 from aria.rag import VectorMemory
 from aria.reports import build_markdown_report, build_pdf_report, linkify_citations_markdown
 from aria.sessions import list_sessions, load_session, save_session
+from aria.visualizations import generate_network_svg, generate_source_mix_svg, generate_relevance_dist_svg
 
 
 load_dotenv()
@@ -164,11 +165,11 @@ def fetch_url_text(url: str) -> tuple[str, str]:
     return parsed.netloc, text[:80_000]
 
 
-def run_research_streamed(question: str, use_local: bool, use_web: bool, use_finance: bool, max_iterations: int) -> None:
+def run_research_streamed(question: str, use_local: bool, use_web: bool, use_finance: bool, max_iterations: int, custom_plan: list[str] = None) -> None:
     agent = get_agent()
     initial_state = {
         "question": question,
-        "plan": [],
+        "plan": custom_plan if custom_plan else [],
         "evidence": [],
         "answer": "",
         "verification": "No verification run.",
@@ -231,16 +232,44 @@ def run_research_streamed(question: str, use_local: bool, use_web: bool, use_fin
             
     render_pipeline("plan")
     
-    events_list = ["Initializing ARIA Agent Console..."]
+    events_list = ["Initializing ARIA Workspace..."]
     
     def update_console(new_event: str = None):
         if new_event:
             events_list.append(new_event)
-        log_content = "\n".join(f"[ARIA] > {event}" for event in events_list)
+            
+        formatted_lines = []
+        for event in events_list:
+            ev_lower = event.lower()
+            style = "color: #cbd5e1;" # default light grey
+            
+            if "planner:" in ev_lower or "plan" in ev_lower:
+                style = "color: #00e6ff; font-weight: bold;" # Cyan
+            elif "retriever:" in ev_lower or "searching" in ev_lower or "retrieving" in ev_lower:
+                style = "color: #f59e0b;" # Amber/orange search
+            elif "synthesis:" in ev_lower or "draft" in ev_lower or "completed" in ev_lower:
+                style = "color: #2ecc71; font-weight: bold;" # Green
+            elif "auditor:" in ev_lower or "verified" in ev_lower:
+                style = "color: #ec4899;" # Magenta for verification
+            elif "failed" in ev_lower or "error" in ev_lower or "unavailable" in ev_lower:
+                style = "color: #ef4444; font-weight: bold;" # Red
+                
+            formatted_lines.append(f'<span style="{style}">[ARIA] &gt; {escape(event)}</span>')
+            
+        formatted_lines.append('<span class="console-cursor">_</span>')
+        log_content = "<br/>".join(formatted_lines)
+        
         console_placeholder.markdown(
             f"""
             <div class="console-log-window">
-                <pre><code>{escape(log_content)}</code></pre>
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(88,214,255,0.15); padding-bottom: 6px; margin-bottom: 10px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="pulse-dot"></span>
+                        <span style="font-family: \'Outfit\', sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #00e6ff;">RESEARCH ACTIVITY LOG</span>
+                    </div>
+                    <span style="font-family: \'JetBrains Mono\', monospace; font-size: 9px; color: #64748b;">LOG EVENTS: {len(events_list)}</span>
+                </div>
+                <pre style="margin: 0; white-space: pre-wrap; font-family: \'JetBrains Mono\', monospace;"><code style="color: inherit;">{log_content}</code></pre>
             </div>
             """,
             unsafe_allow_html=True
@@ -265,7 +294,7 @@ def run_research_streamed(question: str, use_local: bool, use_web: bool, use_fin
             node_started_at = time.perf_counter()
                     
     render_pipeline("Complete")
-    update_console("Design Brief synthesis completed. Evidence registry compiled.")
+    update_console("Research brief synthesis completed. Evidence registry compiled.")
     
     from aria.agent import dedupe_evidence
     from aria.core import ResearchResult
@@ -317,45 +346,76 @@ def render_results(result, report: str) -> None:
     report_col, evidence_col = st.columns([1.35, 1], gap="large")
 
     with report_col:
-        st.markdown('<div class="console-card">', unsafe_allow_html=True)
-        st.subheader("Executive Brief")
-        st.markdown(linkify_citations_markdown(result.answer, result.evidence))
-        st.markdown("</div>", unsafe_allow_html=True)
+        brief_tab, graph_tab, metrics_tab = st.tabs([
+            "📝 Executive Brief", 
+            "🕸️ Evidence Network Graph", 
+            "📊 Source & Quality Analytics"
+        ])
+        
+        with brief_tab:
+            st.markdown('<div class="console-card">', unsafe_allow_html=True)
+            st.subheader("Executive Brief")
+            st.markdown(linkify_citations_markdown(result.answer, result.evidence))
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        d1, d2 = st.columns(2)
-        d1.download_button(
-            "Download Markdown",
-            data=report,
-            file_name="aria_research_brief.md",
-            mime="text/markdown",
-            use_container_width=True,
-        )
-        d2.download_button(
-            "Download PDF",
-            data=build_pdf_report(result),
-            file_name="aria_research_brief.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
-
-        with st.expander("Verification"):
-            st.write(result.verification)
-        with st.expander("Execution Trace"):
-            log_lines = "\n".join(f"[ARIA] > {event}" for event in result.events)
-            st.markdown(
-                f"""
-                <div class="console-log-window" style="height: 300px;">
-                    <pre><code>{escape(log_lines)}</code></pre>
-                </div>
-                """,
-                unsafe_allow_html=True
+            d1, d2 = st.columns(2)
+            d1.download_button(
+                "Download Markdown",
+                data=report,
+                file_name="aria_research_brief.md",
+                mime="text/markdown",
+                use_container_width=True,
             )
-        with st.expander("Run Metrics"):
-            metrics = result.metrics or result_metrics(result)
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Evidence", metrics.get("evidence_items", len(result.evidence)))
-            c2.metric("Answer tokens", metrics.get("answer_tokens_est", 0))
-            c3.metric("Output tokens", metrics.get("total_output_tokens_est", 0))
+            d2.download_button(
+                "Download PDF",
+                data=build_pdf_report(result),
+                file_name="aria_research_brief.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+
+            with st.expander("Verification"):
+                st.write(result.verification)
+            with st.expander("Execution Trace"):
+                log_lines = "\n".join(f"[ARIA] > {event}" for event in result.events)
+                st.markdown(
+                    f"""
+                    <div class="console-log-window" style="height: 300px;">
+                        <pre><code>{escape(log_lines)}</code></pre>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                
+        with graph_tab:
+            st.markdown('<div class="console-card">', unsafe_allow_html=True)
+            st.subheader("Evidence Network Graph")
+            st.markdown("<p style='font-size:12px; color:#94a3b8; margin-bottom:15px;'>Hover over the node endpoints to view source document details (provenance, title, relevance score, and summary snippets).</p>", unsafe_allow_html=True)
+            svg_graph = generate_network_svg(result)
+            st.markdown(svg_graph, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        with metrics_tab:
+            st.markdown('<div class="console-card">', unsafe_allow_html=True)
+            st.subheader("Research Source & Quality Analytics")
+            
+            mc1, mc2 = st.columns(2)
+            with mc1:
+                st.markdown("<h5 style='text-align: center; margin-bottom: 15px; font-family: \"Outfit\", sans-serif;'>Source Material Distribution</h5>", unsafe_allow_html=True)
+                st.markdown(generate_source_mix_svg(result), unsafe_allow_html=True)
+                
+            with mc2:
+                st.markdown("<h5 style='text-align: center; margin-bottom: 15px; font-family: \"Outfit\", sans-serif;'>Relevance Score Grading</h5>", unsafe_allow_html=True)
+                st.markdown(generate_relevance_dist_svg(result), unsafe_allow_html=True)
+                
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            with st.expander("Run Metrics Details", expanded=True):
+                metrics = result.metrics or result_metrics(result)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Evidence Items", metrics.get("evidence_items", len(result.evidence)))
+                c2.metric("Answer Tokens", metrics.get("answer_tokens_est", 0))
+                c3.metric("Output Tokens", metrics.get("total_output_tokens_est", 0))
 
 
     with evidence_col:
@@ -422,7 +482,7 @@ with open("assets/style.css", "r", encoding="utf-8") as f:
 
 
 if "view" not in st.session_state:
-    st.session_state["view"] = "Mission"
+    st.session_state["view"] = "Research"
 
 memory = get_memory()
 settings = Settings.from_env()
@@ -433,7 +493,7 @@ with st.sidebar:
     st.caption("Agentic research console")
     view = st.radio(
         "Navigation",
-        ["Mission", "Knowledge Base", "Results", "History"],
+        ["Research", "Knowledge Base", "Results", "History"],
         key="view",
         label_visibility="collapsed",
     )
@@ -503,12 +563,12 @@ with m4:
 st.markdown("</div>", unsafe_allow_html=True)
 
 
-if view == "Mission":
+if view == "Research":
     input_col, ops_col = st.columns([1.75, 1], gap="large")
 
     with input_col:
         st.markdown('<div class="console-card">', unsafe_allow_html=True)
-        st.subheader("Mission Brief")
+        st.subheader("Research Objective")
         question = st.text_area(
             "Research objective",
             value=st.session_state.get("question", ""),
@@ -524,12 +584,69 @@ if view == "Mission":
         for col, preset in zip(preset_cols, presets):
             if col.button(preset, use_container_width=True):
                 st.session_state["question"] = preset
+                st.session_state["blueprint_queries"] = [] # Reset queries on preset change
                 st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown('<div class="console-card">', unsafe_allow_html=True)
+        st.subheader("Research Plan Customizer")
+        current_question = question.strip()
+        
+        # Reset queries if the question changes
+        if "last_bp_question" not in st.session_state or st.session_state["last_bp_question"] != current_question:
+            st.session_state["last_bp_question"] = current_question
+            st.session_state["blueprint_queries"] = []
+            
+        b1, b2 = st.columns([1, 1])
+        with b1:
+            gen_bp = st.button("Plan Research Queries", use_container_width=True)
+        with b2:
+            clear_bp = st.button("Clear Plan", use_container_width=True)
+            
+        if clear_bp:
+            st.session_state["blueprint_queries"] = []
+            st.rerun()
+            
+        if gen_bp:
+            if not current_question:
+                st.warning("Enter a research objective first.")
+            else:
+                with st.spinner("Analyzing objective and building plan..."):
+                     try:
+                         agent = get_agent()
+                         queries = agent._plan(current_question)
+                         st.session_state["blueprint_queries"] = queries
+                         st.success("Research plan generated! You can customize the queries below.")
+                     except Exception as e:
+                         st.error(f"Failed to plan queries: {e}")
+                        
+        bp_queries = st.session_state.get("blueprint_queries", [])
+        if bp_queries:
+            st.markdown("<p style='font-size:12px; color:#94a3b8; margin: 5px 0 10px 0;'>Edit or delete the generated search queries to customize what ARIA will research:</p>", unsafe_allow_html=True)
+            new_bp_queries = []
+            for idx, q in enumerate(bp_queries):
+                col_q, col_del = st.columns([9, 1])
+                new_q = col_q.text_input(f"Query #{idx+1}", value=q, key=f"bp_q_input_{idx}")
+                if col_del.button("✕", key=f"bp_q_del_{idx}"):
+                    # Item is deleted by skipping
+                    pass
+                else:
+                    if new_q.strip():
+                        new_bp_queries.append(new_q.strip())
+            
+            if st.button("+ Add Sub-Query", key="bp_q_add"):
+                new_bp_queries.append("")
+                st.session_state["blueprint_queries"] = new_bp_queries
+                st.rerun()
+                
+            st.session_state["blueprint_queries"] = new_bp_queries
+        else:
+            st.info("No queries planned yet. ARIA will plan automatically on run, or click 'Plan Research Queries' to build a custom plan first.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with ops_col:
         st.markdown('<div class="console-card">', unsafe_allow_html=True)
-        st.subheader("Agent Controls")
+        st.subheader("Research Settings")
         
         search_base = st.selectbox(
             "Search Base / Source",
@@ -542,12 +659,12 @@ if view == "Mission":
         use_web = "Web" in search_base or "Hybrid" in search_base
         
         use_finance = st.toggle("Market data snapshots", value=False)
-        max_iterations = st.slider("Verification passes", min_value=1, max_value=3, value=2)
-        run = st.button("Execute mission", type="primary", use_container_width=True)
+        max_iterations = st.slider("Validation Depth (Passes)", min_value=1, max_value=3, value=2)
+        run = st.button("Run Research", type="primary", use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('<div class="console-card">', unsafe_allow_html=True)
-        st.subheader("Pipeline")
+        st.subheader("Research Pipeline")
         st.write("1. Build search plan")
         st.write("2. Retrieve memory and web evidence")
         st.write("3. Draft grounded brief")
@@ -559,7 +676,8 @@ if view == "Mission":
             st.warning("Enter a research objective first.")
         else:
             st.session_state["question"] = question.strip()
-            run_research_streamed(question.strip(), use_local, use_web, use_finance, max_iterations)
+            custom_plan = [q.strip() for q in st.session_state.get("blueprint_queries", []) if q.strip()]
+            run_research_streamed(question.strip(), use_local, use_web, use_finance, max_iterations, custom_plan=custom_plan)
 
 
     result = st.session_state.get("aria_result")
@@ -630,7 +748,7 @@ elif view == "Results":
     report = st.session_state.get("aria_report")
 
     if not result or not report:
-        st.info("No mission report yet. Run a mission from the Mission screen.")
+        st.info("No research report yet. Submit a research objective from the Research tab.")
     else:
         render_results(result, report)
 
@@ -639,7 +757,7 @@ elif view == "History":
     st.subheader("Research History")
     sessions = list_sessions(limit=50)
     if not sessions:
-        st.info("No saved sessions yet. Completed missions are saved automatically.")
+        st.info("No saved sessions yet. Completed research runs are saved automatically.")
     else:
         for item in sessions:
             cols = st.columns([1.2, 3, 1])

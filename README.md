@@ -45,7 +45,7 @@ The goal was not just to build a UI around an LLM. The goal was to build a small
 
 ## What ARIA Can Do
 
-- **Agentic research loop:** planner, retriever, synthesizer, critic, and citation auditor roles inside a LangGraph workflow.
+- **Agentic research loop:** planner, retriever, synthesis, and validator components inside a LangGraph workflow.
 - **Clickable citations:** inline `[1]` citations become source links when URLs are available.
 - **Evidence provenance:** each source tracks type, score, retrieval path, URL, and source id.
 - **Hybrid retrieval:** ChromaDB local memory plus Wikipedia, OpenAlex, arXiv, DuckDuckGo, and optional market snapshots.
@@ -74,8 +74,8 @@ Earlier retrieval experiments showed that concurrent public-source retrieval is 
 
 ```mermaid
 graph TD
-    User[Research Question] --> Planner[Planner Agent]
-    Planner --> Retriever[Research Agent]
+    User[Research Question] --> Planner[Planner]
+    Planner --> Retriever[Retriever]
 
     Retriever --> Local[ChromaDB Local Memory]
     Retriever --> Wiki[Wikipedia]
@@ -83,13 +83,13 @@ graph TD
     Retriever --> Arxiv[arXiv]
     Retriever --> DDG[DuckDuckGo]
 
-    Local --> Synth[Synthesis Agent]
+    Local --> Synth[Synthesis]
     Wiki --> Synth
     OpenAlex --> Synth
     Arxiv --> Synth
     DDG --> Synth
 
-    Synth --> Critic[Critic Agent]
+    Synth --> Critic[Auditor]
     Critic -->|Needs more evidence| Retriever
     Critic -->|Passed| Publisher[Report Publisher]
 

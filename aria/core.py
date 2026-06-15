@@ -36,6 +36,7 @@ class Evidence:
     score: float = 0.75
     source_id: str | None = None
     retrieved_via: str | None = None
+    query: str | None = None
 
 
 @dataclass

@@ -182,8 +182,11 @@ class ResearchAgent:
 
     def node_plan(self, state: AgentState) -> dict:
         question = state["question"]
+        plan = state.get("plan")
+        if plan and len(plan) > 0:
+            return {"plan": plan, "events": ["Planner: using customized research plan"]}
         plan = self._plan(question)
-        return {"plan": plan, "events": ["Planner Agent: built research strategy"]}
+        return {"plan": plan, "events": ["Planner: generated search queries"]}
 
     def node_search(self, state: AgentState) -> dict:
         question = state["question"]
@@ -210,17 +213,22 @@ class ResearchAgent:
                 is_global_summary = True
 
         if is_global_summary:
-            new_events.append("Research Agent: detected global summary request and retrieved indexed chunks directly")
+            new_events.append("Retriever: detected global summary request; fetching all indexed documents")
             all_chunks = self.memory.retrieve_all(limit=30)
+            for ev in all_chunks:
+                ev.query = "Global Summary"
             new_evidence.extend(all_chunks)
             if not all_chunks:
-                new_events.append("Research Agent: local knowledge base is empty")
+                new_events.append("Retriever: local knowledge base is empty")
             
             if use_web:
                 queries_to_run = plan if plan else [question]
                 def _fetch_web_only(query: str) -> tuple[list[Evidence], list[str]]:
-                    query_events = [f"Research Agent: searching free web sources for: {query}"]
-                    return free_web_search(query), query_events
+                    query_events = [f"Retriever: searching web sources for: {query}"]
+                    results = free_web_search(query)
+                    for ev in results:
+                        ev.query = query
+                    return results, query_events
                 with ThreadPoolExecutor(max_workers=len(queries_to_run) if queries_to_run else 1) as executor:
                     for result, events in executor.map(_fetch_web_only, queries_to_run):
                         new_evidence.extend(result)
@@ -239,7 +247,7 @@ class ResearchAgent:
                     cleaned_queries = [f"{question} follow up research"]
                 
                 queries_to_run = cleaned_queries
-                new_events.append(f"Citation Auditor: requested more research. Iteration {iteration + 1}.")
+                new_events.append(f"Auditor: requested additional verification search (pass {iteration + 1})")
             else:
                 queries_to_run = plan if plan else [question]
 
@@ -247,11 +255,17 @@ class ResearchAgent:
                 query_events = []
                 local_evidence: list[Evidence] = []
                 if use_local:
-                    query_events.append(f"Research Agent: retrieving memory for: {query}")
-                    local_evidence.extend(self.memory.retrieve(query))
+                    query_events.append(f"Retriever: retrieving documents for: {query}")
+                    results = self.memory.retrieve(query)
+                    for ev in results:
+                        ev.query = query
+                    local_evidence.extend(results)
                 if use_web:
-                    query_events.append(f"Research Agent: searching free web sources for: {query}")
-                    local_evidence.extend(free_web_search(query))
+                    query_events.append(f"Retriever: searching web sources for: {query}")
+                    results = free_web_search(query)
+                    for ev in results:
+                        ev.query = query
+                    local_evidence.extend(results)
                 return local_evidence, query_events
 
             with ThreadPoolExecutor(max_workers=len(queries_to_run) if queries_to_run else 1) as executor:
@@ -262,8 +276,12 @@ class ResearchAgent:
             if use_finance:
                 tickers = extract_tickers(question)
                 if tickers:
-                    new_events.append("Research Agent: fetching market snapshots")
-                    new_evidence.extend(get_market_snapshot(tickers))
+                    new_events.append("Retriever: fetching market snapshots")
+                    results = get_market_snapshot(tickers)
+                    for ev in results:
+                        ev.query = "Market Snapshots"
+                    new_evidence.extend(results)
+
         
         return {"evidence": new_evidence, "events": new_events}
 
@@ -273,7 +291,7 @@ class ResearchAgent:
         iteration = state["iteration"]
         
         answer = self._draft(question, evidence)
-        return {"answer": answer, "events": [f"Synthesis Agent: drafted answer, pass {iteration + 1}"]}
+        return {"answer": answer, "events": [f"Synthesis: generated research draft (pass {iteration + 1})"]}
 
     def node_verify(self, state: AgentState) -> dict:
         question = state["question"]
@@ -282,7 +300,7 @@ class ResearchAgent:
         iteration = state["iteration"]
         
         verification = self._verify(question, answer, evidence)
-        return {"verification": verification, "events": ["Critic Agent: verified answer against evidence"], "iteration": iteration + 1}
+        return {"verification": verification, "events": ["Auditor: verified draft against retrieved evidence"], "iteration": iteration + 1}
 
     def _plan(self, question: str) -> list[str]:
         if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
