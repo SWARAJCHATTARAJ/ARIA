@@ -331,7 +331,7 @@ div[data-testid="stExpander"] {
 }
 .console-log-window code {
     font-family: 'JetBrains Mono', monospace !important;
-    color: #38ef7d !important;
+    color: inherit !important;
 }
 
 /* Custom Scrollbar for console */
@@ -355,3 +355,70 @@ div[data-testid="stExpander"] {
     .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .agent-title h1 { font-size: 32px; }
 }
+
+/* Console Activity Indicators */
+.console-cursor {
+    animation: blink-cursor 1s steps(2, start) infinite;
+    color: #00e6ff;
+    font-weight: 800;
+}
+@keyframes blink-cursor {
+    to { visibility: hidden; }
+}
+
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    background-color: #00e6ff;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 8px #00e6ff;
+    animation: pulse-activity-dot 2s infinite;
+}
+@keyframes pulse-activity-dot {
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(0, 230, 255, 0.7);
+    }
+    70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 5px rgba(0, 230, 255, 0);
+    }
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(0, 230, 255, 0);
+    }
+}
+
+/* Custom styled tabs to match the dashboard theme */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+    background-color: rgba(10, 25, 47, 0.35) !important;
+    padding: 6px 12px !important;
+    border-radius: 10px !important;
+    border: 1px solid rgba(88, 214, 255, 0.08) !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background-color: transparent !important;
+    border: none !important;
+    color: #94a3b8 !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    padding: 8px 16px !important;
+    border-radius: 6px !important;
+    transition: all 0.2s ease !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    color: #00e6ff !important;
+    background-color: rgba(0, 230, 255, 0.06) !important;
+}
+
+.stTabs [aria-selected="true"] {
+    color: #ffffff !important;
+    background-color: rgba(0, 230, 255, 0.12) !important;
+    border-bottom: 2px solid #00e6ff !important;
+}
+
