@@ -156,6 +156,16 @@ If you deploy the Streamlit app on a public host, it cannot connect to a backend
 ARIA_BACKEND_URL=https://your-fastapi-host.example.com
 ```
 
+### Deploy FastAPI on Render
+
+This repository now includes a `Dockerfile` and `render.yaml` for the FastAPI backend.
+
+1. Push the repo to GitHub.
+2. Create a new Render Web Service from the repo.
+3. Use the Docker environment or the blueprint from `render.yaml`.
+4. Deploy the service and copy the generated HTTPS URL.
+5. Set `ARIA_BACKEND_URL` in Streamlit to that URL.
+
 ---
 
 ## Test
