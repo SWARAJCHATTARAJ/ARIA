@@ -1,4 +1,6 @@
-streamlit>=1.35.0
+fastapi>=0.110.0
+uvicorn>=0.28.0
+python-multipart>=0.0.9
 python-dotenv>=1.0.1
 requests>=2.32.0
 aiohttp>=3.9.5
@@ -9,4 +11,3 @@ langgraph>=0.0.35
 langchain-core>=0.1.40
 yfinance>=0.2.30
 pysqlite3-binary; sys_platform == 'linux'
-protobuf==3.20.3

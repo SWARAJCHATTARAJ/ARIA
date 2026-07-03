@@ -29,6 +29,13 @@ class SplitTextTests(unittest.TestCase):
         chunks = split_text("abcdefghij", chunk_size=4, overlap=1)
         self.assertEqual(chunks, ["abcd", "defg", "ghij", "j"])
 
+    def test_split_text_aligns_to_word_boundaries(self) -> None:
+        text = "hello world this is a test of boundary"
+        chunks = split_text(text, chunk_size=12, overlap=3)
+        for chunk in chunks:
+            self.assertTrue(len(chunk) <= 12)
+        self.assertEqual(chunks[0], "hello world")
+
 
 class SearchModesTestCase(unittest.TestCase):
     def setUp(self):
@@ -159,6 +166,40 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(loaded.question, result.question)
             self.assertEqual(loaded.evidence[0].source_id, "note:1")
             self.assertEqual(loaded.metrics["answer_tokens_est"], 3)
+
+
+class LLMClientTests(unittest.TestCase):
+    def test_complete_fallback_plan(self) -> None:
+        from aria.agent import LLMClient
+        client = LLMClient(Settings.from_env())
+        client.openrouter_api_key = None
+        res = client.complete("system", "Research Question: test", task="plan")
+        self.assertEqual(res, "")
+
+    def test_complete_fallback_verify(self) -> None:
+        from aria.agent import LLMClient
+        client = LLMClient(Settings.from_env())
+        client.openrouter_api_key = None
+        res = client.complete("system", "Research Question: test\n\nEvidence:\n[1] Title\nSummary of source.", task="verify")
+        self.assertIn("STATUS: PASSED", res)
+        self.assertIn("Checked 1 retrieved sources.", res)
+
+    def test_generate_diverse_fallback_queries(self) -> None:
+        from aria.agent import generate_diverse_fallback_queries
+        res = generate_diverse_fallback_queries("Compare supply chain risks for NVIDIA, AMD, and Intel")
+        self.assertEqual(len(res), 3)
+        self.assertEqual(res[0], "NVIDIA supply chain risks")
+        self.assertEqual(res[1], "AMD supply chain risks")
+        self.assertEqual(res[2], "Intel supply chain risks")
+
+    def test_generate_diverse_fallback_queries_vs(self) -> None:
+        from aria.agent import generate_diverse_fallback_queries
+        res = generate_diverse_fallback_queries("Python vs Go vs Rust")
+        self.assertEqual(len(res), 4)
+        self.assertEqual(res[0], "Python vs Go vs Rust")
+        self.assertEqual(res[1], "Python comparison features")
+        self.assertEqual(res[2], "Go comparison features")
+        self.assertEqual(res[3], "Rust comparison features")
 
 
 if __name__ == "__main__":

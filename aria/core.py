@@ -66,3 +66,7 @@ def safe_temp_pdf_path(path: Path) -> Path:
     if resolved.suffix.lower() != ".pdf":
         raise ValueError("Temporary upload path must be a PDF.")
     return resolved
+
+
+def estimate_tokens(text: str) -> int:
+    return max(1, round(len(text.split()) * 1.33)) if text else 0

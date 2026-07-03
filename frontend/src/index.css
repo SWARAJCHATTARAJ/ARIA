@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: #FFFFFF;
+    --color-surface: #F4F4F7;
+    --color-border: #E4E4E7;
+    --color-text: #18181B;
+    --color-muted: #71717A;
+    --color-accent: #0891B2; /* Cyan 600 for light mode */
+    --color-pending: #E4E4E7;
+    --color-complete: #10B981;
+    --color-error: #EF4444;
+  }
+
+  .dark {
+    --color-bg: #0A0A0B;
+    --color-surface: #141416;
+    --color-border: #27272A;
+    --color-text: #FAFAFA;
+    --color-muted: #A1A1AA;
+    --color-accent: #22D3EE; /* Cyan 300 for dark mode */
+    --color-pending: #3F3F46;
+    --color-complete: #10B981;
+    --color-error: #EF4444;
+  }
+
+  body {
+    @apply bg-aria-bg text-aria-text antialiased font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Custom scrollbar styling matching active theme */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-aria-border rounded-full hover:bg-aria-accent transition-colors;
+  }
+}
+
+@layer utilities {
+  .glow-cyan-sm {
+    box-shadow: 0 0 10px rgba(34, 211, 238, 0.1);
+  }
+  .glow-cyan-md {
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.15);
+  }
+}

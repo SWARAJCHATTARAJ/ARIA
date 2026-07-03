@@ -51,7 +51,7 @@ class VectorMemory:
                 text = page.get_text("text").strip()
                 for chunk in split_text(text):
                     documents.append(chunk)
-                    metadatas.append({"source": source_name, "page": page_index})
+                    metadatas.append({"source": source_name, "page": page_index, "source_type": "pdf"})
                     ids.append(str(uuid4()))
 
         if not documents:
@@ -174,6 +174,22 @@ def split_text(text: str, chunk_size: int = 1000, overlap: int = 120) -> list[st
     start = 0
     while start < len(cleaned):
         end = start + chunk_size
+        
+        # If we are not at the end of the text, try to find a space boundary
+        if end < len(cleaned):
+            space_idx = cleaned.rfind(" ", start, end)
+            if space_idx > start:
+                end = space_idx
+                
         chunks.append(cleaned[start:end])
-        start = max(end - overlap, start + 1)
+        
+        # Determine next start
+        next_start = end - overlap
+        if next_start > start and next_start < len(cleaned):
+            # Align next_start to space boundary if possible
+            space_idx = cleaned.find(" ", next_start, min(end, len(cleaned)))
+            if space_idx != -1:
+                next_start = space_idx + 1
+        
+        start = max(next_start, start + 1)
     return chunks

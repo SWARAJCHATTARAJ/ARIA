@@ -136,6 +136,20 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+### Alternatively, Run Web GUI (React + FastAPI)
+
+To run the modern SaaS React Web GUI:
+
+```bash
+# Install additional dependencies
+uv pip install fastapi uvicorn python-multipart
+
+# Start the unified backend & frontend server
+python main.py
+```
+
+Open `http://127.0.0.1:8000/` in your browser to access the ARIA Research Console.
+
 Optional `.env`:
 
 ```env
