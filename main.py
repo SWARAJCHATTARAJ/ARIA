@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import json
+import socket
 import requests
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -35,10 +36,13 @@ load_dotenv()
 
 app = FastAPI(title="ARIA API", description="FastAPI backend for ARIA Agentic RAG System")
 
-# Enable CORS for frontend development
+# Configure CORS origins securely (can be configured via environment variable)
+allowed_origins_str = os.getenv("ARIA_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000")
+origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -101,10 +105,44 @@ class TextExtractor:
         def text(self) -> str:
             return " ".join(self.parts)
 
+def is_safe_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+            
+        # Resolve hostname to all associated IP addresses
+        ips = socket.getaddrinfo(hostname, None)
+        for ip_info in ips:
+            ip = ip_info[4][0]
+            # IPv4 checks
+            if ip.startswith("127.") or ip.startswith("169.254.") or ip.startswith("10."):
+                return False
+            if ip.startswith("192.168."):
+                return False
+            if ip.startswith("172."):
+                # 172.16.0.0 to 172.31.255.255
+                parts = ip.split('.')
+                if len(parts) >= 2 and 16 <= int(parts[1]) <= 31:
+                    return False
+            # IPv6 checks
+            if ip == "::1" or ip.startswith("fe80:") or ip.startswith("fc00:") or ip.startswith("fd00:"):
+                return False
+        return True
+    except Exception:
+        return False
+
 def fetch_url_text(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("Enter a valid http or https URL.")
+
+    # Guard against SSRF (Server-Side Request Forgery)
+    if not is_safe_url(url):
+        raise ValueError("The requested URL is pointing to a restricted IP address or hostname.")
 
     response = requests.get(
         url,
