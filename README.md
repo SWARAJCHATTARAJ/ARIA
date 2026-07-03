@@ -150,6 +150,12 @@ ARIA_LLM_PROVIDER=openrouter
 ARIA_MODEL=google/gemma-2-9b-it:free
 ```
 
+If you deploy the Streamlit app on a public host, it cannot connect to a backend running on `127.0.0.1` in the browser. In that case, deploy the FastAPI app separately and set:
+
+```env
+ARIA_BACKEND_URL=https://your-fastapi-host.example.com
+```
+
 ---
 
 ## Test
