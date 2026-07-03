@@ -4,6 +4,7 @@ import socket
 import subprocess
 import sys
 import time
+from shutil import which
 from pathlib import Path
 
 import streamlit as st
@@ -31,16 +32,48 @@ def port_is_open(host: str, port: int) -> bool:
         return False
 
 
+def npm_command() -> str | None:
+    return which("npm.cmd") or which("npm")
+
+
+def run_command(command: list[str], cwd: Path) -> None:
+    completed = subprocess.run(
+        command,
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        shell=False,
+    )
+    if completed.returncode != 0:
+        output = completed.stdout.strip() or "No command output."
+        raise RuntimeError(f"`{' '.join(command)}` failed:\n{output}")
+
+
+def ensure_frontend_build() -> None:
+    frontend_dir = ROOT / "frontend"
+    dist_index = frontend_dir / "dist" / "index.html"
+    if dist_index.exists():
+        return
+
+    npm = npm_command()
+    if not npm:
+        raise FileNotFoundError(
+            "frontend/dist/index.html was not found and npm is not available. "
+            "Install Node.js, then run `npm ci` and `npm run build` inside the frontend folder."
+        )
+
+    if not (frontend_dir / "node_modules").exists():
+        run_command([npm, "ci"], frontend_dir)
+    run_command([npm, "run", "build"], frontend_dir)
+
+
 @st.cache_resource
 def start_backend() -> subprocess.Popen | None:
     if port_is_open(BACKEND_HOST, BACKEND_PORT):
         return None
 
-    dist_index = ROOT / "frontend" / "dist" / "index.html"
-    if not dist_index.exists():
-        raise FileNotFoundError(
-            "frontend/dist/index.html was not found. Run `npm ci` and `npm run build` inside the frontend folder."
-        )
+    ensure_frontend_build()
 
     python = ROOT / ".venv" / "Scripts" / "python.exe"
     if not python.exists():
@@ -147,4 +180,12 @@ try:
     )
 except Exception as exc:
     st.error(str(exc))
-    st.code("cd frontend\nnpm ci\nnpm run build\nstreamlit run app.py", language="powershell")
+    st.code(
+        "cd C:\\Users\\Hp\\OneDrive\\Desktop\\project\n"
+        "cd frontend\n"
+        "npm ci\n"
+        "npm run build\n"
+        "cd ..\n"
+        "streamlit run app.py",
+        language="powershell",
+    )
