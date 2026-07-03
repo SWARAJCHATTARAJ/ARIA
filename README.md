@@ -136,11 +136,11 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Start the unified backend & frontend server
-python main.py
+# Start the Streamlit wrapper for the React console
+streamlit run app.py
 ```
 
-Open `http://127.0.0.1:8000/` in your browser to access the ARIA Research Console.
+Open `http://localhost:8501/` in your browser to access the ARIA Research Console. Streamlit will display the React console from `frontend/` and start the local FastAPI backend when needed.
 
 Optional `.env`:
 

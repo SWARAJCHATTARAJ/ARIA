@@ -20,7 +20,7 @@ except ImportError:
     pass
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -341,18 +341,10 @@ async def download_session_pdf(session_id: str):
             raise HTTPException(status_code=404, detail="Session not found.")
         
         result = load_session(matching[0]["path"])
-        pdf_bytes = build_pdf_report(result)
-        
-        # Save temporarily
-        temp_dir = Path("temp_downloads")
-        temp_dir.mkdir(exist_ok=True)
-        pdf_file = temp_dir / f"aria_brief_{session_id}.pdf"
-        pdf_file.write_bytes(pdf_bytes)
-        
-        return FileResponse(
-            path=str(pdf_file),
-            filename=f"aria_brief_{session_id}.pdf",
-            media_type="application/pdf"
+        return Response(
+            content=build_pdf_report(result),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="aria_brief_{session_id}.pdf"'},
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -367,18 +359,10 @@ async def download_session_md(session_id: str):
             raise HTTPException(status_code=404, detail="Session not found.")
         
         result = load_session(matching[0]["path"])
-        md_text = build_markdown_report(result)
-        
-        # Save temporarily
-        temp_dir = Path("temp_downloads")
-        temp_dir.mkdir(exist_ok=True)
-        md_file = temp_dir / f"aria_brief_{session_id}.md"
-        md_file.write_text(md_text, encoding="utf-8")
-        
-        return FileResponse(
-            path=str(md_file),
-            filename=f"aria_brief_{session_id}.md",
-            media_type="text/markdown"
+        return Response(
+            content=build_markdown_report(result),
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="aria_brief_{session_id}.md"'},
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

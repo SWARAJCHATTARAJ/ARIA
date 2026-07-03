@@ -34,6 +34,7 @@ function App() {
   // Active research result states
   const [result, setResult] = useState(null);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
+  const [memoryStatus, setMemoryStatus] = useState(null);
   
   // Sidebar / Session History
   const [sessions, setSessions] = useState([]);
@@ -126,16 +127,23 @@ function App() {
   };
 
   const clearMemory = async () => {
-    if (!window.confirm("Are you sure you want to clear your local vector database? This cannot be undone.")) return;
+    if (memoryCount === 0) {
+      setMemoryStatus({ type: "info", message: "Local memory is already empty." });
+      return;
+    }
+
+    setMemoryStatus(null);
     try {
       const response = await fetch(`${API_BASE}/api/memory/clear`, { method: "POST" });
       if (response.ok) {
         setMemoryCount(0);
-        alert("Local memory database cleared.");
+        setMemoryStatus({ type: "success", message: "Local memory cleared." });
+      } else {
+        throw new Error("Failed to clear local memory.");
       }
     } catch (err) {
       console.error("Failed to clear memory database:", err);
-      alert("Failed to clear memory database.");
+      setMemoryStatus({ type: "error", message: err.message || "Failed to clear local memory." });
     }
   };
 
@@ -442,12 +450,23 @@ function App() {
         </div>
 
         {/* Database Ingestion Status Footer */}
-        <div className="p-3 border-t border-aria-border flex justify-between items-center text-[10px]">
+        <div className="p-3 border-t border-aria-border space-y-2 text-[10px]">
+          {memoryStatus && (
+            <div
+              className={`rounded border px-2 py-1.5 leading-relaxed ${
+                memoryStatus.type === "error"
+                  ? "border-aria-error/30 bg-aria-error/10 text-aria-error"
+                  : "border-aria-border bg-aria-bg/40 text-aria-muted"
+              }`}
+            >
+              {memoryStatus.message}
+            </div>
+          )}
           <button 
             onClick={clearMemory}
             className="text-aria-muted hover:text-aria-error transition-colors flex items-center gap-1"
           >
-            Wipe Memory Database
+            Clear local memory
           </button>
         </div>
       </aside>
@@ -505,7 +524,7 @@ function App() {
           
           {/* LEFT PANEL: Chat objectives & synthesized results */}
           <div className="flex-1 flex flex-col overflow-y-auto border-r border-aria-border">
-            <div className="flex-1 p-6 space-y-6 max-w-3xl mx-auto w-full">
+            <div className="flex-1 p-6 space-y-6 w-full">
               
               {/* Errors container */}
               {error && (
@@ -798,7 +817,7 @@ function App() {
 
         {/* BOTTOM INPUT & DECOMPOSE QUERY BUILDER PANEL */}
         <div className="p-6 border-t border-aria-border bg-aria-bg">
-          <div className="max-w-3xl mx-auto space-y-4">
+          <div className="w-full space-y-4">
             
             {/* Planned subqueries editor */}
             {customPlan.length > 0 && (
@@ -828,9 +847,10 @@ function App() {
                       />
                       <button 
                         onClick={() => removePlanQuery(idx)}
+                        aria-label={`Remove query step ${idx + 1}`}
                         className="p-1 hover:bg-aria-bg rounded text-aria-muted hover:text-aria-text transition-colors"
                       >
-                        ✕
+                        <X size={12} />
                       </button>
                     </div>
                   ))}
