@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "aria-research-assistant"
 version = "1.0.1"
-description = "ARIA: Autonomous Research & Intelligence Assistant. An AI-powered RAG agent utilizing LangGraph and Streamlit to execute deep research loops with self-correcting verifiers."
+description = "ARIA: Autonomous Research & Intelligence Assistant. An AI-powered RAG agent utilizing LangGraph and a React Web GUI to execute deep research loops with self-correcting verifiers."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -23,7 +23,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence"
 ]
 dependencies = [
-    "streamlit>=1.35.0",
     "fastapi>=0.110.0",
     "uvicorn>=0.28.0",
     "python-multipart>=0.0.9",

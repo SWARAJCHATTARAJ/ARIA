@@ -2,14 +2,15 @@
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 [![LangGraph](https://img.shields.io/badge/orchestration-LangGraph-purple.svg)](https://github.com/langchain-ai/langgraph)
-[![Streamlit](https://img.shields.io/badge/frontend-Streamlit-FF4B4B.svg)](https://streamlit.io/)
+[![React](https://img.shields.io/badge/frontend-React-61DAFB.svg)](https://react.dev/)
+[![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **ARIA is a local-first AI research workspace that plans a question, retrieves evidence, writes a cited brief, verifies the draft, and exports a polished PDF.**
 
 Built by **Swaraj Chattaraj** to explore what production-style agentic RAG looks like beyond a simple chatbot.
 
-[Live Demo](https://emoaswda2wujafzekfe3pv.streamlit.app/) | [Repository](https://github.com/SWARAJCHATTARAJ/ARIA)
+[Repository](https://github.com/SWARAJCHATTARAJ/ARIA)
 
 ---
 
@@ -111,7 +112,8 @@ graph TD
 ## Tech Stack
 
 - **Python** for the agent and retrieval code
-- **Streamlit** for the research console
+- **React + Tailwind CSS** for the research console UI
+- **FastAPI** for serving the app and API endpoints
 - **LangGraph** for stateful agent orchestration
 - **ChromaDB** for local vector memory
 - **aiohttp / asyncio** for async public-source retrieval
@@ -129,20 +131,10 @@ If no OpenRouter key is configured, ARIA falls back to a local extractive synthe
 git clone https://github.com/SWARAJCHATTARAJ/ARIA.git
 cd ARIA
 
+# Set up virtual environment
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-
-streamlit run app.py
-```
-
-### Alternatively, Run Web GUI (React + FastAPI)
-
-To run the modern SaaS React Web GUI:
-
-```bash
-# Install additional dependencies
-uv pip install fastapi uvicorn python-multipart
 
 # Start the unified backend & frontend server
 python main.py
