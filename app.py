@@ -482,7 +482,7 @@ with open("assets/style.css", "r", encoding="utf-8") as f:
 
 
 if "view" not in st.session_state:
-    st.session_state["view"] = "Research"
+    st.session_state["view"] = "React Console (New)"
 
 memory = get_memory()
 settings = Settings.from_env()
@@ -493,7 +493,7 @@ with st.sidebar:
     st.caption("Agentic research console")
     view = st.radio(
         "Navigation",
-        ["Research", "Knowledge Base", "Results", "History"],
+        ["React Console (New)", "Research", "Knowledge Base", "Results", "History"],
         key="view",
         label_visibility="collapsed",
     )
@@ -534,36 +534,220 @@ with st.sidebar:
     else:
         st.caption("No saved sessions yet.")
 
-st.markdown(
-    """
-    <section class="agent-shell">
-        <div class="agent-title">
-            <div>
-                <div class="agent-kicker">Autonomous Research Intelligence Analyst</div>
-                <h1>ARIA Agent Console</h1>
-                <p>Plan, retrieve, synthesize, verify, and export research briefs from live web sources and your local knowledge base.</p>
+if view != "React Console (New)":
+    st.markdown(
+        """
+        <section class="agent-shell">
+            <div class="agent-title">
+                <div>
+                    <div class="agent-kicker">Autonomous Research Intelligence Analyst</div>
+                    <h1>ARIA Agent Console</h1>
+                    <p>Plan, retrieve, synthesize, verify, and export research briefs from live web sources and your local knowledge base.</p>
+                </div>
+                <div class="status-pill">System Online</div>
             </div>
-            <div class="status-pill">System Online</div>
-        </div>
-    </section>
-    """,
-    unsafe_allow_html=True,
-)
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
 
-st.markdown('<div class="metric-grid">', unsafe_allow_html=True)
-m1, m2, m3, m4 = st.columns(4)
-with m1:
-    metric_card("Memory", str(memory.count()), "chunks indexed")
-with m2:
-    metric_card("Evidence", str(sum(counts.values())), "items in last run")
-with m3:
-    metric_card("Source Mix", str(len(counts)), "types collected")
-with m4:
-    metric_card("Verifier", "Active", "self-check loop")
-st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('<div class="metric-grid">', unsafe_allow_html=True)
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        metric_card("Memory", str(memory.count()), "chunks indexed")
+    with m2:
+        metric_card("Evidence", str(sum(counts.values())), "items in last run")
+    with m3:
+        metric_card("Source Mix", str(len(counts)), "types collected")
+    with m4:
+        metric_card("Verifier", "Active", "self-check loop")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
-if view == "Research":
+def check_port(host: str, port: int) -> bool:
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=0.15):
+            return True
+    except (OSError, ConnectionRefusedError):
+        return False
+
+
+if view == "React Console (New)":
+    st.markdown(
+        """
+        <style>
+        /* Modern glassmorphism panels & full viewport scaling for the iframe */
+        [data-testid="stAppViewBlockContainer"] {
+            max-width: 100% !important;
+            padding-left: 1.5rem !important;
+            padding-right: 1.5rem !important;
+            padding-top: 1rem !important;
+            padding-bottom: 1rem !important;
+        }
+        .status-card {
+            background: rgba(10, 25, 47, 0.5);
+            border: 1px solid rgba(88, 214, 255, 0.15);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(8px);
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .status-online {
+            background: rgba(0, 230, 255, 0.1);
+            color: #00e6ff;
+            border: 1px solid rgba(0, 230, 255, 0.3);
+            box-shadow: 0 0 8px rgba(0, 230, 255, 0.2);
+        }
+        .status-offline {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .pulsing-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-right: 6px;
+            display: inline-block;
+        }
+        .pulsing-dot-online {
+            background-color: #00e6ff;
+            box-shadow: 0 0 6px #00e6ff;
+            animation: pulse-badge-dot 2s infinite;
+        }
+        .pulsing-dot-offline {
+            background-color: #ef4444;
+        }
+        @keyframes pulse-badge-dot {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Check server statuses
+    vite_online = check_port("127.0.0.1", 5173) or check_port("localhost", 5173)
+    fastapi_online = check_port("127.0.0.1", 8000) or check_port("localhost", 8000)
+
+    # Header section with server statuses
+    st.markdown('<div class="agent-shell" style="padding: 16px 20px; margin-bottom: 16px;">', unsafe_allow_html=True)
+    header_col, action_col = st.columns([3, 1], vertical_alignment="center")
+    
+    with header_col:
+        st.markdown(
+            """
+            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                <h2 style="margin: 0; font-size: 26px;">ARIA React Console</h2>
+                <div style="display: flex; gap: 8px;">
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Vite Badge
+        if vite_online:
+            st.markdown('<span class="status-badge status-online"><span class="pulsing-dot pulsing-dot-online"></span>Vite Dev Server (5173)</span>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span class="status-badge status-offline"><span class="pulsing-dot pulsing-dot-offline"></span>Vite Server Offline</span>', unsafe_allow_html=True)
+            
+        # FastAPI Badge
+        if fastapi_online:
+            st.markdown('<span class="status-badge status-online"><span class="pulsing-dot pulsing-dot-online"></span>FastAPI Backend (8000)</span>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span class="status-badge status-offline"><span class="pulsing-dot pulsing-dot-offline"></span>FastAPI Offline</span>', unsafe_allow_html=True)
+            
+        st.markdown(
+            """
+                </div>
+            </div>
+            <p style="margin: 4px 0 0 0; font-size: 13px; color: #94a3b8;">
+                Real-time hot-reloaded react environment integrated directly inside your research console.
+            </p>
+            """,
+            unsafe_allow_html=True
+        )
+        
+    with action_col:
+        # Default selection logic: if Vite is online, use it; otherwise FastAPI
+        default_mode_index = 0 if vite_online else 1
+        
+        server_mode = st.radio(
+            "Target Endpoint:",
+            ["Vite Dev Server (5173)", "Production API (8000)"],
+            index=default_mode_index,
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+        
+        url = "http://localhost:5173" if "5173" in server_mode else "http://localhost:8000"
+        
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Handle service state warnings and setup guide
+    if not fastapi_online or (not vite_online and "5173" in server_mode):
+        st.markdown('<div class="status-card">', unsafe_allow_html=True)
+        
+        if not fastapi_online:
+            st.markdown(
+                """
+                <h4 style="color: #ef4444; margin-top: 0; display: flex; align-items: center; gap: 8px;">
+                    ⚠️ FastAPI Backend is Offline (Port 8000)
+                </h4>
+                <p style="font-size: 14px; margin-bottom: 12px; color: #cbd5e1;">
+                    The React Console requires the FastAPI backend to function. Please start the backend first:
+                </p>
+                <pre style="background: #020714; padding: 10px; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.2); color: #e2e8f0; font-family: monospace;">python main.py</pre>
+                """,
+                unsafe_allow_html=True
+            )
+            
+        if not vite_online and "5173" in server_mode:
+            st.markdown(
+                """
+                <h4 style="color: #ef4444; margin-top: 15px; display: flex; align-items: center; gap: 8px;">
+                    ⚠️ Vite Dev Server is Offline (Port 5173)
+                </h4>
+                <p style="font-size: 14px; margin-bottom: 12px; color: #cbd5e1;">
+                    You are trying to view the live reload server but it is not running. Start the dev server in the <code>frontend</code> folder:
+                </p>
+                <pre style="background: #020714; padding: 10px; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.2); color: #e2e8f0; font-family: monospace;">cd frontend\nnpm run dev</pre>
+                <p style="font-size: 13px; color: #94a3b8; margin-top: 8px;">
+                    Alternatively, select the <b>Production API (8000)</b> option above to view the compiled static build.
+                </p>
+                """,
+                unsafe_allow_html=True
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # Render the iframe if the server is responsive or user wants to attempt load
+    iframe_col, control_col = st.columns([15, 1])
+    with control_col:
+        # A tiny utility to open in a new tab if they need
+        st.markdown(
+            f'<a href="{url}" target="_blank" style="text-decoration: none;">'
+            f'<button style="width: 100%; height: 42px; border-radius: 8px; border: 1px solid rgba(88, 214, 255, 0.25); '
+            f'background: rgba(10, 25, 47, 0.6); color: #00e6ff; cursor: pointer; display: flex; justify-content: center; '
+            f'align-items: center;" title="Open in New Tab">↗</button></a>',
+            unsafe_allow_html=True
+        )
+
+    # Render iframe stretching to cover height nicely
+    st.components.v1.iframe(url, height=920, scrolling=True)
+
+elif view == "Research":
     input_col, ops_col = st.columns([1.75, 1], gap="large")
 
     with input_col:
