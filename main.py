@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from aria.agent import ResearchAgent
-from aria.core import Settings, MAX_PDF_PAGES, MAX_UPLOAD_MB, validate_pdf_upload, ResearchResult, Evidence, estimate_tokens
+from aria.core import Settings, validate_pdf_upload, estimate_tokens
 from aria.rag import VectorMemory
 from aria.reports import build_markdown_report, build_pdf_report
 from aria.sessions import list_sessions, load_session, save_session, result_to_dict
