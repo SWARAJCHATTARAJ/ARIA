@@ -117,6 +117,7 @@ function App() {
     }
     return id;
   });
+  const [localUserId, setLocalUserId] = useState(userId);
 
 
 
@@ -167,6 +168,10 @@ function App() {
 
   useEffect(() => {
     fetchSessions();
+  }, [userId]);
+
+  useEffect(() => {
+    setLocalUserId(userId);
   }, [userId]);
 
 
@@ -1747,18 +1752,31 @@ function App() {
                   <div className="flex gap-2">
                     <input 
                       type="text" 
-                      value={userId} 
-                      onChange={(e) => {
-                        const newId = e.target.value;
-                        setUserId(newId);
-                        localStorage.setItem("aria_user_id", newId);
+                      value={localUserId} 
+                      onChange={(e) => setLocalUserId(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          setUserId(localUserId);
+                          localStorage.setItem("aria_user_id", localUserId);
+                        }
                       }}
                       placeholder="e.g. user_123"
                       className="flex-1 bg-aria-bg border border-aria-border rounded-xl px-3 py-2 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent"
                     />
                     <button 
                       onClick={() => {
+                        setUserId(localUserId);
+                        localStorage.setItem("aria_user_id", localUserId);
+                      }}
+                      className="px-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border rounded-xl text-xs font-semibold text-aria-text transition-colors"
+                      title="Apply User ID"
+                    >
+                      Enter
+                    </button>
+                    <button 
+                      onClick={() => {
                         const newId = "user_" + Math.random().toString(36).substring(2, 11);
+                        setLocalUserId(newId);
                         setUserId(newId);
                         localStorage.setItem("aria_user_id", newId);
                       }}
