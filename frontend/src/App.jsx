@@ -507,15 +507,13 @@ function App() {
         {/* TOP MINIMALIST HEADER & PROGRESS TRACKER */}
         <header className="h-14 px-4 md:px-6 border-b border-aria-border flex items-center justify-between bg-aria-bg shrink-0 gap-2">
           <div className="flex items-center gap-3 min-w-0">
-            {!isSidebarOpen && (
-              <button
-                onClick={() => setIsSidebarOpen(true)}
-                className="p-1.5 rounded text-aria-muted hover:text-aria-text transition-colors border border-aria-border bg-aria-surface shrink-0"
-                title="Open Sidebar"
-              >
-                <Menu size={15} />
-              </button>
-            )}
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-1.5 rounded text-aria-muted hover:text-aria-text transition-colors border border-aria-border bg-aria-surface shrink-0"
+              title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+            >
+              <Menu size={15} />
+            </button>
             <span className="text-xs font-semibold tracking-wide text-aria-text uppercase truncate">Research Workspace</span>
           </div>
 

@@ -206,6 +206,9 @@ class LLMClientTests(unittest.TestCase):
         self.assertTrue(is_developer_query("who built ARIA"))
         self.assertTrue(is_developer_query("developer of aria"))
         self.assertTrue(is_developer_query("who is Swaraj Chattaraj?"))
+        self.assertTrue(is_developer_query("who build you?"))
+        self.assertTrue(is_developer_query("who created you"))
+        self.assertTrue(is_developer_query("who is your developer?"))
         self.assertFalse(is_developer_query("Compare supply chain risks"))
 
     def test_developer_query_fallback(self) -> None:

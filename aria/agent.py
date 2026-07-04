@@ -21,7 +21,10 @@ def is_developer_query(query: str) -> bool:
         "built aria", "build aria", "creator of aria", "created aria", 
         "who made aria", "swaraj", "chattaraj", "who built this", 
         "who developed aria", "developer of aria", "author of aria",
-        "who is swaraj", "swaraj's details"
+        "who is swaraj", "swaraj's details",
+        "built you", "build you", "created you", "made you", "developed you",
+        "programmed you", "programed you", "your developer", "your creator",
+        "your author", "your maker", "built this system", "built this app"
     ]
     return any(k in q for k in keywords)
 
@@ -348,6 +351,21 @@ class ResearchAgent:
         
         new_evidence: list[Evidence] = []
         new_events: list[str] = []
+        
+        # Intercept creator/developer queries at the main question level
+        if is_developer_query(question):
+            new_events.append("Retriever: main question is about ARIA's creator/developer; loading professional profile")
+            dev_ev = Evidence(
+                title=DEVELOPER_PROFILE_EVIDENCE.title,
+                summary=DEVELOPER_PROFILE_EVIDENCE.summary,
+                source_type=DEVELOPER_PROFILE_EVIDENCE.source_type,
+                url=DEVELOPER_PROFILE_EVIDENCE.url,
+                score=DEVELOPER_PROFILE_EVIDENCE.score,
+                source_id=DEVELOPER_PROFILE_EVIDENCE.source_id,
+                retrieved_via=DEVELOPER_PROFILE_EVIDENCE.retrieved_via,
+                query=question
+            )
+            new_evidence.append(dev_ev)
         
         is_global_summary = False
         if use_local and iteration == 0:
