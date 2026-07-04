@@ -1026,22 +1026,43 @@ function App() {
               
               {/* Document download buttons bar */}
               <div className="p-3 border-t border-aria-border bg-aria-bg/50 flex gap-2 justify-end">
-                <button
-                  type="button"
-                  onClick={() => downloadReport("pdf")}
-                  disabled={!selectedSessionId}
-                  className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
-                >
-                  <Download size={11} /> Download PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={() => downloadReport("md")}
-                  disabled={!selectedSessionId}
-                  className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
-                >
-                  <Download size={11} /> Download MD
-                </button>
+                {selectedSessionId ? (
+                  <>
+                    <a
+                      href={`${API_BASE}/api/sessions/${selectedSessionId}/download/pdf?user_id=${encodeURIComponent(userId)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                    >
+                      <Download size={11} /> Download PDF
+                    </a>
+                    <a
+                      href={`${API_BASE}/api/sessions/${selectedSessionId}/download/md?user_id=${encodeURIComponent(userId)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                    >
+                      <Download size={11} /> Download MD
+                    </a>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled
+                      className="px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                    >
+                      <Download size={11} /> Download PDF
+                    </button>
+                    <button
+                      type="button"
+                      disabled
+                      className="px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                    >
+                      <Download size={11} /> Download MD
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
