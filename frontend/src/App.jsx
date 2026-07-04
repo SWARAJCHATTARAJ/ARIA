@@ -112,7 +112,7 @@ function App() {
   const [userId, setUserId] = useState(() => {
     let id = localStorage.getItem("aria_user_id");
     if (!id) {
-      id = "user_" + Math.random().toString(36).substring(2, 11);
+      id = OWNER_USER_ID;
       localStorage.setItem("aria_user_id", id);
     }
     return id;
