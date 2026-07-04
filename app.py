@@ -216,12 +216,13 @@ try:
         st.markdown(
             """
             <style>
-            html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+            html, body, .stApp {
                 width: 100vw !important;
                 height: 100vh !important;
-                min-height: 100vh !important;
                 overflow: hidden !important;
                 background: #0A0A0B !important;
+                margin: 0 !important;
+                padding: 0 !important;
             }
             [data-testid="stHeader"], [data-testid="stToolbar"], #MainMenu, footer,
             [data-testid="stDecoration"], [data-testid="stStatusWidget"] {
@@ -229,34 +230,18 @@ try:
                 visibility: hidden !important;
                 height: 0 !important;
             }
-            .main .block-container,
-            [data-testid="stAppViewContainer"] .block-container,
-            [data-testid="stMainBlockContainer"],
-            [data-testid="stAppViewBlockContainer"] {
-                max-width: none !important;
-                width: 100vw !important;
-                height: 100vh !important;
-                padding: 0 !important;
-                margin: 0 !important;
-            }
-            [data-testid="stVerticalBlock"],
-            [data-testid="stElementContainer"],
-            .element-container,
-            [data-testid="stHtml"] {
-                width: 100vw !important;
-                height: 100vh !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                gap: 0 !important;
-            }
             iframe {
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
                 width: 100vw !important;
                 height: 100vh !important;
                 min-height: 100vh !important;
                 border: 0 !important;
-                display: block !important;
+                z-index: 999999 !important;
                 margin: 0 !important;
                 padding: 0 !important;
+                overflow: hidden !important;
             }
             </style>
             """,
@@ -269,8 +254,8 @@ try:
               <head>
                 <style>
                   html, body {{
-                    width: 100vw;
-                    height: 100vh;
+                    width: 100%;
+                    height: 100%;
                     margin: 0;
                     padding: 0;
                     overflow: hidden;
@@ -279,10 +264,14 @@ try:
                     font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
                   }}
                   iframe {{
-                    width: 100vw;
-                    height: 100vh;
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
                     border: 0;
-                    display: block;
+                    margin: 0;
+                    padding: 0;
                     background: #0A0A0B;
                   }}
                 </style>
