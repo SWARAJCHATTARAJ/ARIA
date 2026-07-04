@@ -63,7 +63,7 @@ def configured_backend_url() -> str:
             page_host = st.context.headers.get("host", "")
             if page_host:
                 host_ip = page_host.split(":")[0].strip()
-                if host_ip and host_ip not in {"localhost", "127.0.0.1", "::1"}:
+                if host_ip:
                     if is_local_host(host_ip):
                         return f"http://{host_ip}:{BACKEND_PORT}"
                     else:
@@ -298,7 +298,7 @@ try:
                 </style>
               </head>
               <body>
-                <iframe src="{backend_url}" title="ARIA Research Console" allow="clipboard-read; clipboard-write"></iframe>
+                <iframe src="{backend_url}" title="ARIA Research Console" allow="clipboard-read; clipboard-write" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads allow-forms"></iframe>
               </body>
             </html>
             """,

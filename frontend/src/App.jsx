@@ -1025,43 +1025,59 @@ function App() {
               </div>
               
               {/* Document download buttons bar */}
-              <div className="p-3 border-t border-aria-border bg-aria-bg/50 flex gap-2 justify-end">
-                {selectedSessionId ? (
-                  <>
+              <div className="p-3 border-t border-aria-border bg-aria-bg/50 flex flex-col gap-2">
+                <div className="flex gap-2 justify-end">
+                  {selectedSessionId ? (
+                    <>
+                      <a
+                        href={`${API_BASE}/api/sessions/${selectedSessionId}/download/pdf?user_id=${encodeURIComponent(userId)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                      >
+                        <Download size={11} /> Download PDF
+                      </a>
+                      <a
+                        href={`${API_BASE}/api/sessions/${selectedSessionId}/download/md?user_id=${encodeURIComponent(userId)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                      >
+                        <Download size={11} /> Download MD
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        disabled
+                        className="px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                      >
+                        <Download size={11} /> Download PDF
+                      </button>
+                      <button
+                        type="button"
+                        disabled
+                        className="px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                      >
+                        <Download size={11} /> Download MD
+                      </button>
+                    </>
+                  )}
+                </div>
+                {selectedSessionId && window.self !== window.top && (
+                  <p className="text-[9px] text-aria-muted text-right">
+                    Blocked by iframe sandbox? Try opening the{" "}
                     <a
-                      href={`${API_BASE}/api/sessions/${selectedSessionId}/download/pdf?user_id=${encodeURIComponent(userId)}`}
+                      href={window.location.origin}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                      className="text-aria-accent hover:underline font-semibold"
                     >
-                      <Download size={11} /> Download PDF
-                    </a>
-                    <a
-                      href={`${API_BASE}/api/sessions/${selectedSessionId}/download/md?user_id=${encodeURIComponent(userId)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
-                    >
-                      <Download size={11} /> Download MD
-                    </a>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      disabled
-                      className="px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
-                    >
-                      <Download size={11} /> Download PDF
-                    </button>
-                    <button
-                      type="button"
-                      disabled
-                      className="px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
-                    >
-                      <Download size={11} /> Download MD
-                    </button>
-                  </>
+                      standalone app
+                    </a>{" "}
+                    directly.
+                  </p>
                 )}
               </div>
             </div>
