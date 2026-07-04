@@ -66,6 +66,9 @@ def configured_backend_url() -> str:
                 if host_ip and host_ip not in {"localhost", "127.0.0.1", "::1"}:
                     if is_local_host(host_ip):
                         return f"http://{host_ip}:{BACKEND_PORT}"
+                    else:
+                        # On a public Streamlit host, default to the deployed public backend URL
+                        return "https://aria-2-f3kq.onrender.com"
     except Exception:
         pass
 
