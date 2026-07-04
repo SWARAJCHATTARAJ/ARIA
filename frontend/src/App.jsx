@@ -400,7 +400,7 @@ function App() {
     setCustomPlan(updated);
   };
 
-  const downloadReport = async (format) => {
+  const downloadReport = (format) => {
     if (!selectedSessionId) {
       setError("No saved research session is selected for download.");
       return;
@@ -408,29 +408,8 @@ function App() {
 
     setError(null);
     try {
-      const response = await fetch(
-        `${API_BASE}/api/sessions/${selectedSessionId}/download/${format}?user_id=${encodeURIComponent(userId)}`
-      );
-      if (!response.ok) {
-        let message = `Download failed with status ${response.status}.`;
-        try {
-          const data = await response.json();
-          message = data.detail || message;
-        } catch {
-          // Keep the status-based message when the response is not JSON.
-        }
-        throw new Error(message);
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `aria_brief_${selectedSessionId}.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      const url = `${API_BASE}/api/sessions/${selectedSessionId}/download/${format}?user_id=${encodeURIComponent(userId)}`;
+      window.open(url, "_blank");
     } catch (err) {
       setError(err.message || `Failed to download ${format.toUpperCase()} report.`);
     }
