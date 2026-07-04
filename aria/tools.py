@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import xml.etree.ElementTree as ET
+import re
+import html
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 from .core import Evidence
@@ -37,6 +40,9 @@ async def async_free_web_search(query: str, max_results: int = 5) -> list[Eviden
             async_openalex_search(session, query, 2),
             async_arxiv_search(session, query, 2),
             async_duckduckgo_instant_answer(session, query),
+            async_duckduckgo_search(session, query, 2),
+            async_doaj_search(session, query, 2),
+            async_pubmed_search(session, query, 2),
             return_exceptions=True,
         )
 
@@ -200,6 +206,82 @@ async def async_duckduckgo_instant_answer(session, query: str) -> list[Evidence]
     ]
 
 
+async def async_duckduckgo_search(session, query: str, max_results: int = 3) -> list[Evidence]:
+    """Queries DuckDuckGo HTML Search to retrieve general web snippets and links."""
+    import aiohttp
+    url = "https://html.duckduckgo.com/html/"
+    try:
+        # Construct header to look like a realistic web browser request
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Referer": "https://html.duckduckgo.com/",
+        }
+        data = {"q": query}
+        async with session.post(url, data=data, headers=headers, timeout=aiohttp.ClientTimeout(total=4)) as response:
+            if response.status != 200:
+                # Try GET fallback
+                async with session.get(url, params=data, headers=headers, timeout=aiohttp.ClientTimeout(total=4)) as response2:
+                    if response2.status != 200:
+                        return []
+                    html_content = await response2.text()
+            else:
+                html_content = await response.text()
+    except Exception:
+        try:
+            # Simple GET fallback using session defaults
+            async with session.get(url, params={"q": query}, timeout=aiohttp.ClientTimeout(total=3)) as response:
+                if response.status != 200:
+                    return []
+                html_content = await response.text()
+        except Exception:
+            return []
+
+    parts = re.split(r'<div class="[^"]*result__body[^"]*"[^>]*>', html_content)
+    bodies = parts[1:]
+    evidence: list[Evidence] = []
+    
+    for body in bodies:
+        title_match = re.search(r'<h2 class="result__title">.*?<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', body, re.DOTALL)
+        snippet_match = re.search(r'<a class="result__snippet"[^>]*>(.*?)</a>', body, re.DOTALL)
+        
+        if title_match:
+            url_found = title_match.group(1)
+            title_text = re.sub(r'<[^>]+>', '', title_match.group(2)).strip()
+            title_text = html.unescape(title_text)
+            
+            snippet_text = ""
+            if snippet_match:
+                snippet_text = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip()
+                snippet_text = html.unescape(snippet_text)
+            
+            if not snippet_text:
+                continue
+                
+            if "/l/?kh=" in url_found or "uddg=" in url_found:
+                url_match = re.search(r'uddg=([^&]+)', url_found)
+                if url_match:
+                    url_found = urllib.parse.unquote(url_match.group(1))
+            
+            evidence.append(
+                Evidence(
+                    title=title_text or "DuckDuckGo web source",
+                    summary=snippet_text[:1200],
+                    url=url_found,
+                    source_type="web",
+                    score=0.75,
+                    source_id=url_found,
+                    retrieved_via="duckduckgo_html_async",
+                )
+            )
+            if len(evidence) >= max_results:
+                break
+                
+    return evidence
+
+
 def get_market_snapshot(tickers: list[str]) -> list[Evidence]:
     """Retrieves basic stock market parameters for requested tickers."""
     try:
@@ -250,3 +332,101 @@ def inverted_abstract(index: dict[str, list[int]] | None) -> str:
         for position in positions:
             words.append((position, word))
     return " ".join(word for _, word in sorted(words))
+
+
+async def async_doaj_search(session, query: str, max_results: int = 2) -> list[Evidence]:
+    """Queries Directory of Open Access Journals (DOAJ) to retrieve open-access academic articles."""
+    try:
+        import aiohttp
+        url = f"https://doaj.org/api/v2/search/articles/{urllib.parse.quote(query)}"
+        async with session.get(url, params={"pageSize": max_results}, timeout=aiohttp.ClientTimeout(total=4)) as response:
+            if response.status != 200:
+                return []
+            data = await response.json()
+    except Exception:
+        return []
+
+    evidence = []
+    for result in data.get("results", []):
+        bibjson = result.get("bibjson", {})
+        title = bibjson.get("title") or "DOAJ academic paper"
+        abstract = bibjson.get("abstract") or ""
+        
+        url_link = None
+        links = bibjson.get("link", [])
+        if links:
+            url_link = links[0].get("url")
+
+        evidence.append(
+            Evidence(
+                title=title,
+                summary=abstract[:1200] if abstract else "Abstract not available.",
+                url=url_link,
+                source_type="research",
+                score=0.80,
+                source_id=url_link or title,
+                retrieved_via="doaj_async",
+            )
+        )
+    return evidence
+
+
+async def async_pubmed_search(session, query: str, max_results: int = 2) -> list[Evidence]:
+    """Queries NCBI PubMed to retrieve biomedical and life sciences literature."""
+    try:
+        import aiohttp
+        search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        params = {
+            "db": "pubmed",
+            "term": query,
+            "retmode": "json",
+            "retmax": max_results
+        }
+        async with session.get(search_url, params=params, timeout=aiohttp.ClientTimeout(total=4)) as response:
+            if response.status != 200:
+                return []
+            search_data = await response.json()
+            id_list = search_data.get("esearchresult", {}).get("idlist", [])
+            
+        if not id_list:
+            return []
+            
+        ids_str = ",".join(id_list)
+        summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+        params_sum = {
+            "db": "pubmed",
+            "id": ids_str,
+            "retmode": "json"
+        }
+        async with session.get(summary_url, params=params_sum, timeout=aiohttp.ClientTimeout(total=4)) as sum_response:
+            if sum_response.status != 200:
+                return []
+            summary_data = await sum_response.json()
+            results = summary_data.get("result", {})
+            
+        evidence = []
+        for uid in id_list:
+            paper_info = results.get(uid, {})
+            title = paper_info.get("title") or "PubMed article"
+            source = paper_info.get("source") or "NCBI PubMed"
+            pubdate = paper_info.get("pubdate") or ""
+            
+            summary_text = f"Journal: {source}. Publication Date: {pubdate}."
+            authors = [a.get("name") for a in paper_info.get("authors", []) if a.get("name")]
+            if authors:
+                summary_text += f" Authors: {', '.join(authors)}."
+                
+            evidence.append(
+                Evidence(
+                    title=title,
+                    summary=summary_text[:1200],
+                    url=f"https://pubmed.ncbi.nlm.nih.gov/{uid}/",
+                    source_type="research",
+                    score=0.85,
+                    source_id=f"PMID:{uid}",
+                    retrieved_via="pubmed_async",
+                )
+            )
+        return evidence
+    except Exception:
+        return []

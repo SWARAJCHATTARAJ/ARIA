@@ -78,8 +78,17 @@ function App() {
   const [useWeb, setUseWeb] = useState(true);
   const [useFinance, setUseFinance] = useState(false);
   const [maxIterations, setMaxIterations] = useState(2);
+  const [fieldFocus, setFieldFocus] = useState("all");
   const [temperature, setTemperature] = useState(0.2);
   const [topK, setTopK] = useState(5);
+  const [userId, setUserId] = useState(() => {
+    let id = localStorage.getItem("aria_user_id");
+    if (!id) {
+      id = "user_" + Math.random().toString(36).substring(2, 11);
+      localStorage.setItem("aria_user_id", id);
+    }
+    return id;
+  });
 
   const [error, setError] = useState(null);
   const [expandedCitationId, setExpandedCitationId] = useState(null);
@@ -91,8 +100,11 @@ function App() {
   useEffect(() => {
     fetchSettings();
     fetchMemoryCount();
-    fetchSessions();
   }, []);
+
+  useEffect(() => {
+    fetchSessions();
+  }, [userId]);
 
   // Auto scroll research logs
   useEffect(() => {
@@ -127,7 +139,7 @@ function App() {
 
   const fetchSessions = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/sessions`);
+      const response = await fetch(`${API_BASE}/api/sessions?user_id=${userId}`);
       if (response.ok) {
         const data = await response.json();
         setSessions(data.sessions);
@@ -145,10 +157,11 @@ function App() {
 
     setMemoryStatus(null);
     try {
-      const response = await fetch(`${API_BASE}/api/memory/clear`, { method: "POST" });
+      const response = await fetch(`${API_BASE}/api/memory/clear?user_id=${userId}`, { method: "POST" });
       if (response.ok) {
         setMemoryCount(0);
-        setMemoryStatus({ type: "success", message: "Local memory cleared." });
+        setMemoryStatus({ type: "success", message: "Local memory and search history cleared." });
+        fetchSessions();
       } else {
         throw new Error("Failed to clear local memory.");
       }
@@ -202,7 +215,8 @@ function App() {
           use_web: useWeb,
           use_finance: useFinance,
           max_iterations: maxIterations,
-          custom_plan: customPlan.length > 0 ? customPlan : null
+          custom_plan: customPlan.length > 0 ? customPlan : null,
+          field_focus: fieldFocus
         })
       });
 
@@ -1157,7 +1171,7 @@ function App() {
                 <div className="flex items-center justify-between p-2.5 bg-aria-bg/30 rounded-xl border border-aria-border">
                   <div>
                     <span className="font-medium block">Search Web Sources</span>
-                    <span className="text-[10px] text-aria-muted">Wikipedia, Arxiv, OpenAlex, DDG</span>
+                    <span className="text-[10px] text-aria-muted">Wikipedia, Arxiv, OpenAlex, DDG, DOAJ, PubMed</span>
                   </div>
                   <input 
                     type="checkbox" 
@@ -1191,6 +1205,26 @@ function App() {
                     onChange={(e) => setUseFinance(e.target.checked)}
                     className="accent-aria-accent h-4 w-4 rounded border-aria-border bg-aria-bg"
                   />
+                </div>
+
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[10px] font-semibold text-aria-muted uppercase tracking-wider block">Research Domain Focus</span>
+                  <div className="relative">
+                    <select 
+                      value={fieldFocus}
+                      onChange={(e) => setFieldFocus(e.target.value)}
+                      className="w-full bg-aria-bg/50 border border-aria-border rounded-xl px-3 py-2.5 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent appearance-none cursor-pointer"
+                    >
+                      <option value="all">🌐 All Domains (Comprehensive)</option>
+                      <option value="general">📰 General Web, Tech &amp; News</option>
+                      <option value="medical">🧬 Biomedical &amp; Life Sciences</option>
+                      <option value="stem">🔬 STEM (CS, Math, Engineering)</option>
+                      <option value="humanities">📚 Social Sciences &amp; Humanities</option>
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-aria-muted">
+                      <ChevronDown size={12} />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1229,7 +1263,7 @@ function App() {
                   />
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1 pt-1">
                   <div className="flex justify-between">
                     <span className="text-aria-muted">Top-k vector retrieval</span>
                     <span className="font-semibold text-aria-text">{topK} chunks</span>
@@ -1242,6 +1276,37 @@ function App() {
                     onChange={(e) => setTopK(parseInt(e.target.value))}
                     className="w-full h-1.5 bg-aria-border rounded-lg appearance-none cursor-pointer accent-aria-accent"
                   />
+                </div>
+
+                <div className="space-y-1.5 pt-3 border-t border-aria-border">
+                  <span className="text-[10px] font-semibold text-aria-muted uppercase tracking-wider block">User Session Profile</span>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={userId} 
+                      onChange={(e) => {
+                        const newId = e.target.value;
+                        setUserId(newId);
+                        localStorage.setItem("aria_user_id", newId);
+                      }}
+                      placeholder="e.g. user_123 or admin"
+                      className="flex-1 bg-aria-bg/50 border border-aria-border rounded-xl px-3 py-2 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent"
+                    />
+                    <button 
+                      onClick={() => {
+                        const newId = "user_" + Math.random().toString(36).substring(2, 11);
+                        setUserId(newId);
+                        localStorage.setItem("aria_user_id", newId);
+                      }}
+                      className="px-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border rounded-xl text-xs font-semibold transition"
+                      title="Generate new User ID"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  <span className="text-[10px] text-aria-muted block leading-normal pt-0.5">
+                    Enter <code className="text-aria-accent font-semibold">admin</code> to view and manage all users' research histories.
+                  </span>
                 </div>
               </div>
 

@@ -63,6 +63,7 @@ class AgentState(TypedDict):
     use_local: bool
     use_finance: bool
     max_iterations: int
+    field_focus: str
 
 
 class LLMClient:
@@ -73,7 +74,7 @@ class LLMClient:
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
         self.session = requests.Session()
 
-    def complete(self, system: str, user: str, task: str = "draft") -> str:
+    def complete(self, system: str, user: str, task: str = "draft", evidence: list[Evidence] | None = None) -> str:
         # Guarantee developer information is returned for creator queries
         if is_developer_query(user) or "developer_profile" in user:
             if task == "verify":
@@ -118,7 +119,7 @@ class LLMClient:
                 f"REASON: Grounding check passed (local fallback due to API rate limit). Checked {evidence_count} retrieved sources.\n"
                 "NEW_QUERIES:\n"
             )
-        return self._fallback(user)
+        return self._fallback(user, evidence)
 
     def _openrouter(self, system: str, user: str) -> str:
         payload = {
@@ -147,7 +148,7 @@ class LLMClient:
         except (requests.RequestException, KeyError, IndexError):
             return ""
 
-    def _fallback(self, user: str) -> str:
+    def _fallback(self, user: str, evidence: list[Evidence] | None = None) -> str:
         # Check if this is a developer query or if the developer evidence is present
         if "developer_profile" in user or is_developer_query(user):
             return (
@@ -167,44 +168,142 @@ class LLMClient:
                 "- Synthesis mode: Verified Developer Record"
             )
 
-        evidence = user.split("Evidence:", 1)[-1].strip()
-        snippets = [block.strip() for block in evidence.split("\n\n") if block.strip()]
-        if not snippets:
+        # Parse question from user
+        question = "Research Query"
+        if "Question:\n" in user:
+            question = user.split("Question:\n", 1)[1].split("\n\nEvidence:", 1)[0].strip()
+
+        if not evidence:
+            evidence = []
+            evidence_text = user.split("Evidence:", 1)[-1].strip()
+            snippets = [block.strip() for block in evidence_text.split("\n\n") if block.strip()]
+            for snip in snippets:
+                lines = snip.splitlines()
+                if not lines:
+                    continue
+                header = lines[0]
+                summary = " ".join(lines[1:])
+                title = header
+                url = None
+                match = re.match(r"^\[\d+\]\s*(.*?)(?:\s*\((https?://\S+)\))?$", header)
+                if match:
+                    title = match.group(1).strip()
+                    url = match.group(2)
+                
+                source_type = "web"
+                title_lower = title.lower()
+                if "p." in title_lower or "pdf" in title_lower:
+                    source_type = "pdf"
+                elif "wikipedia" in title_lower:
+                    source_type = "wikipedia"
+                elif "arxiv" in title_lower or "openalex" in title_lower:
+                    source_type = "research"
+                elif "snapshot" in title_lower:
+                    source_type = "finance"
+
+                evidence.append(
+                    Evidence(
+                        title=title,
+                        summary=summary,
+                        source_type=source_type,
+                        url=url,
+                        score=0.75,
+                        source_id=url or title
+                    )
+                )
+
+        if not evidence:
             return (
-                "### Executive View\n\n"
+                "### Executive Brief (Local Extractive Mode)\n\n"
                 "No usable evidence was retrieved from your search base.\n\n"
                 "### About ARIA\n\n"
                 "ARIA (Autonomous Research Intelligence Analyst) is built to search, retrieve, synthesize, and verify "
                 "information from your local documents (PDFs, notes) and live web sources to write structured executive briefs.\n\n"
                 "### Required Action\n\n"
-                "- Select 'Hybrid' or 'Web Search Only' if you want live web results.\n"
+                "- Select 'Search Web Sources' if you want live web results.\n"
                 "- Upload PDFs or paste text in the 'Knowledge Base' tab to populate your local database.\n"
                 "- Ensure the search queries match the content of your indexed documents."
             )
 
-        source_blocks = [
-            item for item in snippets if "search unavailable" not in item.lower()
+        valid_evidence = [
+            item for item in evidence 
+            if "search unavailable" not in item.summary.lower() 
+            and "returned no results" not in item.title.lower()
         ]
-        if not source_blocks:
-            source_blocks = snippets
+        if not valid_evidence:
+            valid_evidence = evidence
 
-        top = source_blocks[:6]
-        bullets = []
-        for item in top:
-            first_line, _, rest = item.partition("\n")
-            sentence = first_sentence(rest or first_line)
-            bullets.append(f"- {sentence}")
-        return (
-            "### Executive View\n\n"
-            "ARIA found the following evidence-backed points:\n\n"
-            + "\n".join(bullets)
-            + "\n\n### Source Coverage\n\n"
-            f"- Evidence items reviewed: {len(snippets)}\n"
-            "- Synthesis mode: lightweight extractive analysis\n\n"
-            "### Analyst Caveat\n\n"
-            "Local extractive mode keeps the answer grounded in retrieved evidence. "
-            "Connect an OpenRouter key when you want fuller prose and model-backed verification."
-        )
+        # Group evidence by category
+        local_sources = []
+        web_sources = []
+        academic_sources = []
+        finance_sources = []
+        
+        for idx, item in enumerate(valid_evidence, start=1):
+            category = item.source_type.lower()
+            info = {"idx": idx, "item": item}
+            if category in {"pdf", "note", "document", "local"}:
+                local_sources.append(info)
+            elif category in {"wikipedia", "web"}:
+                web_sources.append(info)
+            elif category in {"research", "openalex", "arxiv"}:
+                academic_sources.append(info)
+            elif category in {"finance"}:
+                finance_sources.append(info)
+            else:
+                web_sources.append(info)
+                
+        output_lines = []
+        output_lines.append("### Executive Brief (Local Extractive Mode)")
+        output_lines.append(f"**Research Summary for:** *{question}*\n")
+        
+        if local_sources:
+            output_lines.append("#### 📂 Findings from Local Knowledge Base")
+            for info in local_sources:
+                idx = info["idx"]
+                item = info["item"]
+                summary = item.summary.strip()
+                if len(summary) > 400:
+                    summary = summary[:400].strip() + "..."
+                output_lines.append(f"- **{item.title}** [{idx}]: {summary}")
+            output_lines.append("")
+            
+        if web_sources:
+            output_lines.append("#### 🌐 Findings from Web & General Search")
+            for info in web_sources:
+                idx = info["idx"]
+                item = info["item"]
+                summary = item.summary.strip()
+                if len(summary) > 400:
+                    summary = summary[:400].strip() + "..."
+                output_lines.append(f"- **{item.title}** [{idx}]: {summary}")
+            output_lines.append("")
+            
+        if academic_sources:
+            output_lines.append("#### 🔬 Findings from Academic & Scientific Literature")
+            for info in academic_sources:
+                idx = info["idx"]
+                item = info["item"]
+                summary = item.summary.strip()
+                if len(summary) > 400:
+                    summary = summary[:400].strip() + "..."
+                output_lines.append(f"- **{item.title}** [{idx}]: {summary}")
+            output_lines.append("")
+            
+        if finance_sources:
+            output_lines.append("#### 📈 Financial Market Data")
+            for info in finance_sources:
+                idx = info["idx"]
+                item = info["item"]
+                output_lines.append(f"- **{item.title}** [{idx}]: {item.summary}")
+            output_lines.append("")
+            
+        output_lines.append("### Source Coverage Summary")
+        output_lines.append(f"- Total evidence items reviewed: {len(valid_evidence)}")
+        output_lines.append("- Synthesis mode: Structured Multi-Source Extraction")
+        output_lines.append("\n*Tip: Connect an OpenRouter API key in your settings for full generative AI reasoning, synthesis, and deep self-correction.*")
+        
+        return "\n".join(output_lines)
 
 
 def first_sentence(text: str) -> str:
@@ -251,6 +350,7 @@ class ResearchAgent:
         use_local: bool = True,
         use_finance: bool = False,
         max_iterations: int = 2,
+        field_focus: str = "all",
     ) -> ResearchResult:
         initial_state = {
             "question": question,
@@ -263,7 +363,8 @@ class ResearchAgent:
             "use_web": use_web,
             "use_local": use_local,
             "use_finance": use_finance,
-            "max_iterations": max_iterations
+            "max_iterations": max_iterations,
+            "field_focus": field_focus
         }
         
         final_state = self.graph.invoke(initial_state)
@@ -291,6 +392,7 @@ class ResearchAgent:
         queries: list[str],
         use_local: bool,
         use_web: bool,
+        field_focus: str = "all",
     ) -> tuple[list[Evidence], list[str]]:
         import aiohttp
         from .tools import (
@@ -298,6 +400,9 @@ class ResearchAgent:
             async_openalex_search,
             async_arxiv_search,
             async_duckduckgo_instant_answer,
+            async_duckduckgo_search,
+            async_doaj_search,
+            async_pubmed_search,
             HEADERS,
         )
 
@@ -340,18 +445,72 @@ class ResearchAgent:
                 tasks = []
                 task_metadata = []
                 for q in queries:
-                    events.append(f"Retriever: searching web sources for: {q}")
-                    tasks.append(async_wikipedia_search(session, q, 2))
+                    events.append(f"Retriever: searching web sources for: {q} [Focus: {field_focus}]")
+                    
+                    # Wikipedia (encyclopedic baseline)
+                    wiki_limit = 2
+                    if field_focus in {"medical", "stem"}:
+                        wiki_limit = 1
+                    elif field_focus == "general":
+                        wiki_limit = 3
+                    tasks.append(async_wikipedia_search(session, q, wiki_limit))
                     task_metadata.append((q, "wikipedia"))
 
-                    tasks.append(async_openalex_search(session, q, 2))
+                    # OpenAlex (cross-disciplinary baseline)
+                    openalex_limit = 2
+                    if field_focus in {"stem", "humanities"}:
+                        openalex_limit = 3
+                    elif field_focus in {"general", "medical"}:
+                        openalex_limit = 1
+                    tasks.append(async_openalex_search(session, q, openalex_limit))
                     task_metadata.append((q, "openalex"))
 
-                    tasks.append(async_arxiv_search(session, q, 2))
-                    task_metadata.append((q, "arxiv"))
+                    # Arxiv (STEM/CS/Physics)
+                    arxiv_limit = 2
+                    if field_focus == "stem":
+                        arxiv_limit = 4
+                    elif field_focus in {"medical", "humanities", "general"}:
+                        arxiv_limit = 0
+                    if arxiv_limit > 0:
+                        tasks.append(async_arxiv_search(session, q, arxiv_limit))
+                        task_metadata.append((q, "arxiv"))
 
-                    tasks.append(async_duckduckgo_instant_answer(session, q))
-                    task_metadata.append((q, "duckduckgo"))
+                    # DuckDuckGo Instant Answer (Definitions)
+                    if field_focus in {"general", "all"}:
+                        tasks.append(async_duckduckgo_instant_answer(session, q))
+                        task_metadata.append((q, "duckduckgo"))
+
+                    # DuckDuckGo HTML Web Search (General Web)
+                    ddg_limit = 2
+                    if field_focus == "general":
+                        ddg_limit = 4
+                    elif field_focus in {"medical", "stem", "humanities"}:
+                        ddg_limit = 1
+                    if ddg_limit > 0:
+                        tasks.append(async_duckduckgo_search(session, q, ddg_limit))
+                        task_metadata.append((q, "duckduckgo_web"))
+
+                    # DOAJ (All Open-Access Journals, humanities/general science)
+                    doaj_limit = 2
+                    if field_focus == "humanities":
+                        doaj_limit = 4
+                    elif field_focus == "medical":
+                        doaj_limit = 3
+                    elif field_focus == "general":
+                        doaj_limit = 0
+                    if doaj_limit > 0:
+                        tasks.append(async_doaj_search(session, q, doaj_limit))
+                        task_metadata.append((q, "doaj"))
+
+                    # PubMed (Biomedical & Medical)
+                    pubmed_limit = 2
+                    if field_focus == "medical":
+                        pubmed_limit = 4
+                    elif field_focus in {"stem", "humanities", "general"}:
+                        pubmed_limit = 0
+                    if pubmed_limit > 0:
+                        tasks.append(async_pubmed_search(session, q, pubmed_limit))
+                        task_metadata.append((q, "pubmed"))
 
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -376,6 +535,7 @@ class ResearchAgent:
         use_web = state["use_web"]
         use_local = state.get("use_local", True)
         use_finance = state["use_finance"]
+        field_focus = state.get("field_focus", "all")
         
         new_evidence: list[Evidence] = []
         new_events: list[str] = []
@@ -419,7 +579,7 @@ class ResearchAgent:
             
             if use_web:
                 queries_to_run = plan if plan else [question]
-                web_evidence, web_events = run_async(self._async_search(queries_to_run, use_local=False, use_web=True))
+                web_evidence, web_events = run_async(self._async_search(queries_to_run, use_local=False, use_web=True, field_focus=field_focus))
                 new_evidence.extend(web_evidence)
                 new_events.extend(web_events)
         else:
@@ -440,7 +600,7 @@ class ResearchAgent:
             else:
                 queries_to_run = plan if plan else [question]
 
-            web_evidence, web_events = run_async(self._async_search(queries_to_run, use_local=use_local, use_web=use_web))
+            web_evidence, web_events = run_async(self._async_search(queries_to_run, use_local=use_local, use_web=use_web, field_focus=field_focus))
             new_evidence.extend(web_evidence)
             new_events.extend(web_events)
                     
@@ -452,6 +612,9 @@ class ResearchAgent:
                     for ev in results:
                         ev.query = "Market Snapshots"
                     new_evidence.extend(results)
+
+        if not is_global_summary:
+            new_evidence = re_rank_evidence(question, new_evidence)
 
         return {"evidence": new_evidence, "events": new_events}
 
@@ -492,16 +655,17 @@ class ResearchAgent:
     def _draft(self, question: str, evidence: list[Evidence]) -> str:
         system = (
             "You are ARIA, an Autonomous Research Intelligence Analyst. "
-            "Write a clear, structured, accurate research brief answering the query. "
-            "For any key product, technology, standard, component, or algorithm discussed in your brief, "
-            "explicitly describe its core purpose—what it was specifically made for, built to do, and its intended function. "
-            "Highlight key specifications, performance characteristics, and parameters where relevant.\n"
-            "Use only the provided evidence. Cite sources using bracketed numbers [1], [2], etc., corresponding "
-            "to the order of evidence provided. If evidence is lacking, state the caveats and assumptions clearly. "
-            "Keep the tone direct, technical, and evidence-led."
+            "Write a clear, structured, accurate research brief answering the query.\n"
+            "CRITICAL WARNING ON HALLUCINATION:\n"
+            "- You must base your response SOLELY and STRICTLY on the provided evidence.\n"
+            "- Do NOT make up, assume, or extrapolate any details, numbers, URLs, specifications, or facts not explicitly stated in the evidence.\n"
+            "- If the provided evidence is empty, contains no factual details, or does not contain information directly relevant to answering the question, you MUST respond with: 'No sufficient evidence found to answer the query.' and nothing else.\n"
+            "- For any product, technology, standard, component, or algorithm described, explicitly state its core purpose and intended function as supported by the evidence.\n"
+            "- Cite all sources using bracketed numbers [1], [2], etc., corresponding to the exact index in the provided evidence. Every claim must have a citation.\n"
+            "Keep the tone professional, objective, technical, and evidence-led."
         )
         user = f"Question:\n{question}\n\nEvidence:\n{format_evidence(evidence, limit=12)}"
-        return self.llm.complete(system, user, task="draft")
+        return self.llm.complete(system, user, task="draft", evidence=evidence)
 
     def _verify(self, question: str, answer: str, evidence: list[Evidence]) -> str:
         if not evidence:
@@ -511,11 +675,12 @@ class ResearchAgent:
             system = (
                 "You are ARIA's Grounding & Verification Analyst. Your job is to verify if the draft "
                 "research analysis is fully grounded in the retrieved evidence and completely addresses the user's query.\n"
-                "Review the draft report and the evidence. Ensure that all claims regarding specifications, "
-                "limits, figures, and data are strictly supported. Check if key constraints or details are missing.\n"
+                "Review the draft report and the evidence carefully. Detect any hallucinations, claims, figures, or URLs "
+                "in the draft that are not explicitly stated in the retrieved evidence.\n"
+                "If the draft contains ANY ungrounded statements or assumptions, or fails to cite sources, you MUST set the STATUS to NEEDS_MORE_RESEARCH.\n"
                 "Output your findings EXACTLY in this format:\n"
                 "STATUS: [PASSED or NEEDS_MORE_RESEARCH]\n"
-                "REASON: [Brief explanation of verified parameters or what design/research details are missing/incorrect]\n"
+                "REASON: [Brief explanation of verified parameters or what design/research details/sources are missing, incorrect, or hallucinated]\n"
                 "NEW_QUERIES:\n"
                 "[List 1 or 2 new search queries to retrieve missing details, each on a new line. Leave empty if status is PASSED]"
             )
@@ -525,7 +690,7 @@ class ResearchAgent:
                 f"Draft Report:\n{answer}\n\n"
                 f"Evidence:\n{evidence_str}"
             )
-            return self.llm.complete(system, user, task="verify")
+            return self.llm.complete(system, user, task="verify", evidence=evidence)
             
         official = sum(1 for item in evidence if item.source_type in {"pdf", "research", "finance"})
         web = sum(1 for item in evidence if item.source_type in {"wikipedia", "web"})
@@ -640,3 +805,46 @@ def build_run_metrics(state: AgentState) -> dict[str, int | float | str]:
         "verification_tokens_est": estimate_tokens(verification),
         "total_output_tokens_est": estimate_tokens(answer) + estimate_tokens(verification),
     }
+
+
+def re_rank_evidence(query: str, evidence: list[Evidence]) -> list[Evidence]:
+    """Scores and re-ranks retrieved evidence based on token match overlap with the search query."""
+    if not query or not evidence:
+        return evidence
+
+    # Extract query terms (filtering out common stop words)
+    stop_words = {
+        "what", "is", "are", "the", "a", "an", "and", "or", "but", "in", 
+        "on", "at", "for", "to", "with", "of", "about", "how", "why", "who", "which"
+    }
+    query_terms = [
+        w for w in re.findall(r"\b\w{2,}\b", query.lower()) 
+        if w not in stop_words
+    ]
+    if not query_terms:
+        query_terms = re.findall(r"\b\w{2,}\b", query.lower())
+        if not query_terms:
+            return evidence
+
+    for item in evidence:
+        title = item.title or ""
+        summary = item.summary or ""
+        
+        match_score = 0.0
+        for term in query_terms:
+            title_count = len(re.findall(rf"\b{re.escape(term)}\b", title.lower()))
+            summary_count = len(re.findall(rf"\b{re.escape(term)}\b", summary.lower()))
+            
+            match_score += (title_count * 2.0) + (summary_count * 0.5)
+            
+            if title_count == 0 and term in title.lower():
+                match_score += 0.5
+            if summary_count == 0 and term in summary.lower():
+                match_score += 0.2
+                
+        overlap_ratio = min(1.0, match_score / (len(query_terms) * 1.5))
+        final_score = (item.score * 0.3) + (overlap_ratio * 0.7)
+        item.score = round(max(0.0, min(1.0, final_score)), 2)
+        
+    evidence.sort(key=lambda x: x.score, reverse=True)
+    return evidence

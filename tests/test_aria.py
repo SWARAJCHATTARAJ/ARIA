@@ -219,6 +219,202 @@ class LLMClientTests(unittest.TestCase):
         self.assertIn("Swaraj Chattaraj", res)
         self.assertIn("Creator & Developer", res)
 
+    def test_fallback_structured_summary(self) -> None:
+        from aria.agent import LLMClient
+        from aria.core import Evidence
+        client = LLMClient(Settings.from_env())
+        client.openrouter_api_key = None
+        evidence = [
+            Evidence(title="Sample Wikipedia", summary="Wikipedia source text.", source_type="wikipedia", score=0.8),
+            Evidence(title="Sample PDF p.1", summary="PDF source text.", source_type="pdf", score=0.9),
+            Evidence(title="Sample Arxiv", summary="Arxiv source text.", source_type="research", score=0.85)
+        ]
+        res = client.complete(
+            system="system_prompt",
+            user="Question:\nWhat is the test?\n\nEvidence:\n[1] Sample Wikipedia\nWikipedia source text.",
+            task="draft",
+            evidence=evidence
+        )
+        self.assertIn("Findings from Local Knowledge Base", res)
+        self.assertIn("Findings from Web & General Search", res)
+        self.assertIn("Findings from Academic & Scientific Literature", res)
+        self.assertIn("Sample Wikipedia", res)
+        self.assertIn("Sample PDF p.1", res)
+        self.assertIn("Sample Arxiv", res)
+
+    def test_async_duckduckgo_search_stub(self) -> None:
+        import asyncio
+        from aria.tools import run_async
+        from aria.core import Evidence
+        
+        # Test parsing function directly with simulated HTML content
+        from aria.tools import async_duckduckgo_search
+        
+        class MockResponse:
+            def __init__(self, status, text_data):
+                self.status = status
+                self.text_data = text_data
+            async def text(self):
+                return self.text_data
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        class MockSession:
+            def __init__(self, text_data):
+                self.text_data = text_data
+            def post(self, url, data=None, headers=None, timeout=None):
+                return MockResponse(200, self.text_data)
+
+        simulated_html = """
+        <div class="result__body">
+            <h2 class="result__title">
+                <a class="result__a" href="https://example.com/test">Test Title</a>
+            </h2>
+            <a class="result__snippet" href="https://example.com/test">This is a test snippet about python programming.</a>
+        </div>
+        """
+        session = MockSession(simulated_html)
+        loop = asyncio.new_event_loop()
+        try:
+            results = loop.run_until_complete(async_duckduckgo_search(session, "test query", 1))
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0].title, "Test Title")
+            self.assertEqual(results[0].url, "https://example.com/test")
+            self.assertIn("test snippet", results[0].summary)
+        finally:
+            loop.close()
+
+    def test_async_doaj_search_stub(self) -> None:
+        import asyncio
+        from aria.tools import async_doaj_search
+        
+        class MockResponse:
+            def __init__(self, status, json_data):
+                self.status = status
+                self.json_data = json_data
+            async def json(self):
+                return self.json_data
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        class MockSession:
+            def get(self, url, params=None, timeout=None):
+                mock_json = {
+                    "results": [
+                        {
+                            "bibjson": {
+                                "title": "Mock DOAJ Title",
+                                "abstract": "Mock DOAJ abstract text.",
+                                "link": [{"url": "https://doaj.org/mock"}]
+                            }
+                        }
+                    ]
+                }
+                return MockResponse(200, mock_json)
+
+        session = MockSession()
+        loop = asyncio.new_event_loop()
+        try:
+            results = loop.run_until_complete(async_doaj_search(session, "test query", 1))
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0].title, "Mock DOAJ Title")
+            self.assertEqual(results[0].url, "https://doaj.org/mock")
+            self.assertEqual(results[0].summary, "Mock DOAJ abstract text.")
+        finally:
+            loop.close()
+
+    def test_async_pubmed_search_stub(self) -> None:
+        import asyncio
+        from aria.tools import async_pubmed_search
+        
+        class MockResponse:
+            def __init__(self, status, json_data):
+                self.status = status
+                self.json_data = json_data
+            async def json(self):
+                return self.json_data
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+
+        class MockSession:
+            def get(self, url, params=None, timeout=None):
+                if "esearch" in url:
+                    return MockResponse(200, {"esearchresult": {"idlist": ["123456"]}})
+                else:
+                    mock_summary = {
+                        "result": {
+                            "123456": {
+                                "title": "Mock PubMed Title",
+                                "source": "Mock Journal",
+                                "pubdate": "2026",
+                                "authors": [{"name": "Author One"}]
+                            }
+                        }
+                    }
+                    return MockResponse(200, mock_summary)
+
+        session = MockSession()
+        loop = asyncio.new_event_loop()
+        try:
+            results = loop.run_until_complete(async_pubmed_search(session, "test query", 1))
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0].title, "Mock PubMed Title")
+            self.assertEqual(results[0].url, "https://pubmed.ncbi.nlm.nih.gov/123456/")
+            self.assertIn("Mock Journal", results[0].summary)
+            self.assertIn("Author One", results[0].summary)
+        finally:
+            loop.close()
+
+    def test_re_rank_evidence(self) -> None:
+        from aria.agent import re_rank_evidence
+        from aria.core import Evidence
+        
+        evidence = [
+            Evidence(title="Python programming", summary="A guide to python coding.", source_type="web", score=0.5),
+            Evidence(title="Java basics", summary="An introduction to Java language.", source_type="web", score=0.9),
+            Evidence(title="Cooking recipes", summary="How to bake chocolate cake.", source_type="web", score=0.8)
+        ]
+        
+        ranked = re_rank_evidence("python guide", evidence)
+        self.assertEqual(ranked[0].title, "Python programming")
+        self.assertTrue(ranked[0].score > ranked[1].score)
+
+    def test_user_session_isolation_and_clear(self) -> None:
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        from aria.core import ResearchResult
+        from aria.sessions import save_session, list_sessions, clear_sessions
+
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            result = ResearchResult(
+                question="Q1", plan=[], answer="A1", verification="Passed", evidence=[]
+            )
+            save_session(result, tmp_path, user_id="user1")
+            save_session(result, tmp_path, user_id="user2")
+            
+            user1_sessions = list_sessions(tmp_path, user_id="user1")
+            self.assertEqual(len(user1_sessions), 1)
+            self.assertEqual(user1_sessions[0]["user_id"], "user1")
+            
+            admin_sessions = list_sessions(tmp_path, user_id="admin")
+            self.assertEqual(len(admin_sessions), 2)
+            
+            clear_sessions(tmp_path, user_id="user1")
+            
+            user1_sessions_after = list_sessions(tmp_path, user_id="user1")
+            self.assertEqual(len(user1_sessions_after), 0)
+            
+            admin_sessions_after = list_sessions(tmp_path, user_id="admin")
+            self.assertEqual(len(admin_sessions_after), 1)
+            self.assertEqual(admin_sessions_after[0]["user_id"], "user2")
+
 
 if __name__ == "__main__":
     unittest.main()

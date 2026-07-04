@@ -71,6 +71,8 @@ class ResearchRequest(BaseModel):
     use_finance: bool = False
     max_iterations: int = 2
     custom_plan: list[str] | None = None
+    field_focus: str = "all"
+    user_id: str | None = None
 
 class IngestUrlRequest(BaseModel):
     url: str
@@ -184,7 +186,8 @@ async def run_research(request: ResearchRequest):
         "use_web": request.use_web,
         "use_local": request.use_local,
         "use_finance": request.use_finance,
-        "max_iterations": request.max_iterations
+        "max_iterations": request.max_iterations,
+        "field_focus": request.field_focus
     }
 
     async def sse_generator():
@@ -220,7 +223,7 @@ async def run_research(request: ResearchRequest):
             result.metrics = result_metrics(result)
             
             # Save session
-            session = save_session(result)
+            session = save_session(result, user_id=request.user_id)
             
             yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(result)})}\n\n"
             
@@ -297,20 +300,23 @@ async def get_memory_count():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/memory/clear")
-async def clear_memory():
-    """Clear local vector memory."""
+async def clear_memory(user_id: str | None = None):
+    """Clear local vector memory and optionally user's session history."""
     try:
-        memory = get_memory()
-        memory.reset()
-        return {"message": "Vector memory cleared successfully."}
+        if not user_id or user_id in {"admin", "owner"}:
+            memory = get_memory()
+            memory.reset()
+        from aria.sessions import clear_sessions
+        clear_sessions(user_id=user_id)
+        return {"message": "Memory cleared successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sessions")
-async def get_sessions(limit: int = 50):
-    """Retrieve list of saved research sessions."""
+async def get_sessions(user_id: str | None = None, limit: int = 50):
+    """Retrieve list of saved research sessions isolated by user."""
     try:
-        sessions = list_sessions(limit=limit)
+        sessions = list_sessions(limit=limit, user_id=user_id)
         return {"sessions": sessions}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

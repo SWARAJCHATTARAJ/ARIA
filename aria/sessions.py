@@ -41,12 +41,13 @@ def result_from_dict(data: dict) -> ResearchResult:
     )
 
 
-def save_session(result: ResearchResult, session_dir: Path = SESSION_DIR) -> dict:
+def save_session(result: ResearchResult, session_dir: Path = SESSION_DIR, user_id: str | None = None) -> dict:
     session_dir.mkdir(parents=True, exist_ok=True)
     created_at = utc_now_iso()
     session_id = uuid4().hex
     payload = {
         "id": session_id,
+        "user_id": user_id,
         "created_at": created_at,
         "title": result.question[:90],
         "result": result_to_dict(result),
@@ -58,7 +59,7 @@ def save_session(result: ResearchResult, session_dir: Path = SESSION_DIR) -> dic
     return payload
 
 
-def list_sessions(session_dir: Path = SESSION_DIR, limit: int = 25) -> list[dict]:
+def list_sessions(session_dir: Path = SESSION_DIR, limit: int = 25, user_id: str | None = None) -> list[dict]:
     if not session_dir.exists():
         return []
 
@@ -68,17 +69,40 @@ def list_sessions(session_dir: Path = SESSION_DIR, limit: int = 25) -> list[dict
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+            
+        session_user = data.get("user_id")
+        if user_id and user_id not in {"admin", "owner"}:
+            if session_user != user_id:
+                continue
+
         sessions.append(
             {
                 "id": data.get("id", path.stem),
                 "created_at": data.get("created_at", ""),
                 "title": data.get("title") or data.get("result", {}).get("question", "Untitled session"),
                 "path": str(path),
+                "user_id": session_user,
             }
         )
         if len(sessions) >= limit:
             break
     return sessions
+
+
+def clear_sessions(session_dir: Path = SESSION_DIR, user_id: str | None = None) -> None:
+    if not session_dir.exists():
+        return
+
+    for path in session_dir.glob("*.json"):
+        try:
+            if not user_id or user_id in {"admin", "owner"}:
+                path.unlink()
+            else:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if data.get("user_id") == user_id:
+                    path.unlink()
+        except OSError:
+            pass
 
 
 def load_session(path: str | Path) -> ResearchResult:
