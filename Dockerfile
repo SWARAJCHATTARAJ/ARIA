@@ -1,5 +1,13 @@
-FROM python:3.11-slim
+# Stage 1: Build the React frontend
+FROM node:20-slim AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
 
+# Stage 2: Build the FastAPI runner
+FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
@@ -12,15 +20,11 @@ RUN apt-get update \
 COPY requirements.txt pyproject.toml README.md ./
 COPY aria ./aria
 COPY main.py app.py ./
-COPY frontend ./frontend
+
+# Copy built frontend assets from Stage 1
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 RUN pip install --no-cache-dir -r requirements.txt
-
-WORKDIR /app/frontend
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
-RUN npm run build
-
-WORKDIR /app
 
 EXPOSE 10000
 
