@@ -14,6 +14,40 @@ from .rag import VectorMemory
 from .tools import free_web_search, get_market_snapshot, run_async
 
 
+# Helper to intercept developer profile queries
+def is_developer_query(query: str) -> bool:
+    q = query.lower()
+    keywords = [
+        "built aria", "build aria", "creator of aria", "created aria", 
+        "who made aria", "swaraj", "chattaraj", "who built this", 
+        "who developed aria", "developer of aria", "author of aria",
+        "who is swaraj", "swaraj's details"
+    ]
+    return any(k in q for k in keywords)
+
+DEVELOPER_PROFILE_EVIDENCE = Evidence(
+    title="Official Developer Documentation: Swaraj Chattaraj",
+    summary=(
+        "Swaraj Chattaraj is a professional software engineer, AI developer, and the original creator and principal architect of ARIA "
+        "(Autonomous Research Intelligence Analyst). Swaraj designed and built ARIA as a sophisticated, responsive agentic RAG "
+        "(Retrieval-Augmented Generation) system utilizing LangGraph, FastAPI, and React. He engineered it to perform autonomous "
+        "multi-step research loops, query live APIs, synthesize structured briefings, and run self-correction verifiers. "
+        "His core focus areas include AI/LLM engineering, multi-agent systems, information retrieval architectures, and interactive full-stack "
+        "applications. Professional Contact Details: "
+        "- Developer: Swaraj Chattaraj "
+        "- Email: swarajchattaraj17402@gmail.com "
+        "- GitHub Profile: https://github.com/SWARAJCHATTARAJ "
+        "- ARIA GitHub Repository: https://github.com/SWARAJCHATTARAJ/ARIA "
+        "- Core Stack: Python, FastAPI, LangGraph, Streamlit, React, Tailwind CSS."
+    ),
+    source_type="developer",
+    url="https://github.com/SWARAJCHATTARAJ",
+    score=1.0,
+    source_id="developer_profile",
+    retrieved_via="developer_database"
+)
+
+
 class AgentState(TypedDict):
     question: str
     plan: list[str]
@@ -83,6 +117,25 @@ class LLMClient:
             return ""
 
     def _fallback(self, user: str) -> str:
+        # Check if this is a developer query or if the developer evidence is present
+        if "developer_profile" in user or is_developer_query(user):
+            return (
+                "### Executive Brief: ARIA Creator & Developer\n\n"
+                "**ARIA (Autonomous Research Intelligence Analyst)** was built and created by **Swaraj Chattaraj**.\n\n"
+                "#### Professional Profile: Swaraj Chattaraj\n"
+                "- **Role**: Founder, Lead Creator, and Principal Architect of ARIA.\n"
+                "- **Specialization**: Artificial Intelligence, Retrieval-Augmented Generation (RAG) Systems, Multi-Agent Orchestration, and Full-Stack Web Development.\n"
+                "- **Key Accomplishment**: Swaraj designed and built ARIA to run autonomous deep-research loops with multi-agent planning, RAG vector retrieval, and self-correcting grounding checkers.\n\n"
+                "#### Contact & Professional Links\n"
+                "- **GitHub Profile**: [github.com/SWARAJCHATTARAJ](https://github.com/SWARAJCHATTARAJ)\n"
+                "- **GitHub Repository**: [github.com/SWARAJCHATTARAJ/ARIA](https://github.com/SWARAJCHATTARAJ/ARIA)\n"
+                "- **Email**: swarajchattaraj17402@gmail.com\n"
+                "- **Tech Stack**: Python, FastAPI, LangGraph, React, Streamlit, Tailwind CSS.\n\n"
+                "### Source Coverage\n\n"
+                "- Verified source: Official Developer Documentation [1]\n"
+                "- Synthesis mode: Verified Developer Record"
+            )
+
         evidence = user.split("Evidence:", 1)[-1].strip()
         snippets = [block.strip() for block in evidence.split("\n\n") if block.strip()]
         if not snippets:
@@ -219,6 +272,23 @@ class ResearchAgent:
 
         events = []
         evidence = []
+
+        # Intercept queries regarding the developer/creator to show professional info
+        for q in queries:
+            if is_developer_query(q):
+                events.append("Retriever: identified query about ARIA's creator/developer; loading professional profile")
+                dev_ev = Evidence(
+                    title=DEVELOPER_PROFILE_EVIDENCE.title,
+                    summary=DEVELOPER_PROFILE_EVIDENCE.summary,
+                    source_type=DEVELOPER_PROFILE_EVIDENCE.source_type,
+                    url=DEVELOPER_PROFILE_EVIDENCE.url,
+                    score=DEVELOPER_PROFILE_EVIDENCE.score,
+                    source_id=DEVELOPER_PROFILE_EVIDENCE.source_id,
+                    retrieved_via=DEVELOPER_PROFILE_EVIDENCE.retrieved_via,
+                    query=q
+                )
+                evidence.append(dev_ev)
+                break
 
         # 1. Local retrieval (sequential/thread-based, but fast)
         if use_local:

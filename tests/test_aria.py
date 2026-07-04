@@ -201,6 +201,21 @@ class LLMClientTests(unittest.TestCase):
         self.assertEqual(res[2], "Go comparison features")
         self.assertEqual(res[3], "Rust comparison features")
 
+    def test_is_developer_query(self) -> None:
+        from aria.agent import is_developer_query
+        self.assertTrue(is_developer_query("who built ARIA"))
+        self.assertTrue(is_developer_query("developer of aria"))
+        self.assertTrue(is_developer_query("who is Swaraj Chattaraj?"))
+        self.assertFalse(is_developer_query("Compare supply chain risks"))
+
+    def test_developer_query_fallback(self) -> None:
+        from aria.agent import LLMClient
+        client = LLMClient(Settings.from_env())
+        client.openrouter_api_key = None
+        res = client.complete("system", "Question: who built ARIA\n\nEvidence: [1] developer_profile", task="draft")
+        self.assertIn("Swaraj Chattaraj", res)
+        self.assertIn("Creator & Developer", res)
+
 
 if __name__ == "__main__":
     unittest.main()

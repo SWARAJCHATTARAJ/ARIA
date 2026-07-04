@@ -3,7 +3,7 @@ import {
   Search, Play, Settings, History, Layers, ChevronDown, ChevronUp, 
   ExternalLink, ShieldCheck, Download, 
   CheckCircle, AlertCircle, Plus, X, RefreshCw,
-  Sun, Moon
+  Sun, Moon, Menu
 } from 'lucide-react';
 
 const API_BASE = window.location.port === "5173" ? "http://127.0.0.1:8000" : "";
@@ -17,6 +17,10 @@ function App() {
   const [customPlan, setCustomPlan] = useState([]);
   const [isPlanning, setIsPlanning] = useState(false);
   const [isResearching, setIsResearching] = useState(false);
+
+  // Mobile responsive states
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [mobileActiveTab, setMobileActiveTab] = useState("brief");
 
   // Sync theme to root element
   useEffect(() => {
@@ -357,8 +361,18 @@ function App() {
   return (
     <div className="flex h-screen overflow-hidden bg-aria-bg text-aria-text font-sans antialiased">
       
-      {/* 1. LEFT SIDEBAR: Minimalist & Clean */}
-      <aside className="w-64 border-r border-aria-border flex flex-col bg-aria-surface select-none">
+      {/* Backdrop overlay for mobile sidebar drawer */}
+      {isMobileSidebarOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-aria-bg/60 backdrop-blur-sm md:hidden" 
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* 1. LEFT SIDEBAR: Responsive drawer / sidebar */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-aria-border flex flex-col bg-aria-surface select-none transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${
+        isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+      }`}>
         
         {/* Brand Header */}
         <div className="h-14 px-4 flex items-center justify-between border-b border-aria-border">
@@ -382,6 +396,15 @@ function App() {
               title="Settings"
             >
               <Settings size={14} />
+            </button>
+
+            {/* Mobile close button */}
+            <button 
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="p-1 rounded text-aria-muted hover:text-aria-text transition-colors md:hidden ml-0.5"
+              title="Close Sidebar"
+            >
+              <X size={14} />
             </button>
           </div>
         </div>
@@ -475,13 +498,20 @@ function App() {
       <main className="flex-1 flex flex-col overflow-hidden bg-aria-bg">
         
         {/* TOP MINIMALIST HEADER & PROGRESS TRACKER */}
-        <header className="h-14 px-6 border-b border-aria-border flex items-center justify-between bg-aria-bg shrink-0">
-          <div>
-            <span className="text-xs font-semibold tracking-wide text-aria-text uppercase">Research Workspace</span>
+        <header className="h-14 px-4 md:px-6 border-b border-aria-border flex items-center justify-between bg-aria-bg shrink-0 gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="p-1.5 rounded text-aria-muted hover:text-aria-text transition-colors md:hidden border border-aria-border bg-aria-surface shrink-0"
+              title="Open Sidebar"
+            >
+              <Menu size={15} />
+            </button>
+            <span className="text-xs font-semibold tracking-wide text-aria-text uppercase truncate">Research Workspace</span>
           </div>
 
           {/* Stepper progress visualizer - Sleek horizontal bar */}
-          <div className="flex items-center gap-4 text-[10px]">
+          <div className="hidden sm:flex items-center gap-4 text-[10px] shrink-0">
             {[
               { id: "plan", label: "Plan" },
               { id: "search", label: "Retrieve" },
@@ -519,11 +549,39 @@ function App() {
           </div>
         </header>
 
+        {/* Mobile Workspace Tabs Selector */}
+        {result && !isResearching && (
+          <div className="flex border-b border-aria-border bg-aria-surface/30 md:hidden shrink-0">
+            <button
+              onClick={() => setMobileActiveTab("brief")}
+              className={`flex-1 py-3 text-center text-xs font-semibold transition-colors border-b-2 ${
+                mobileActiveTab === "brief"
+                  ? "border-aria-accent text-aria-accent"
+                  : "border-transparent text-aria-muted hover:text-aria-text"
+              }`}
+            >
+              Executive Brief
+            </button>
+            <button
+              onClick={() => setMobileActiveTab("details")}
+              className={`flex-1 py-3 text-center text-xs font-semibold transition-colors border-b-2 ${
+                mobileActiveTab === "details"
+                  ? "border-aria-accent text-aria-accent"
+                  : "border-transparent text-aria-muted hover:text-aria-text"
+              }`}
+            >
+              References & Logs
+            </button>
+          </div>
+        )}
+
         {/* WORKSPACE MIDDLE BODY - Splits into Left Brief Panel and Right Citations/Logs Panel */}
         <div className="flex-1 flex overflow-hidden">
           
           {/* LEFT PANEL: Chat objectives & synthesized results */}
-          <div className="flex-1 flex flex-col overflow-y-auto border-r border-aria-border">
+          <div className={`flex-1 flex flex-col overflow-y-auto border-r border-aria-border ${
+            result && !isResearching && mobileActiveTab !== "brief" ? "hidden md:flex" : "flex"
+          }`}>
             <div className="flex-1 p-6 space-y-6 w-full">
               
               {/* Errors container */}
@@ -647,7 +705,9 @@ function App() {
 
           {/* RIGHT PANEL: Sleek Citations, Activity Trace Logs, and Metrics */}
           {result && !isResearching && (
-            <div className="w-96 flex flex-col bg-aria-surface overflow-hidden select-none shrink-0">
+            <div className={`w-full md:w-96 flex flex-col bg-aria-surface overflow-hidden select-none shrink-0 border-l border-aria-border ${
+              mobileActiveTab !== "details" ? "hidden md:flex" : "flex"
+            }`}>
               
               {/* Tab Navigation header */}
               <div className="h-11 border-b border-aria-border flex bg-aria-bg/50 text-[10px] font-semibold text-aria-muted px-2">
@@ -820,7 +880,7 @@ function App() {
         </div>
 
         {/* BOTTOM INPUT & DECOMPOSE QUERY BUILDER PANEL */}
-        <div className="p-6 border-t border-aria-border bg-aria-bg">
+        <div className="p-4 sm:p-6 border-t border-aria-border bg-aria-bg">
           <div className="w-full space-y-4">
             
             {/* Planned subqueries editor */}
@@ -872,7 +932,7 @@ function App() {
             )}
 
             {/* Main Chat Question Form Input */}
-            <div className="relative flex items-center bg-aria-surface border border-aria-border shadow-sm rounded-xl">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center bg-aria-surface border border-aria-border shadow-sm rounded-xl p-1.5 sm:p-0 relative">
               <input
                 type="text"
                 placeholder="Submit objective... (e.g. Compare AI chip supply chain risks)"
@@ -882,15 +942,15 @@ function App() {
                   if (e.key === "Enter" && !isResearching) runResearch();
                 }}
                 disabled={isResearching}
-                className="w-full py-3.5 pl-4 pr-36 bg-transparent text-xs text-aria-text outline-none rounded-xl disabled:opacity-50"
+                className="w-full py-3 sm:py-3.5 pl-4 pr-4 sm:pr-36 bg-transparent text-xs text-aria-text outline-none rounded-xl disabled:opacity-50"
               />
               
-              <div className="absolute right-2.5 flex gap-1.5">
+              <div className="flex gap-1.5 mt-1.5 sm:mt-0 px-2 pb-2 sm:p-0 sm:absolute sm:right-2.5 justify-end">
                 <button
                   type="button"
                   onClick={generatePlan}
                   disabled={isPlanning || isResearching || !question.trim()}
-                  className="px-2.5 py-1.5 hover:bg-aria-bg rounded border border-aria-border text-[10px] font-semibold text-aria-text transition-colors flex items-center gap-1 disabled:opacity-50"
+                  className="flex-1 sm:flex-none px-2.5 py-1.5 hover:bg-aria-bg rounded border border-aria-border text-[10px] font-semibold text-aria-text transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
                 >
                   {isPlanning ? <RefreshCw size={12} className="animate-spin" /> : <Layers size={11} />}
                   <span>Decompose</span>
@@ -900,7 +960,7 @@ function App() {
                   type="button"
                   onClick={runResearch}
                   disabled={isResearching || !question.trim()}
-                  className="px-3.5 py-1.5 bg-aria-accent hover:bg-aria-accent/85 text-aria-bg rounded text-[10px] font-semibold transition-colors flex items-center gap-1 shadow glow-cyan-sm disabled:opacity-50"
+                  className="flex-1 sm:flex-none px-3.5 py-1.5 bg-aria-accent hover:bg-aria-accent/85 text-aria-bg rounded text-[10px] font-semibold transition-colors flex items-center justify-center gap-1 shadow glow-cyan-sm disabled:opacity-50"
                 >
                   {isResearching ? <RefreshCw size={12} className="animate-spin text-aria-bg" /> : <Play size={9} fill="currentColor" className="text-aria-bg mt-0.5" />}
                   <span>Execute</span>
@@ -1027,8 +1087,11 @@ function App() {
 
       {/* 4. SETTINGS SIDE-PANEL DRAWER */}
       {showSettings && (
-        <div className="fixed inset-0 z-40 bg-aria-bg/50 backdrop-blur-sm select-none">
-          <div className="w-80 border-l border-aria-border bg-aria-surface flex flex-col absolute right-0 top-0 bottom-0 h-full shadow-2xl animate-in slide-in-from-right duration-250">
+        <div className="fixed inset-0 z-40 bg-aria-bg/50 backdrop-blur-sm select-none" onClick={() => setShowSettings(false)}>
+          <div 
+            className="w-full sm:w-80 border-l border-aria-border bg-aria-surface flex flex-col absolute right-0 top-0 bottom-0 h-full shadow-2xl animate-in slide-in-from-right duration-250"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-4 border-b border-aria-border flex justify-between items-center bg-aria-bg/10">
               <span className="font-semibold text-xs text-aria-text uppercase tracking-wider flex items-center gap-1.5">
                 <Settings size={13} />
