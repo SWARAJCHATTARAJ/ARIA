@@ -79,6 +79,7 @@ function App() {
   const [useFinance, setUseFinance] = useState(false);
   const [maxIterations, setMaxIterations] = useState(2);
   const [fieldFocus, setFieldFocus] = useState("all");
+  const [isFocusOpen, setIsFocusOpen] = useState(false);
   const [temperature, setTemperature] = useState(0.2);
   const [topK, setTopK] = useState(5);
   const [userId, setUserId] = useState(() => {
@@ -1205,20 +1206,63 @@ function App() {
                 <div className="space-y-1.5 pt-1">
                   <span className="text-[10px] font-semibold text-aria-muted uppercase tracking-wider block">Research Domain Focus</span>
                   <div className="relative">
-                    <select 
-                      value={fieldFocus}
-                      onChange={(e) => setFieldFocus(e.target.value)}
-                      className="w-full bg-aria-bg border border-aria-border rounded-xl px-3 py-2.5 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent appearance-none cursor-pointer"
+                    <button
+                      type="button"
+                      onClick={() => setIsFocusOpen(!isFocusOpen)}
+                      className="w-full bg-aria-bg border border-aria-border rounded-xl px-3 py-2.5 text-xs font-semibold text-aria-text flex justify-between items-center hover:border-aria-accent transition-colors focus:outline-none"
                     >
-                      <option value="all" className="bg-aria-surface text-aria-text">🌐 All Domains (Comprehensive)</option>
-                      <option value="general" className="bg-aria-surface text-aria-text">📰 General Web, Tech &amp; News</option>
-                      <option value="medical" className="bg-aria-surface text-aria-text">🧬 Biomedical &amp; Life Sciences</option>
-                      <option value="stem" className="bg-aria-surface text-aria-text">🔬 STEM (CS, Math, Engineering)</option>
-                      <option value="humanities" className="bg-aria-surface text-aria-text">📚 Social Sciences &amp; Humanities</option>
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-aria-muted">
-                      <ChevronDown size={12} />
-                    </div>
+                      <span>
+                        {fieldFocus === "all" && "🌐 All Domains (Comprehensive)"}
+                        {fieldFocus === "general" && "📰 General Web, Tech & News"}
+                        {fieldFocus === "medical" && "🧬 Biomedical & Life Sciences"}
+                        {fieldFocus === "stem" && "🔬 STEM (CS, Math, Engineering)"}
+                        {fieldFocus === "humanities" && "📚 Social Sciences & Humanities"}
+                      </span>
+                      <ChevronDown size={12} className={`text-aria-muted transition-transform duration-200 ${isFocusOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isFocusOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setIsFocusOpen(false)} />
+                        <div className="absolute left-0 right-0 mt-1.5 z-50 bg-aria-surface border border-aria-border rounded-xl shadow-xl overflow-hidden py-1 divide-y divide-aria-border/10 animate-in fade-in slide-in-from-top-1 duration-150">
+                          <button
+                            type="button"
+                            onClick={() => { setFieldFocus("all"); setIsFocusOpen(false); }}
+                            className={`w-full text-left px-3.5 py-2.5 text-xs font-medium transition-colors flex items-center gap-2 hover:bg-aria-bg/70 ${fieldFocus === "all" ? "text-aria-accent bg-aria-bg/30 font-semibold" : "text-aria-text"}`}
+                          >
+                            🌐 All Domains (Comprehensive)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setFieldFocus("general"); setIsFocusOpen(false); }}
+                            className={`w-full text-left px-3.5 py-2.5 text-xs font-medium transition-colors flex items-center gap-2 hover:bg-aria-bg/70 ${fieldFocus === "general" ? "text-aria-accent bg-aria-bg/30 font-semibold" : "text-aria-text"}`}
+                          >
+                            📰 General Web, Tech &amp; News
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setFieldFocus("medical"); setIsFocusOpen(false); }}
+                            className={`w-full text-left px-3.5 py-2.5 text-xs font-medium transition-colors flex items-center gap-2 hover:bg-aria-bg/70 ${fieldFocus === "medical" ? "text-aria-accent bg-aria-bg/30 font-semibold" : "text-aria-text"}`}
+                          >
+                            🧬 Biomedical &amp; Life Sciences
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setFieldFocus("stem"); setIsFocusOpen(false); }}
+                            className={`w-full text-left px-3.5 py-2.5 text-xs font-medium transition-colors flex items-center gap-2 hover:bg-aria-bg/70 ${fieldFocus === "stem" ? "text-aria-accent bg-aria-bg/30 font-semibold" : "text-aria-text"}`}
+                          >
+                            🔬 STEM (CS, Math, Engineering)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setFieldFocus("humanities"); setIsFocusOpen(false); }}
+                            className={`w-full text-left px-3.5 py-2.5 text-xs font-medium transition-colors flex items-center gap-2 hover:bg-aria-bg/70 ${fieldFocus === "humanities" ? "text-aria-accent bg-aria-bg/30 font-semibold" : "text-aria-text"}`}
+                          >
+                            📚 Social Sciences &amp; Humanities
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
