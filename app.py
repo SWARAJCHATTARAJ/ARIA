@@ -293,7 +293,7 @@ try:
             </html>
             """,
             height=1200,
-            scrolling=False,
+            scrolling=True,
         )
 except Exception as exc:
     st.error(str(exc))
