@@ -177,54 +177,6 @@ def start_backend() -> subprocess.Popen | None:
     raise RuntimeError(f"FastAPI backend did not start on port {BACKEND_PORT}.{detail}")
 
 
-st.markdown(
-    """
-    <style>
-    html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
-        width: 100vw !important;
-        height: 100vh !important;
-        min-height: 100vh !important;
-        overflow: hidden !important;
-        background: #0A0A0B !important;
-    }
-    [data-testid="stHeader"], [data-testid="stToolbar"], #MainMenu, footer,
-    [data-testid="stDecoration"], [data-testid="stStatusWidget"] {
-        display: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
-    }
-    .main .block-container,
-    [data-testid="stAppViewContainer"] .block-container,
-    [data-testid="stMainBlockContainer"],
-    [data-testid="stAppViewBlockContainer"] {
-        max-width: none !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-    [data-testid="stVerticalBlock"],
-    [data-testid="stElementContainer"],
-    .element-container {
-        width: 100vw !important;
-        height: 100vh !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        gap: 0 !important;
-    }
-    iframe[title="streamlit-component"] {
-        width: 100vw !important;
-        height: 100vh !important;
-        min-height: 100vh !important;
-        border: 0 !important;
-        display: block !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
 try:
     backend_url = configured_backend_url()
     try:
@@ -243,6 +195,10 @@ try:
             "This page is public, but the backend URL still points to localhost. "
             "Set `ARIA_BACKEND_URL` to a publicly reachable FastAPI URL or enter it below."
         )
+        st.warning(
+            f"**Streamlit Host Detected:** `{page_host}`\n\n"
+            f"**FastAPI Backend URL:** `{backend_url}`"
+        )
         if "backend_url" not in st.session_state:
             st.session_state.backend_url = ""
         st.session_state.backend_url = st.text_input(
@@ -254,6 +210,52 @@ try:
             st.rerun()
     else:
         start_backend()
+        st.markdown(
+            """
+            <style>
+            html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+                width: 100vw !important;
+                height: 100vh !important;
+                min-height: 100vh !important;
+                overflow: hidden !important;
+                background: #0A0A0B !important;
+            }
+            [data-testid="stHeader"], [data-testid="stToolbar"], #MainMenu, footer,
+            [data-testid="stDecoration"], [data-testid="stStatusWidget"] {
+                display: none !important;
+                visibility: hidden !important;
+                height: 0 !important;
+            }
+            .main .block-container,
+            [data-testid="stAppViewContainer"] .block-container,
+            [data-testid="stMainBlockContainer"],
+            [data-testid="stAppViewBlockContainer"] {
+                max-width: none !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            [data-testid="stVerticalBlock"],
+            [data-testid="stElementContainer"],
+            .element-container {
+                width: 100vw !important;
+                height: 100vh !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                gap: 0 !important;
+            }
+            iframe[title="streamlit-component"] {
+                width: 100vw !important;
+                height: 100vh !important;
+                min-height: 100vh !important;
+                border: 0 !important;
+                display: block !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         components.html(
             f"""
             <!doctype html>
