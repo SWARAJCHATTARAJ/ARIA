@@ -84,6 +84,18 @@ def clean_markdown_text(text: str) -> str:
     return text
 
 
+def safe_paragraph(text: str, style) -> Paragraph:
+    """Helper to safely build a Paragraph, falling back to clean text on XML parse error."""
+    try:
+        p = Paragraph(text, style)
+        p.wrap(500, 100)
+        return p
+    except Exception:
+        clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
+        clean_text = re.sub(r'<[^>]+>', '', clean_text)
+        return Paragraph(clean_text, style)
+
+
 def confidence_label(result: ResearchResult) -> str:
     """Estimate confidence from evidence volume and source quality."""
     if "NEEDS_MORE_RESEARCH" in (result.verification or "").upper():
@@ -390,7 +402,7 @@ def text_to_flowables(text: str, styles) -> list:
             )
             # Escape HTML tags inside the code block to prevent formatting issues and replace line breaks
             escaped_code = escape(code_text).replace('\n', '<br/>')
-            code_table = Table([[Paragraph(escaped_code, code_style)]], colWidths=[515])
+            code_table = Table([[safe_paragraph(escaped_code, code_style)]], colWidths=[515])
             code_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F1F5F9")),
                 ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
@@ -409,19 +421,19 @@ def text_to_flowables(text: str, styles) -> list:
                 line_str = line.strip().lstrip('-*+').strip()
                 if line_str:
                     bullet_text = f"&bull; {clean_markdown_text(line_str)}"
-                    flowables.append(Paragraph(bullet_text, bullet_style))
+                    flowables.append(safe_paragraph(bullet_text, bullet_style))
             flowables.append(Spacer(1, 6))
         else:
             if para.startswith('### '):
                 header_text = clean_markdown_text(para[4:].strip())
-                flowables.append(Paragraph(header_text, subsubheading_style))
+                flowables.append(safe_paragraph(header_text, subsubheading_style))
             elif para.startswith('## '):
                 header_text = clean_markdown_text(para[3:].strip())
-                flowables.append(Paragraph(header_text, subheading_style))
+                flowables.append(safe_paragraph(header_text, subheading_style))
             else:
                 clean_lines = [line.strip() for line in lines if line.strip()]
                 clean_para_text = " ".join(clean_lines)
-                flowables.append(Paragraph(clean_markdown_text(clean_para_text), styles['BodyText']))
+                flowables.append(safe_paragraph(clean_markdown_text(clean_para_text), styles['BodyText']))
                 flowables.append(Spacer(1, 6))
 
     return flowables
@@ -630,7 +642,7 @@ def build_pdf_report(result: ResearchResult) -> bytes:
             Paragraph("<b>RESEARCH OBJECTIVE:</b>", ParagraphStyle('QTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.HexColor("#475569"))),
         ],
         [
-            Paragraph(clean_markdown_text(result.question), question_style)
+            safe_paragraph(clean_markdown_text(result.question), question_style)
         ]
     ]
     question_table = Table(question_data, colWidths=[515])
@@ -670,7 +682,7 @@ def build_pdf_report(result: ResearchResult) -> bytes:
     story.append(add_divider())
     story.append(Spacer(1, 6))
     for query in result.plan:
-        query_para = Paragraph(f"&bull; <i>{clean_markdown_text(query)}</i>", bullet_style)
+        query_para = safe_paragraph(f"&bull; <i>{clean_markdown_text(query)}</i>", bullet_style)
         story.append(query_para)
     story.append(Spacer(1, 10))
 
@@ -717,7 +729,7 @@ def build_pdf_report(result: ResearchResult) -> bytes:
 
             table_data.append([
                 Paragraph(str(idx), ParagraphStyle('TD_Num', parent=styles['Normal'], fontSize=9)),
-                Paragraph(title_text, ParagraphStyle('TD_Title', parent=styles['Normal'], fontSize=9, leading=12)),
+                safe_paragraph(title_text, ParagraphStyle('TD_Title', parent=styles['Normal'], fontSize=9, leading=12)),
                 Paragraph(escape(item.source_type.upper()), ParagraphStyle('TD_Type', parent=styles['Normal'], fontSize=9))
             ])
 
