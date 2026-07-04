@@ -236,7 +236,8 @@ function App() {
           use_finance: useFinance,
           max_iterations: maxIterations,
           custom_plan: customPlan.length > 0 ? customPlan : null,
-          field_focus: fieldFocus
+          field_focus: fieldFocus,
+          user_id: userId
         })
       });
 
@@ -397,6 +398,42 @@ function App() {
     const updated = [...customPlan];
     updated[index] = val;
     setCustomPlan(updated);
+  };
+
+  const downloadReport = async (format) => {
+    if (!selectedSessionId) {
+      setError("No saved research session is selected for download.");
+      return;
+    }
+
+    setError(null);
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/sessions/${selectedSessionId}/download/${format}?user_id=${encodeURIComponent(userId)}`
+      );
+      if (!response.ok) {
+        let message = `Download failed with status ${response.status}.`;
+        try {
+          const data = await response.json();
+          message = data.detail || message;
+        } catch {
+          // Keep the status-based message when the response is not JSON.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `aria_brief_${selectedSessionId}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message || `Failed to download ${format.toUpperCase()} report.`);
+    }
   };
 
   const analyticsCounts = result ? sourceCounts(result.evidence || []) : {};
@@ -1010,24 +1047,22 @@ function App() {
               
               {/* Document download buttons bar */}
               <div className="p-3 border-t border-aria-border bg-aria-bg/50 flex gap-2 justify-end">
-                <a
-                  href={`${API_BASE}/api/sessions/${selectedSessionId}/download/pdf?user_id=${encodeURIComponent(userId)}`}
-                  download
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => downloadReport("pdf")}
+                  disabled={!selectedSessionId}
                   className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                 >
                   <Download size={11} /> Download PDF
-                </a>
-                <a
-                  href={`${API_BASE}/api/sessions/${selectedSessionId}/download/md?user_id=${encodeURIComponent(userId)}`}
-                  download
-                  target="_blank"
-                  rel="noopener noreferrer"
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadReport("md")}
+                  disabled={!selectedSessionId}
                   className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                 >
                   <Download size={11} /> Download MD
-                </a>
+                </button>
               </div>
             </div>
           )}

@@ -188,6 +188,53 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(loaded.evidence[0].source_id, "note:1")
             self.assertEqual(loaded.metrics["answer_tokens_est"], 3)
 
+    def test_download_endpoints_return_pdf_and_markdown_for_owner(self) -> None:
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        from fastapi.testclient import TestClient
+        from aria.core import ResearchResult, Evidence
+        from aria.sessions import save_session
+        import main
+
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            result = ResearchResult(
+                question="Download this?",
+                plan=["download query"],
+                answer="Downloadable answer [1].",
+                verification="STATUS: PASSED",
+                evidence=[
+                    Evidence(
+                        title="Download source",
+                        summary="Evidence for download.",
+                        source_type="web",
+                        url="https://example.com/download",
+                    )
+                ],
+                metrics={"iterations": 1},
+            )
+            session = save_session(result, tmp_path, user_id="user1")
+            original_find_session_path = main.find_session_path
+
+            def temp_find_session_path(session_id, user_id=None):
+                return original_find_session_path(session_id, tmp_path, user_id)
+
+            main.find_session_path = temp_find_session_path
+            try:
+                client = TestClient(main.app)
+                pdf_response = client.get(f"/api/sessions/{session['id']}/download/pdf?user_id=user1")
+                md_response = client.get(f"/api/sessions/{session['id']}/download/md?user_id=user1")
+                blocked_response = client.get(f"/api/sessions/{session['id']}/download/md?user_id=user2")
+
+                self.assertEqual(pdf_response.status_code, 200)
+                self.assertEqual(pdf_response.headers["content-type"], "application/pdf")
+                self.assertTrue(pdf_response.content.startswith(b"%PDF"))
+                self.assertEqual(md_response.status_code, 200)
+                self.assertIn(b"# ARIA Research Brief", md_response.content)
+                self.assertEqual(blocked_response.status_code, 404)
+            finally:
+                main.find_session_path = original_find_session_path
+
 
 class LLMClientTests(unittest.TestCase):
     def test_complete_fallback_plan(self) -> None:
