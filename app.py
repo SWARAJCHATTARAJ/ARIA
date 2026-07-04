@@ -111,13 +111,34 @@ def run_command(command: list[str], cwd: Path) -> None:
 def ensure_frontend_build() -> None:
     frontend_dir = ROOT / "frontend"
     dist_index = frontend_dir / "dist" / "index.html"
-    if dist_index.exists():
+    
+    should_build = not dist_index.exists()
+    if not should_build:
+        # Rebuild if any file in src/ or public/ is newer than dist/index.html
+        dist_mtime = dist_index.stat().st_mtime
+        
+        def has_newer_file(dir_path: Path) -> bool:
+            if not dir_path.exists():
+                return False
+            for path in dir_path.glob("**/*"):
+                if path.is_file():
+                    try:
+                        if path.stat().st_mtime > dist_mtime:
+                            return True
+                    except Exception:
+                        pass
+            return False
+
+        if has_newer_file(frontend_dir / "src") or has_newer_file(frontend_dir / "public"):
+            should_build = True
+
+    if not should_build:
         return
 
     npm = npm_command()
     if not npm:
         raise FileNotFoundError(
-            "frontend/dist/index.html was not found and npm is not available. "
+            "frontend/dist/index.html is outdated/missing and npm is not available. "
             "Install Node.js, then run `npm ci` and `npm run build` inside the frontend folder."
         )
 
