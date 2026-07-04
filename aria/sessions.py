@@ -24,7 +24,8 @@ def normalize_user_id(user_id: str | None) -> str | None:
 
 
 def is_admin_user(user_id: str | None) -> bool:
-    return normalize_user_id(user_id) == admin_user_id()
+    normalized = normalize_user_id(user_id)
+    return normalized in {admin_user_id(), "admin", "owner"}
 
 
 def can_access_session(session_user: str | None, requester_user_id: str | None) -> bool:

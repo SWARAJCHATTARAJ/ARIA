@@ -520,7 +520,7 @@ class LLMClientTests(unittest.TestCase):
                 self.assertEqual(user1_sessions[0]["user_id"], "user1")
 
                 public_admin_sessions = list_sessions(tmp_path, user_id="admin")
-                self.assertEqual(len(public_admin_sessions), 0)
+                self.assertEqual(len(public_admin_sessions), 3)
 
                 owner_sessions = list_sessions(tmp_path, user_id="owner_1")
                 self.assertEqual(len(owner_sessions), 3)

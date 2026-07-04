@@ -1515,7 +1515,7 @@ function App() {
                     </button>
                   </div>
                   <span className="text-[10px] text-aria-muted block leading-normal pt-0.5">
-                    Owner ID: <code className="text-aria-accent font-semibold">{OWNER_USER_ID}</code>. This profile can view and manage all users' research histories.
+                    Owner ID: <code className="text-aria-accent font-semibold">{OWNER_USER_ID}</code> or `admin`. This profile can view and manage all users' research histories.
                   </span>
                 </div>
               </div>
