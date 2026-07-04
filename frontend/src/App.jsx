@@ -1208,13 +1208,13 @@ function App() {
                     <select 
                       value={fieldFocus}
                       onChange={(e) => setFieldFocus(e.target.value)}
-                      className="w-full bg-aria-bg/50 border border-aria-border rounded-xl px-3 py-2.5 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent appearance-none cursor-pointer"
+                      className="w-full bg-aria-bg border border-aria-border rounded-xl px-3 py-2.5 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent appearance-none cursor-pointer"
                     >
-                      <option value="all">🌐 All Domains (Comprehensive)</option>
-                      <option value="general">📰 General Web, Tech &amp; News</option>
-                      <option value="medical">🧬 Biomedical &amp; Life Sciences</option>
-                      <option value="stem">🔬 STEM (CS, Math, Engineering)</option>
-                      <option value="humanities">📚 Social Sciences &amp; Humanities</option>
+                      <option value="all" className="bg-aria-surface text-aria-text">🌐 All Domains (Comprehensive)</option>
+                      <option value="general" className="bg-aria-surface text-aria-text">📰 General Web, Tech &amp; News</option>
+                      <option value="medical" className="bg-aria-surface text-aria-text">🧬 Biomedical &amp; Life Sciences</option>
+                      <option value="stem" className="bg-aria-surface text-aria-text">🔬 STEM (CS, Math, Engineering)</option>
+                      <option value="humanities" className="bg-aria-surface text-aria-text">📚 Social Sciences &amp; Humanities</option>
                     </select>
                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-aria-muted">
                       <ChevronDown size={12} />
@@ -1285,7 +1285,7 @@ function App() {
                         localStorage.setItem("aria_user_id", newId);
                       }}
                       placeholder="e.g. user_123 or admin"
-                      className="flex-1 bg-aria-bg/50 border border-aria-border rounded-xl px-3 py-2 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent"
+                      className="flex-1 bg-aria-bg border border-aria-border rounded-xl px-3 py-2 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent"
                     />
                     <button 
                       onClick={() => {
@@ -1293,7 +1293,7 @@ function App() {
                         setUserId(newId);
                         localStorage.setItem("aria_user_id", newId);
                       }}
-                      className="px-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border rounded-xl text-xs font-semibold transition"
+                      className="px-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border rounded-xl text-xs font-semibold text-aria-text transition-colors"
                       title="Generate new User ID"
                     >
                       Reset
