@@ -34,6 +34,7 @@ class LLMClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+        self.session = requests.Session()
 
     def complete(self, system: str, user: str, task: str = "draft") -> str:
         if self.settings.llm_provider == "openrouter" and self.openrouter_api_key:
@@ -64,7 +65,7 @@ class LLMClient:
             "temperature": 0.2,
         }
         try:
-            response = requests.post(
+            response = self.session.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {self.openrouter_api_key}",
@@ -233,7 +234,7 @@ class ResearchAgent:
 
         # 2. Concurrent web searches inside the same client session & event loop
         if use_web and queries:
-            timeout = aiohttp.ClientTimeout(total=10)
+            timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
                 tasks = []
                 task_metadata = []
@@ -383,7 +384,7 @@ class ResearchAgent:
             "to the order of evidence provided. If evidence is lacking, state the caveats and assumptions clearly. "
             "Keep the tone direct, technical, and evidence-led."
         )
-        user = f"Question:\n{question}\n\nEvidence:\n{format_evidence(evidence)}"
+        user = f"Question:\n{question}\n\nEvidence:\n{format_evidence(evidence, limit=12)}"
         return self.llm.complete(system, user, task="draft")
 
     def _verify(self, question: str, answer: str, evidence: list[Evidence]) -> str:
@@ -402,7 +403,7 @@ class ResearchAgent:
                 "NEW_QUERIES:\n"
                 "[List 1 or 2 new search queries to retrieve missing details, each on a new line. Leave empty if status is PASSED]"
             )
-            evidence_str = format_evidence(evidence, limit=15)
+            evidence_str = format_evidence(evidence, limit=12)
             user = (
                 f"Research Question:\n{question}\n\n"
                 f"Draft Report:\n{answer}\n\n"

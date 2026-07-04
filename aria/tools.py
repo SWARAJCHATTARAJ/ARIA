@@ -30,7 +30,7 @@ async def async_free_web_search(query: str, max_results: int = 5) -> list[Eviden
     except ImportError as exc:
         raise ImportError("aiohttp is required for live web search.") from exc
 
-    timeout = aiohttp.ClientTimeout(total=10)
+    timeout = aiohttp.ClientTimeout(total=5)
     async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
         results = await asyncio.gather(
             async_wikipedia_search(session, query, 2),
