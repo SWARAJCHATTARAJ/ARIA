@@ -34,6 +34,9 @@ def can_access_session(session_user: str | None, requester_user_id: str | None) 
         return True
     if not requester_user_id:
         return False
+    # If the session has no owner, make it accessible to everyone who has a valid profile
+    if not session_user:
+        return True
     return session_user == requester_user_id
 
 
@@ -131,7 +134,8 @@ def clear_sessions(session_dir: Path = SESSION_DIR, user_id: str | None = None) 
             else:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 session_user = data.get("user_id")
-                if can_access_session(session_user, requester_user_id):
+                # Only allow clearing/deleting if they are the exact owner
+                if session_user and session_user == requester_user_id:
                     path.unlink()
         except OSError:
             pass

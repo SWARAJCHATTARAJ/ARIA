@@ -516,8 +516,9 @@ class LLMClientTests(unittest.TestCase):
                 self.assertEqual(list_sessions(tmp_path, user_id=None), [])
 
                 user1_sessions = list_sessions(tmp_path, user_id="user1")
-                self.assertEqual(len(user1_sessions), 1)
-                self.assertEqual(user1_sessions[0]["user_id"], "user1")
+                # Legacy sessions (user_id=None) are accessible to all identified users
+                self.assertEqual(len(user1_sessions), 2)
+                self.assertEqual(user1_sessions[1]["user_id"], "user1")
 
                 public_admin_sessions = list_sessions(tmp_path, user_id="admin")
                 self.assertEqual(len(public_admin_sessions), 3)
@@ -537,7 +538,8 @@ class LLMClientTests(unittest.TestCase):
                 clear_sessions(tmp_path, user_id="user1")
 
                 user1_sessions_after = list_sessions(tmp_path, user_id="user1")
-                self.assertEqual(len(user1_sessions_after), 0)
+                # Legacy session remains because user1 is not the owner and cannot delete it
+                self.assertEqual(len(user1_sessions_after), 1)
 
                 owner_sessions_after = list_sessions(tmp_path, user_id="owner_1")
                 self.assertEqual(len(owner_sessions_after), 2)
