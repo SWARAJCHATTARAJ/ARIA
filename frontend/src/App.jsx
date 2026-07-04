@@ -19,8 +19,15 @@ function App() {
   const [isResearching, setIsResearching] = useState(false);
 
   // Mobile responsive states
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [mobileActiveTab, setMobileActiveTab] = useState("brief");
+
+  // Collapse sidebar on small screens initially
+  useEffect(() => {
+    if (window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  }, []);
 
   // Sync theme to root element
   useEffect(() => {
@@ -362,16 +369,16 @@ function App() {
     <div className="flex h-screen overflow-hidden bg-aria-bg text-aria-text font-sans antialiased">
       
       {/* Backdrop overlay for mobile sidebar drawer */}
-      {isMobileSidebarOpen && (
+      {isSidebarOpen && (
         <div 
           className="fixed inset-0 z-40 bg-aria-bg/60 backdrop-blur-sm md:hidden" 
-          onClick={() => setIsMobileSidebarOpen(false)}
+          onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       {/* 1. LEFT SIDEBAR: Responsive drawer / sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-aria-border flex flex-col bg-aria-surface select-none transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${
-        isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-aria-border flex flex-col bg-aria-surface select-none transition-all duration-300 ease-in-out md:relative md:z-auto ${
+        isSidebarOpen ? "translate-x-0" : "-translate-x-full md:-ml-64"
       }`}>
         
         {/* Brand Header */}
@@ -398,11 +405,11 @@ function App() {
               <Settings size={14} />
             </button>
 
-            {/* Mobile close button */}
+            {/* Close / Collapse button */}
             <button 
-              onClick={() => setIsMobileSidebarOpen(false)}
-              className="p-1 rounded text-aria-muted hover:text-aria-text transition-colors md:hidden ml-0.5"
-              title="Close Sidebar"
+              onClick={() => setIsSidebarOpen(false)}
+              className="p-1 rounded text-aria-muted hover:text-aria-text transition-colors ml-0.5"
+              title="Collapse Sidebar"
             >
               <X size={14} />
             </button>
@@ -500,13 +507,15 @@ function App() {
         {/* TOP MINIMALIST HEADER & PROGRESS TRACKER */}
         <header className="h-14 px-4 md:px-6 border-b border-aria-border flex items-center justify-between bg-aria-bg shrink-0 gap-2">
           <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={() => setIsMobileSidebarOpen(true)}
-              className="p-1.5 rounded text-aria-muted hover:text-aria-text transition-colors md:hidden border border-aria-border bg-aria-surface shrink-0"
-              title="Open Sidebar"
-            >
-              <Menu size={15} />
-            </button>
+            {!isSidebarOpen && (
+              <button
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-1.5 rounded text-aria-muted hover:text-aria-text transition-colors border border-aria-border bg-aria-surface shrink-0"
+                title="Open Sidebar"
+              >
+                <Menu size={15} />
+              </button>
+            )}
             <span className="text-xs font-semibold tracking-wide text-aria-text uppercase truncate">Research Workspace</span>
           </div>
 
