@@ -157,6 +157,30 @@ def text_to_flowables(text: str, styles) -> list:
         if not para:
             continue
 
+        # Detect code blocks
+        if para.startswith('```') and para.endswith('```'):
+            code_text = para[3:-3].strip()
+            code_style = ParagraphStyle(
+                'CodeBlockStyle',
+                parent=styles['Normal'],
+                fontName='Courier',
+                fontSize=8.5,
+                leading=12,
+                textColor=colors.HexColor("#0F172A")
+            )
+            # Escape HTML tags inside the code block to prevent formatting issues and replace line breaks
+            escaped_code = escape(code_text).replace('\n', '<br/>')
+            code_table = Table([[Paragraph(escaped_code, code_style)]], colWidths=[515])
+            code_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F1F5F9")),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                ('PADDING', (0, 0), (-1, -1), 8),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            flowables.append(code_table)
+            flowables.append(Spacer(1, 6))
+            continue
+
         lines = para.split('\n')
         is_bullet_list = all(line.strip().startswith(('-', '*', '+')) for line in lines if line.strip())
 
@@ -445,7 +469,11 @@ def build_pdf_report(result: ResearchResult) -> bytes:
         for idx, item in enumerate(result.evidence, start=1):
             if item.url:
                 escaped_url = escape(item.url)
-                link_str = f'<br/><font color="#3B82F6" size="8">URL: <a href="{escaped_url}">{escaped_url}</a></font>'
+                visible_url = item.url
+                if len(visible_url) > 75:
+                    visible_url = visible_url[:72] + "..."
+                escaped_visible_url = escape(visible_url)
+                link_str = f'<br/><font color="#3B82F6" size="8">URL: <a href="{escaped_url}">{escaped_visible_url}</a></font>'
             else:
                 link_str = ""
             title_text = f"<b>{clean_markdown_text(item.title)}</b>{link_str}"
