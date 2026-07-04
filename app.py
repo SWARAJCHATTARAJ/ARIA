@@ -5,16 +5,40 @@ import socket
 import subprocess
 import sys
 import time
+import ipaddress
+from urllib.parse import urlparse
 from pathlib import Path
 from shutil import which
 
 import streamlit as st
 import streamlit.components.v1 as components
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 ROOT = Path(__file__).resolve().parent
 BACKEND_HOST = "127.0.0.1"
 BACKEND_PORT = 8000
+
+
+def is_local_host(host: str) -> bool:
+    if not host:
+        return True
+    host = host.split(":")[0].strip()
+    if host.lower() in {"localhost", "::1", "0.0.0.0"}:
+        return True
+    if "." not in host:
+        return True
+    lower_host = host.lower()
+    for suffix in {".local", ".lan", ".home", ".internal", ".test"}:
+        if lower_host.endswith(suffix):
+            return True
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_loopback or ip.is_private
+    except ValueError:
+        return False
 
 
 def secret_backend_url() -> str:
@@ -25,12 +49,27 @@ def secret_backend_url() -> str:
 
 
 def configured_backend_url() -> str:
-    return (
+    user_url = (
         st.session_state.get("backend_url", "").strip()
         or os.getenv("ARIA_BACKEND_URL", "").strip()
         or secret_backend_url()
-        or f"http://{BACKEND_HOST}:{BACKEND_PORT}"
     )
+    if user_url:
+        return user_url
+
+    # Adapt dynamically to the page host if it is a local network hostname/IP
+    try:
+        if hasattr(st, "context"):
+            page_host = st.context.headers.get("host", "")
+            if page_host:
+                host_ip = page_host.split(":")[0].strip()
+                if host_ip and host_ip not in {"localhost", "127.0.0.1", "::1"}:
+                    if is_local_host(host_ip):
+                        return f"http://{host_ip}:{BACKEND_PORT}"
+    except Exception:
+        pass
+
+    return f"http://{BACKEND_HOST}:{BACKEND_PORT}"
 
 
 st.set_page_config(
@@ -87,10 +126,16 @@ def ensure_frontend_build() -> None:
 @st.cache_resource
 def start_backend() -> subprocess.Popen | None:
     backend_url = configured_backend_url()
-    if backend_url != f"http://{BACKEND_HOST}:{BACKEND_PORT}":
+    try:
+        url_parsed = urlparse(backend_url)
+        backend_host_ip = url_parsed.hostname or BACKEND_HOST
+    except Exception:
+        backend_host_ip = BACKEND_HOST
+
+    if not is_local_host(backend_host_ip):
         return None
 
-    if port_is_open(BACKEND_HOST, BACKEND_PORT):
+    if port_is_open("127.0.0.1", BACKEND_PORT):
         return None
 
     ensure_frontend_build()
@@ -106,7 +151,7 @@ def start_backend() -> subprocess.Popen | None:
             "uvicorn",
             "main:app",
             "--host",
-            BACKEND_HOST,
+            "0.0.0.0",
             "--port",
             str(BACKEND_PORT),
         ],
@@ -118,7 +163,7 @@ def start_backend() -> subprocess.Popen | None:
     )
 
     for _ in range(120):
-        if port_is_open(BACKEND_HOST, BACKEND_PORT):
+        if port_is_open("127.0.0.1", BACKEND_PORT):
             return process
         if process.poll() is not None:
             output = process.stdout.read().strip() if process.stdout else ""
@@ -182,9 +227,15 @@ st.markdown(
 
 try:
     backend_url = configured_backend_url()
+    try:
+        url_parsed = urlparse(backend_url)
+        backend_host_ip = url_parsed.hostname or "127.0.0.1"
+    except Exception:
+        backend_host_ip = "127.0.0.1"
+
     page_host = (st.context.headers.get("host", "") if hasattr(st, "context") else "")
-    is_public_page = page_host and page_host.split(":")[0] not in {"localhost", "127.0.0.1", "::1"}
-    is_local_backend = backend_url.startswith("http://127.0.0.1") or backend_url.startswith("http://localhost") or backend_url.startswith("http://[::1]")
+    is_public_page = page_host and not is_local_host(page_host)
+    is_local_backend = is_local_host(backend_host_ip)
 
     if is_public_page and is_local_backend:
         st.title("ARIA Research Console")
