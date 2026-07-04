@@ -238,19 +238,22 @@ try:
             }
             [data-testid="stVerticalBlock"],
             [data-testid="stElementContainer"],
-            .element-container {
+            .element-container,
+            [data-testid="stHtml"] {
                 width: 100vw !important;
                 height: 100vh !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 gap: 0 !important;
             }
-            iframe[title="streamlit-component"] {
+            iframe {
                 width: 100vw !important;
                 height: 100vh !important;
                 min-height: 100vh !important;
                 border: 0 !important;
                 display: block !important;
+                margin: 0 !important;
+                padding: 0 !important;
             }
             </style>
             """,
