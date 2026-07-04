@@ -360,8 +360,8 @@ async def download_session_md(session_id: str):
         
         result = load_session(matching[0]["path"])
         return Response(
-            content=build_markdown_report(result),
-            media_type="text/markdown; charset=utf-8",
+            content=build_markdown_report(result).encode("utf-8"),
+            media_type="application/octet-stream",
             headers={"Content-Disposition": f'attachment; filename="aria_brief_{session_id}.md"'},
         )
     except Exception as e:
