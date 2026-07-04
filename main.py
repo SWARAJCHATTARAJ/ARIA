@@ -37,7 +37,7 @@ load_dotenv()
 app = FastAPI(title="ARIA API", description="FastAPI backend for ARIA Agentic RAG System")
 
 # Configure CORS origins securely (can be configured via environment variable)
-allowed_origins_str = os.getenv("ARIA_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000")
+allowed_origins_str = os.getenv("ARIA_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000,http://localhost:8501,http://127.0.0.1:8501")
 origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
 
 app.add_middleware(

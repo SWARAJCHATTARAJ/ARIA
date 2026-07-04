@@ -1228,6 +1228,7 @@ function App() {
                         href={`${API_BASE}/api/sessions/${selectedSessionId}/download/pdf?user_id=${encodeURIComponent(userId)}`}
                         target="_blank"
                         rel="noopener noreferrer"
+                        download={`aria_brief_${selectedSessionId}.pdf`}
                         className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                       >
                         <Download size={11} /> Download PDF
@@ -1236,6 +1237,7 @@ function App() {
                         href={`${API_BASE}/api/sessions/${selectedSessionId}/download/md?user_id=${encodeURIComponent(userId)}`}
                         target="_blank"
                         rel="noopener noreferrer"
+                        download={`aria_brief_${selectedSessionId}.md`}
                         className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                       >
                         <Download size={11} /> Download MD
