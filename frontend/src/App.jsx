@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 
 const API_BASE = window.location.port === "5173" ? "http://127.0.0.1:8000" : "";
+const OWNER_USER_ID = "swaraj_admin";
 
 function App() {
   // Theme state
@@ -96,6 +97,29 @@ function App() {
   const [activeRightTab, setActiveRightTab] = useState("citations"); // citations, logs, metrics
 
   const consoleEndRef = useRef(null);
+
+  const sourceCounts = (items = []) => {
+    return items.reduce((acc, item) => {
+      const key = (item.source_type || "unknown").toLowerCase();
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+  };
+
+  const citationStats = (currentResult) => {
+    const answer = currentResult?.answer || "";
+    const evidenceCount = currentResult?.evidence?.length || 0;
+    const citations = [...answer.matchAll(/(?<!!)\[(\d+)\]/g)].map(match => Number(match[1]));
+    const valid = new Set(citations.filter(number => number >= 1 && number <= evidenceCount));
+    const invalid = new Set(citations.filter(number => number < 1 || number > evidenceCount));
+    return {
+      inline: citations.length,
+      citedSources: valid.size,
+      uncitedSources: Math.max(0, evidenceCount - valid.size),
+      invalid: invalid.size,
+      coverage: evidenceCount ? Math.round((valid.size / evidenceCount) * 100) : 0
+    };
+  };
 
   // Initialize and load default configs
   useEffect(() => {
@@ -374,6 +398,13 @@ function App() {
     updated[index] = val;
     setCustomPlan(updated);
   };
+
+  const analyticsCounts = result ? sourceCounts(result.evidence || []) : {};
+  const analyticsTypes = Object.entries(analyticsCounts).sort((a, b) => b[1] - a[1]);
+  const analyticsCitations = citationStats(result);
+  const topEvidence = result
+    ? [...(result.evidence || [])].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5)
+    : [];
 
   return (
     <div className="flex h-screen overflow-hidden bg-aria-bg text-aria-text font-sans antialiased">
@@ -744,6 +775,7 @@ function App() {
               <div className="h-11 border-b border-aria-border flex bg-aria-bg/50 text-[10px] font-semibold text-aria-muted px-2">
                 {[
                   { id: "citations", label: "Citations" },
+                  { id: "analytics", label: "Analytics" },
                   { id: "logs", label: "Activity Trace" },
                   { id: "metrics", label: "Metrics" }
                 ].map((tab) => (
@@ -821,6 +853,98 @@ function App() {
                         );
                       })
                     )}
+                  </div>
+                )}
+
+                {/* 2. ANALYTICS TAB */}
+                {activeRightTab === "analytics" && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3 text-center">
+                      <div className="p-3 bg-aria-surface border border-aria-border rounded-lg">
+                        <span className="text-[10px] text-aria-muted block mb-1">Inline Citations</span>
+                        <strong className="text-sm font-semibold text-aria-text">{analyticsCitations.inline}</strong>
+                      </div>
+                      <div className="p-3 bg-aria-surface border border-aria-border rounded-lg">
+                        <span className="text-[10px] text-aria-muted block mb-1">Coverage</span>
+                        <strong className="text-sm font-semibold text-aria-text">{analyticsCitations.coverage}%</strong>
+                      </div>
+                      <div className="p-3 bg-aria-surface border border-aria-border rounded-lg">
+                        <span className="text-[10px] text-aria-muted block mb-1">Cited Sources</span>
+                        <strong className="text-sm font-semibold text-aria-text">{analyticsCitations.citedSources}</strong>
+                      </div>
+                      <div className="p-3 bg-aria-surface border border-aria-border rounded-lg">
+                        <span className="text-[10px] text-aria-muted block mb-1">Invalid Citations</span>
+                        <strong className={`text-sm font-semibold ${analyticsCitations.invalid ? "text-amber-400" : "text-aria-text"}`}>
+                          {analyticsCitations.invalid}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-aria-surface border border-aria-border rounded-lg space-y-3">
+                      <h4 className="text-[10px] font-semibold text-aria-text uppercase tracking-wider">Source Mix</h4>
+                      {analyticsTypes.length === 0 ? (
+                        <p className="text-xs text-aria-muted">No evidence collected.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {analyticsTypes.map(([sourceType, count]) => {
+                            const percentage = result.evidence.length > 0 ? Math.round((count / result.evidence.length) * 100) : 0;
+                            return (
+                              <div key={sourceType} className="space-y-1 text-xs">
+                                <div className="flex justify-between items-center text-[10px]">
+                                  <span className="font-semibold uppercase tracking-wider text-aria-text">{sourceType}</span>
+                                  <span className="text-aria-muted">{count} · {percentage}%</span>
+                                </div>
+                                <div className="h-2 w-full bg-aria-bg rounded-full overflow-hidden border border-aria-border">
+                                  <div className="h-full bg-aria-accent" style={{ width: `${percentage}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-4 bg-aria-surface border border-aria-border rounded-lg space-y-3">
+                      <h4 className="text-[10px] font-semibold text-aria-text uppercase tracking-wider">Top Source Relevance</h4>
+                      {topEvidence.length === 0 ? (
+                        <p className="text-xs text-aria-muted">No scored sources available.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {topEvidence.map((item, idx) => {
+                            const score = Math.max(0, Math.min(1, item.score || 0));
+                            return (
+                              <div key={`${item.title}-${idx}`} className="space-y-1">
+                                <div className="flex justify-between gap-3 text-[10px]">
+                                  <span className="text-aria-text font-semibold truncate">[{idx + 1}] {item.title}</span>
+                                  <span className="text-aria-muted">{score.toFixed(2)}</span>
+                                </div>
+                                <div className="h-2 w-full bg-aria-bg rounded-full overflow-hidden border border-aria-border">
+                                  <div className="h-full bg-emerald-500" style={{ width: `${score * 100}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-4 bg-aria-surface border border-aria-border rounded-lg">
+                      <h4 className="text-[10px] font-semibold text-aria-text uppercase tracking-wider mb-3">Workflow</h4>
+                      <div className="flex items-center justify-between text-[9px] text-aria-muted">
+                        {["Plan", "Retrieve", "Draft", "Verify", "Export"].map((stage, idx) => (
+                          <div key={stage} className="flex flex-col items-center gap-1 min-w-0">
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                              stage === "Verify" && result.verification?.includes("NEEDS_MORE_RESEARCH")
+                                ? "bg-amber-500 text-aria-bg"
+                                : "bg-aria-accent text-aria-bg"
+                            }`}>
+                              {idx + 1}
+                            </span>
+                            <span className="truncate">{stage}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -1331,6 +1455,18 @@ function App() {
                       placeholder="e.g. user_123"
                       className="flex-1 bg-aria-bg border border-aria-border rounded-xl px-3 py-2 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent"
                     />
+                    <button
+                      onClick={() => {
+                        setUserId(OWNER_USER_ID);
+                        localStorage.setItem("aria_user_id", OWNER_USER_ID);
+                      }}
+                      className={`px-2.5 bg-aria-surface hover:bg-aria-border border rounded-xl text-xs font-semibold transition-colors ${
+                        userId === OWNER_USER_ID ? "border-aria-accent text-aria-accent" : "border-aria-border text-aria-text"
+                      }`}
+                      title="Use owner profile"
+                    >
+                      Owner
+                    </button>
                     <button 
                       onClick={() => {
                         const newId = "user_" + Math.random().toString(36).substring(2, 11);
@@ -1344,7 +1480,7 @@ function App() {
                     </button>
                   </div>
                   <span className="text-[10px] text-aria-muted block leading-normal pt-0.5">
-                    Only the configured owner ID can view and manage all users' research histories.
+                    Owner ID: <code className="text-aria-accent font-semibold">{OWNER_USER_ID}</code>. This profile can view and manage all users' research histories.
                   </span>
                 </div>
               </div>
