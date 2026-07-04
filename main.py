@@ -325,13 +325,20 @@ async def get_sessions(user_id: str | None = None, limit: int = 50):
 async def get_session(session_id: str):
     """Retrieve detailed research result of a specific session."""
     try:
-        sessions = list_sessions(limit=100)
-        matching = [s for s in sessions if s["id"] == session_id]
-        if not matching:
+        from aria.sessions import SESSION_DIR, load_session
+        matching_files = list(SESSION_DIR.glob(f"*_{session_id}.json"))
+        if not matching_files:
             raise HTTPException(status_code=404, detail="Session not found.")
         
-        result = load_session(matching[0]["path"])
-        return {"id": session_id, "title": matching[0]["title"], "created_at": matching[0]["created_at"], "result": result_to_dict(result)}
+        path = matching_files[0]
+        data = json.loads(path.read_text(encoding="utf-8"))
+        result = load_session(path)
+        return {
+            "id": session_id,
+            "title": data.get("title") or data.get("result", {}).get("question", "Untitled session"),
+            "created_at": data.get("created_at", ""),
+            "result": result_to_dict(result)
+        }
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -341,12 +348,12 @@ async def get_session(session_id: str):
 async def download_session_pdf(session_id: str):
     """Download research brief of a session as a formatted PDF."""
     try:
-        sessions = list_sessions(limit=100)
-        matching = [s for s in sessions if s["id"] == session_id]
-        if not matching:
+        from aria.sessions import SESSION_DIR, load_session
+        matching_files = list(SESSION_DIR.glob(f"*_{session_id}.json"))
+        if not matching_files:
             raise HTTPException(status_code=404, detail="Session not found.")
         
-        result = load_session(matching[0]["path"])
+        result = load_session(matching_files[0])
         return Response(
             content=build_pdf_report(result),
             media_type="application/pdf",
@@ -359,12 +366,12 @@ async def download_session_pdf(session_id: str):
 async def download_session_md(session_id: str):
     """Download research brief of a session as a Markdown file."""
     try:
-        sessions = list_sessions(limit=100)
-        matching = [s for s in sessions if s["id"] == session_id]
-        if not matching:
+        from aria.sessions import SESSION_DIR, load_session
+        matching_files = list(SESSION_DIR.glob(f"*_{session_id}.json"))
+        if not matching_files:
             raise HTTPException(status_code=404, detail="Session not found.")
         
-        result = load_session(matching[0]["path"])
+        result = load_session(matching_files[0])
         return Response(
             content=build_markdown_report(result).encode("utf-8"),
             media_type="application/octet-stream",
