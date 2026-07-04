@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +12,32 @@ from .core import Evidence, ResearchResult
 
 
 SESSION_DIR = Path(".aria_sessions")
+
+
+def admin_user_id() -> str:
+    return os.getenv("ARIA_ADMIN_USER_ID", "swaraj_admin").strip() or "swaraj_admin"
+
+
+def normalize_user_id(user_id: str | None) -> str | None:
+    user_id = (user_id or "").strip()
+    return user_id or None
+
+
+def is_admin_user(user_id: str | None) -> bool:
+    return normalize_user_id(user_id) == admin_user_id()
+
+
+def can_access_session(session_user: str | None, requester_user_id: str | None) -> bool:
+    requester_user_id = normalize_user_id(requester_user_id)
+    if is_admin_user(requester_user_id):
+        return True
+    if not requester_user_id:
+        return False
+    return session_user == requester_user_id
+
+
+def is_valid_session_id(session_id: str) -> bool:
+    return bool(re.fullmatch(r"[a-f0-9]{32}", session_id or ""))
 
 
 def utc_now_iso() -> str:
@@ -63,6 +91,8 @@ def list_sessions(session_dir: Path = SESSION_DIR, limit: int = 25, user_id: str
     if not session_dir.exists():
         return []
 
+    limit = max(1, min(int(limit), 200))
+    requester_user_id = normalize_user_id(user_id)
     sessions: list[dict] = []
     for path in sorted(session_dir.glob("*.json"), reverse=True):
         try:
@@ -71,9 +101,8 @@ def list_sessions(session_dir: Path = SESSION_DIR, limit: int = 25, user_id: str
             continue
             
         session_user = data.get("user_id")
-        if user_id and user_id not in {"admin", "owner"}:
-            if session_user != user_id:
-                continue
+        if not can_access_session(session_user, requester_user_id):
+            continue
 
         sessions.append(
             {
@@ -93,17 +122,41 @@ def clear_sessions(session_dir: Path = SESSION_DIR, user_id: str | None = None) 
     if not session_dir.exists():
         return
 
+    requester_user_id = normalize_user_id(user_id)
     for path in session_dir.glob("*.json"):
         try:
-            if not user_id or user_id in {"admin", "owner"}:
+            if is_admin_user(requester_user_id):
                 path.unlink()
             else:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 session_user = data.get("user_id")
-                if session_user == user_id or session_user is None:
+                if can_access_session(session_user, requester_user_id):
                     path.unlink()
         except OSError:
             pass
+
+
+def find_session_path(
+    session_id: str,
+    session_dir: Path = SESSION_DIR,
+    user_id: str | None = None,
+) -> Path | None:
+    if not is_valid_session_id(session_id):
+        return None
+
+    matching_files = list(session_dir.glob(f"*_{session_id}.json"))
+    if not matching_files:
+        return None
+
+    path = matching_files[0]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not can_access_session(data.get("user_id"), user_id):
+        return None
+    return path
 
 
 def load_session(path: str | Path) -> ResearchResult:

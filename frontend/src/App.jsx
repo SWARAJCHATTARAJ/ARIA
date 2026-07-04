@@ -140,7 +140,7 @@ function App() {
 
   const fetchSessions = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/sessions?user_id=${userId}`);
+      const response = await fetch(`${API_BASE}/api/sessions?user_id=${encodeURIComponent(userId)}`);
       if (response.ok) {
         const data = await response.json();
         setSessions(data.sessions);
@@ -153,7 +153,7 @@ function App() {
   const clearMemory = async () => {
     setMemoryStatus(null);
     try {
-      const response = await fetch(`${API_BASE}/api/memory/clear?user_id=${userId}`, { method: "POST" });
+      const response = await fetch(`${API_BASE}/api/memory/clear?user_id=${encodeURIComponent(userId)}`, { method: "POST" });
       if (response.ok) {
         setMemoryCount(0);
         setMemoryStatus({ type: "success", message: "Local memory and search history cleared." });
@@ -290,7 +290,7 @@ function App() {
   const loadSessionDetails = async (sessionId) => {
     setError(null);
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/${sessionId}`);
+      const response = await fetch(`${API_BASE}/api/sessions/${sessionId}?user_id=${encodeURIComponent(userId)}`);
       if (response.ok) {
         const data = await response.json();
         setResult(data.result);
@@ -887,7 +887,7 @@ function App() {
               {/* Document download buttons bar */}
               <div className="p-3 border-t border-aria-border bg-aria-bg/50 flex gap-2 justify-end">
                 <a
-                  href={`${API_BASE}/api/sessions/${selectedSessionId}/download/pdf`}
+                  href={`${API_BASE}/api/sessions/${selectedSessionId}/download/pdf?user_id=${encodeURIComponent(userId)}`}
                   download
                   target="_blank"
                   rel="noopener noreferrer"
@@ -896,7 +896,7 @@ function App() {
                   <Download size={11} /> Download PDF
                 </a>
                 <a
-                  href={`${API_BASE}/api/sessions/${selectedSessionId}/download/md`}
+                  href={`${API_BASE}/api/sessions/${selectedSessionId}/download/md?user_id=${encodeURIComponent(userId)}`}
                   download
                   target="_blank"
                   rel="noopener noreferrer"
@@ -1328,7 +1328,7 @@ function App() {
                         setUserId(newId);
                         localStorage.setItem("aria_user_id", newId);
                       }}
-                      placeholder="e.g. user_123 or admin"
+                      placeholder="e.g. user_123"
                       className="flex-1 bg-aria-bg border border-aria-border rounded-xl px-3 py-2 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent"
                     />
                     <button 
@@ -1344,7 +1344,7 @@ function App() {
                     </button>
                   </div>
                   <span className="text-[10px] text-aria-muted block leading-normal pt-0.5">
-                    Enter <code className="text-aria-accent font-semibold">admin</code> to view and manage all users' research histories.
+                    Only the configured owner ID can view and manage all users' research histories.
                   </span>
                 </div>
               </div>

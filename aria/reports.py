@@ -12,6 +12,7 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
 )
 from reportlab.pdfgen import canvas
+from reportlab.graphics.shapes import Drawing, Rect, String, Line, Circle
 
 from .core import ResearchResult, Evidence
 
@@ -85,6 +86,8 @@ def clean_markdown_text(text: str) -> str:
 
 def confidence_label(result: ResearchResult) -> str:
     """Estimate confidence from evidence volume and source quality."""
+    if "NEEDS_MORE_RESEARCH" in (result.verification or "").upper():
+        return "Needs Review"
     count = len(result.evidence)
     high_signal = sum(
         1 for item in result.evidence if item.source_type in {"pdf", "research", "finance"}
@@ -113,6 +116,223 @@ def linkify_citations_markdown(text: str, evidence: list[Evidence]) -> str:
         return f"[[{number}]]({url})"
 
     return re.sub(r"(?<!\!)\[(\d+)\]", replace, text)
+
+
+SOURCE_COLORS = [
+    colors.HexColor("#2563EB"),
+    colors.HexColor("#059669"),
+    colors.HexColor("#D97706"),
+    colors.HexColor("#7C3AED"),
+    colors.HexColor("#DC2626"),
+    colors.HexColor("#0891B2"),
+    colors.HexColor("#475569"),
+]
+
+
+def evidence_type_counts(evidence: list[Evidence]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in evidence:
+        source_type = (item.source_type or "unknown").strip().lower() or "unknown"
+        counts[source_type] = counts.get(source_type, 0) + 1
+    return dict(sorted(counts.items(), key=lambda pair: (-pair[1], pair[0])))
+
+
+def short_label(value: str | None, max_chars: int) -> str:
+    text = " ".join((value or "Untitled source").split())
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3].rstrip() + "..."
+
+
+def citation_stats(result: ResearchResult) -> dict[str, int]:
+    citations = [int(match) for match in re.findall(r"(?<!\!)\[(\d+)\]", result.answer or "")]
+    valid = {number for number in citations if 1 <= number <= len(result.evidence)}
+    invalid = {number for number in citations if number < 1 or number > len(result.evidence)}
+    cited_sources = len(valid)
+    total_sources = len(result.evidence)
+    return {
+        "inline_citations": len(citations),
+        "cited_sources": cited_sources,
+        "uncited_sources": max(0, total_sources - cited_sources),
+        "invalid_citations": len(invalid),
+    }
+
+
+def build_metric_cards(result: ResearchResult, styles) -> Table:
+    stats = citation_stats(result)
+    metrics = result.metrics or {}
+    card_style = ParagraphStyle(
+        'MetricCardText',
+        parent=styles['Normal'],
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#64748B"),
+        alignment=1,
+    )
+    value_style = ParagraphStyle(
+        'MetricCardValue',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=15,
+        leading=18,
+        textColor=colors.HexColor("#0F172A"),
+        alignment=1,
+    )
+    cards = [
+        ("Evidence", str(len(result.evidence))),
+        ("Citations", str(stats["inline_citations"])),
+        ("Iterations", str(metrics.get("iterations", "n/a"))),
+        ("Confidence", confidence_label(result)),
+    ]
+    data = [
+        [
+            Paragraph(f"<b>{escape(value)}</b>", value_style),
+            Paragraph(label, card_style),
+        ]
+        for label, value in cards
+    ]
+    table = Table([data], colWidths=[128, 128, 128, 128])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+        ('PADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    return table
+
+
+def source_mix_chart(result: ResearchResult) -> Drawing:
+    width, height = 250, 128
+    drawing = Drawing(width, height)
+    counts = evidence_type_counts(result.evidence)
+    total = max(1, sum(counts.values()))
+
+    drawing.add(String(0, 116, "Source Mix", fontName="Helvetica-Bold", fontSize=9, fillColor=colors.HexColor("#0F172A")))
+    drawing.add(String(0, 102, f"{sum(counts.values())} evidence items across {len(counts)} source types", fontSize=7, fillColor=colors.HexColor("#64748B")))
+
+    x = 0
+    bar_y = 82
+    bar_width = 230
+    items = list(counts.items())
+    for index, (source_type, count) in enumerate(items):
+        if index == len(items) - 1:
+            segment_width = max(0, bar_width - x)
+        else:
+            segment_width = (count / total) * bar_width
+        drawing.add(Rect(x, bar_y, segment_width, 14, fillColor=SOURCE_COLORS[index % len(SOURCE_COLORS)], strokeColor=None))
+        x += segment_width
+    drawing.add(Rect(0, bar_y, bar_width, 14, fillColor=None, strokeColor=colors.HexColor("#CBD5E1"), strokeWidth=0.5))
+
+    legend_y = 60
+    for index, (source_type, count) in enumerate(list(counts.items())[:6]):
+        row = index % 3
+        col = index // 3
+        lx = col * 118
+        ly = legend_y - (row * 17)
+        pct = round((count / total) * 100)
+        drawing.add(Rect(lx, ly, 8, 8, fillColor=SOURCE_COLORS[index % len(SOURCE_COLORS)], strokeColor=None))
+        drawing.add(String(lx + 12, ly + 1, f"{source_type.upper()} {count} ({pct}%)", fontSize=7, fillColor=colors.HexColor("#334155")))
+
+    if not counts:
+        drawing.add(String(0, 78, "No evidence collected.", fontSize=8, fillColor=colors.HexColor("#64748B")))
+    return drawing
+
+
+def relevance_chart(result: ResearchResult) -> Drawing:
+    width, height = 250, 128
+    drawing = Drawing(width, height)
+    drawing.add(String(0, 116, "Top Source Relevance", fontName="Helvetica-Bold", fontSize=9, fillColor=colors.HexColor("#0F172A")))
+    drawing.add(String(0, 102, "Ranked by retrieval/re-ranking score", fontSize=7, fillColor=colors.HexColor("#64748B")))
+
+    top_items = sorted(result.evidence, key=lambda item: item.score, reverse=True)[:5]
+    if not top_items:
+        drawing.add(String(0, 78, "No relevance scores available.", fontSize=8, fillColor=colors.HexColor("#64748B")))
+        return drawing
+
+    max_width = 140
+    for index, item in enumerate(top_items):
+        y = 82 - (index * 16)
+        label = short_label(item.title, 27)
+        score = max(0.0, min(1.0, item.score))
+        drawing.add(String(0, y + 2, f"{index + 1}. {label}", fontSize=6.8, fillColor=colors.HexColor("#334155")))
+        drawing.add(Rect(96, y, max_width, 8, fillColor=colors.HexColor("#E2E8F0"), strokeColor=None))
+        drawing.add(Rect(96, y, score * max_width, 8, fillColor=colors.HexColor("#2563EB"), strokeColor=None))
+        drawing.add(String(240, y + 1, f"{score:.2f}", fontSize=6.8, fillColor=colors.HexColor("#475569")))
+    return drawing
+
+
+def workflow_timeline(result: ResearchResult) -> Drawing:
+    width, height = 515, 72
+    drawing = Drawing(width, height)
+    stages = ["Plan", "Retrieve", "Draft", "Verify", "Export"]
+    stage_x = [36, 146, 256, 366, 476]
+    status_color = colors.HexColor("#059669")
+    if "NEEDS_MORE_RESEARCH" in (result.verification or "").upper():
+        status_color = colors.HexColor("#D97706")
+
+    drawing.add(String(0, 60, "Research Workflow", fontName="Helvetica-Bold", fontSize=9, fillColor=colors.HexColor("#0F172A")))
+    drawing.add(Line(stage_x[0], 32, stage_x[-1], 32, strokeColor=colors.HexColor("#CBD5E1"), strokeWidth=1.2))
+    for index, stage in enumerate(stages):
+        fill = status_color if stage == "Verify" else colors.HexColor("#2563EB")
+        drawing.add(Circle(stage_x[index], 32, 10, fillColor=fill, strokeColor=colors.white, strokeWidth=1.2))
+        drawing.add(String(stage_x[index] - 6, 29, str(index + 1), fontName="Helvetica-Bold", fontSize=7, fillColor=colors.white))
+        drawing.add(String(stage_x[index] - 24, 12, stage, fontSize=7.5, fillColor=colors.HexColor("#334155")))
+    return drawing
+
+
+def citation_coverage_panel(result: ResearchResult, styles) -> Table:
+    stats = citation_stats(result)
+    total = max(1, len(result.evidence))
+    coverage = round((stats["cited_sources"] / total) * 100)
+    status = "Passed" if "NEEDS_MORE_RESEARCH" not in (result.verification or "").upper() else "Needs Review"
+    rows = [
+        ["Inline citations", str(stats["inline_citations"])],
+        ["Evidence cited", f"{stats['cited_sources']} of {len(result.evidence)} ({coverage}%)"],
+        ["Uncited evidence", str(stats["uncited_sources"])],
+        ["Invalid citations blocked", str(stats["invalid_citations"])],
+        ["Verification status", status],
+    ]
+    table = Table(
+        [[Paragraph(f"<b>{escape(label)}</b>", styles['Normal']), Paragraph(escape(value), styles['Normal'])] for label, value in rows],
+        colWidths=[145, 95],
+    )
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#E2E8F0")),
+        ('PADDING', (0, 0), (-1, -1), 6),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    return table
+
+
+def analytics_flowables(result: ResearchResult, styles) -> list:
+    return [
+        build_metric_cards(result, styles),
+        Spacer(1, 8),
+        Table(
+            [[source_mix_chart(result), relevance_chart(result)]],
+            colWidths=[257, 258],
+            style=[
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                ('PADDING', (0, 0), (-1, -1), 8),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ],
+        ),
+        Spacer(1, 8),
+        Table(
+            [[workflow_timeline(result), citation_coverage_panel(result, styles)]],
+            colWidths=[267, 248],
+            style=[
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                ('PADDING', (0, 0), (-1, -1), 8),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ],
+        ),
+    ]
 
 
 def text_to_flowables(text: str, styles) -> list:
@@ -434,6 +654,12 @@ def build_pdf_report(result: ResearchResult) -> bytes:
         ]))
         return div
 
+    story.append(Paragraph("Research Analytics", section_heading))
+    story.append(add_divider())
+    story.append(Spacer(1, 6))
+    story.extend(analytics_flowables(result, styles))
+    story.append(Spacer(1, 10))
+
     story.append(Paragraph("Research Brief", section_heading))
     story.append(add_divider())
     story.append(Spacer(1, 6))
@@ -476,7 +702,18 @@ def build_pdf_report(result: ResearchResult) -> bytes:
                 link_str = f'<br/><font color="#3B82F6" size="8">URL: <a href="{escaped_url}">{escaped_visible_url}</a></font>'
             else:
                 link_str = ""
-            title_text = f"<b>{clean_markdown_text(item.title)}</b>{link_str}"
+            provenance = []
+            if item.retrieved_via:
+                provenance.append(f"via {item.retrieved_via}")
+            if item.source_id:
+                provenance.append(f"id {item.source_id}")
+            if item.query:
+                provenance.append(f"query {item.query}")
+            provenance_text = ""
+            if provenance:
+                provenance_text = f"<br/><font color=\"#64748B\" size=\"8\">{' | '.join(escape(part) for part in provenance)}</font>"
+            score_text = f"<br/><font color=\"#64748B\" size=\"8\">Relevance score: {item.score:.2f}</font>"
+            title_text = f"<b>{clean_markdown_text(item.title)}</b>{link_str}{score_text}{provenance_text}"
 
             table_data.append([
                 Paragraph(str(idx), ParagraphStyle('TD_Num', parent=styles['Normal'], fontSize=9)),

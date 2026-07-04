@@ -30,7 +30,7 @@ from aria.agent import ResearchAgent
 from aria.core import Settings, validate_pdf_upload, estimate_tokens
 from aria.rag import VectorMemory
 from aria.reports import build_markdown_report, build_pdf_report
-from aria.sessions import list_sessions, load_session, save_session, result_to_dict
+from aria.sessions import find_session_path, is_admin_user, list_sessions, load_session, save_session, result_to_dict
 
 load_dotenv()
 
@@ -303,7 +303,7 @@ async def get_memory_count():
 async def clear_memory(user_id: str | None = None):
     """Clear local vector memory and optionally user's session history."""
     try:
-        if not user_id or user_id in {"admin", "owner"}:
+        if is_admin_user(user_id):
             memory = get_memory()
             memory.reset()
         from aria.sessions import clear_sessions
@@ -322,15 +322,13 @@ async def get_sessions(user_id: str | None = None, limit: int = 50):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sessions/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, user_id: str | None = None):
     """Retrieve detailed research result of a specific session."""
     try:
-        from aria.sessions import SESSION_DIR, load_session
-        matching_files = list(SESSION_DIR.glob(f"*_{session_id}.json"))
-        if not matching_files:
+        path = find_session_path(session_id, user_id=user_id)
+        if not path:
             raise HTTPException(status_code=404, detail="Session not found.")
         
-        path = matching_files[0]
         data = json.loads(path.read_text(encoding="utf-8"))
         result = load_session(path)
         return {
@@ -345,38 +343,40 @@ async def get_session(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sessions/{session_id}/download/pdf")
-async def download_session_pdf(session_id: str):
+async def download_session_pdf(session_id: str, user_id: str | None = None):
     """Download research brief of a session as a formatted PDF."""
     try:
-        from aria.sessions import SESSION_DIR, load_session
-        matching_files = list(SESSION_DIR.glob(f"*_{session_id}.json"))
-        if not matching_files:
+        path = find_session_path(session_id, user_id=user_id)
+        if not path:
             raise HTTPException(status_code=404, detail="Session not found.")
         
-        result = load_session(matching_files[0])
+        result = load_session(path)
         return Response(
             content=build_pdf_report(result),
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="aria_brief_{session_id}.pdf"'},
         )
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sessions/{session_id}/download/md")
-async def download_session_md(session_id: str):
+async def download_session_md(session_id: str, user_id: str | None = None):
     """Download research brief of a session as a Markdown file."""
     try:
-        from aria.sessions import SESSION_DIR, load_session
-        matching_files = list(SESSION_DIR.glob(f"*_{session_id}.json"))
-        if not matching_files:
+        path = find_session_path(session_id, user_id=user_id)
+        if not path:
             raise HTTPException(status_code=404, detail="Session not found.")
         
-        result = load_session(matching_files[0])
+        result = load_session(path)
         return Response(
             content=build_markdown_report(result).encode("utf-8"),
             media_type="application/octet-stream",
             headers={"Content-Disposition": f'attachment; filename="aria_brief_{session_id}.md"'},
         )
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

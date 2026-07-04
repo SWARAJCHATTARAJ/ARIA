@@ -668,8 +668,14 @@ class ResearchAgent:
         return self.llm.complete(system, user, task="draft", evidence=evidence)
 
     def _verify(self, question: str, answer: str, evidence: list[Evidence]) -> str:
-        if not evidence:
-            return "STATUS: NEEDS_MORE_RESEARCH\nREASON: No evidence was retrieved.\nNEW_QUERIES:\n" + question
+        deterministic_issues = audit_answer_grounding(answer, evidence)
+        if deterministic_issues:
+            return (
+                "STATUS: NEEDS_MORE_RESEARCH\n"
+                f"REASON: Deterministic grounding audit failed: {'; '.join(deterministic_issues)}\n"
+                "NEW_QUERIES:\n"
+                f"{question} official sources evidence\n"
+            )
             
         if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
             system = (
@@ -690,7 +696,9 @@ class ResearchAgent:
                 f"Draft Report:\n{answer}\n\n"
                 f"Evidence:\n{evidence_str}"
             )
-            return self.llm.complete(system, user, task="verify", evidence=evidence)
+            llm_verification = self.llm.complete(system, user, task="verify", evidence=evidence)
+            if llm_verification:
+                return llm_verification
             
         official = sum(1 for item in evidence if item.source_type in {"pdf", "research", "finance"})
         web = sum(1 for item in evidence if item.source_type in {"wikipedia", "web"})
@@ -708,6 +716,45 @@ def format_evidence(evidence: list[Evidence], limit: int = 20) -> str:
         source = f" ({item.url})" if item.url else ""
         lines.append(f"[{index}] {item.title}{source}\n{item.summary}")
     return "\n\n".join(lines)
+
+
+def extract_citation_numbers(text: str) -> list[int]:
+    return [int(match) for match in re.findall(r"(?<!\!)\[(\d+)\]", text or "")]
+
+
+def audit_answer_grounding(answer: str, evidence: list[Evidence]) -> list[str]:
+    """Fast deterministic checks for citation integrity before trusting the verifier."""
+    issues: list[str] = []
+    clean_answer = (answer or "").strip()
+
+    if not evidence:
+        return ["no evidence was retrieved"]
+
+    if not clean_answer:
+        return ["draft answer is empty"]
+
+    if "no sufficient evidence found to answer the query" in clean_answer.lower():
+        return []
+
+    citations = extract_citation_numbers(clean_answer)
+    if not citations:
+        word_count = len(re.findall(r"\b\w+\b", clean_answer))
+        if word_count >= 12:
+            issues.append("draft contains no inline citations")
+
+    max_source = len(evidence)
+    invalid = sorted({number for number in citations if number < 1 or number > max_source})
+    if invalid:
+        invalid_text = ", ".join(f"[{number}]" for number in invalid)
+        issues.append(f"draft cites source numbers outside the evidence register: {invalid_text}")
+
+    evidence_urls = {item.url.strip() for item in evidence if item.url}
+    answer_urls = set(re.findall(r"https?://[^\s\)\]\<]+", clean_answer))
+    unsupported_urls = sorted(url for url in answer_urls if url not in evidence_urls)
+    if unsupported_urls:
+        issues.append("draft includes URLs that were not retrieved as evidence")
+
+    return issues
 
 
 def extract_tickers(text: str) -> list[str]:
