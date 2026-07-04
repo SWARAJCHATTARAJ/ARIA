@@ -798,6 +798,8 @@ function App() {
                 <a
                   href={`${API_BASE}/api/sessions/${selectedSessionId}/download/pdf`}
                   download
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                 >
                   <Download size={11} /> Download PDF
@@ -805,6 +807,8 @@ function App() {
                 <a
                   href={`${API_BASE}/api/sessions/${selectedSessionId}/download/md`}
                   download
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                 >
                   <Download size={11} /> Download MD
