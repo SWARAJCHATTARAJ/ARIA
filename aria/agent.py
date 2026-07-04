@@ -4,13 +4,14 @@ import os
 import re
 import operator
 import requests
+import asyncio
 from typing import TypedDict, Annotated
 from concurrent.futures import ThreadPoolExecutor
 from langgraph.graph import StateGraph, END
 
 from .core import Settings, Evidence, ResearchResult, estimate_tokens
 from .rag import VectorMemory
-from .tools import free_web_search, get_market_snapshot
+from .tools import free_web_search, get_market_snapshot, run_async
 
 
 class AgentState(TypedDict):
@@ -200,6 +201,72 @@ class ResearchAgent:
         plan = self._plan(question)
         return {"plan": plan, "events": ["Planner: generated search queries"]}
 
+    async def _async_search(
+        self,
+        queries: list[str],
+        use_local: bool,
+        use_web: bool,
+    ) -> tuple[list[Evidence], list[str]]:
+        import aiohttp
+        from .tools import (
+            async_wikipedia_search,
+            async_openalex_search,
+            async_arxiv_search,
+            async_duckduckgo_instant_answer,
+            HEADERS,
+        )
+
+        events = []
+        evidence = []
+
+        # 1. Local retrieval (sequential/thread-based, but fast)
+        if use_local:
+            for q in queries:
+                events.append(f"Retriever: retrieving documents for: {q}")
+                try:
+                    results = self.memory.retrieve(q)
+                    for ev in results:
+                        ev.query = q
+                    evidence.extend(results)
+                except Exception as e:
+                    events.append(f"Retriever: local retrieval failed for '{q}': {e}")
+
+        # 2. Concurrent web searches inside the same client session & event loop
+        if use_web and queries:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
+                tasks = []
+                task_metadata = []
+                for q in queries:
+                    events.append(f"Retriever: searching web sources for: {q}")
+                    tasks.append(async_wikipedia_search(session, q, 2))
+                    task_metadata.append((q, "wikipedia"))
+
+                    tasks.append(async_openalex_search(session, q, 2))
+                    task_metadata.append((q, "openalex"))
+
+                    tasks.append(async_arxiv_search(session, q, 2))
+                    task_metadata.append((q, "arxiv"))
+
+                    tasks.append(async_duckduckgo_instant_answer(session, q))
+                    task_metadata.append((q, "duckduckgo"))
+
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                query_to_results = {q: [] for q in queries}
+                for res, (q, provider) in zip(results, task_metadata):
+                    if isinstance(res, Exception) or not res:
+                        continue
+                    for ev in res:
+                        ev.query = q
+                        query_to_results[q].append(ev)
+
+                for q in queries:
+                    q_evs = query_to_results[q]
+                    evidence.extend(q_evs[:5])
+
+        return evidence, events
+
     def node_search(self, state: AgentState) -> dict:
         question = state["question"]
         plan = state["plan"]
@@ -235,16 +302,9 @@ class ResearchAgent:
             
             if use_web:
                 queries_to_run = plan if plan else [question]
-                def _fetch_web_only(query: str) -> tuple[list[Evidence], list[str]]:
-                    query_events = [f"Retriever: searching web sources for: {query}"]
-                    results = free_web_search(query)
-                    for ev in results:
-                        ev.query = query
-                    return results, query_events
-                with ThreadPoolExecutor(max_workers=len(queries_to_run) if queries_to_run else 1) as executor:
-                    for result, events in executor.map(_fetch_web_only, queries_to_run):
-                        new_evidence.extend(result)
-                        new_events.extend(events)
+                web_evidence, web_events = run_async(self._async_search(queries_to_run, use_local=False, use_web=True))
+                new_evidence.extend(web_evidence)
+                new_events.extend(web_events)
         else:
             if iteration > 0:
                 verification = state.get("verification", "")
@@ -263,27 +323,9 @@ class ResearchAgent:
             else:
                 queries_to_run = plan if plan else [question]
 
-            def _fetch_for_query(query: str) -> tuple[list[Evidence], list[str]]:
-                query_events = []
-                local_evidence: list[Evidence] = []
-                if use_local:
-                    query_events.append(f"Retriever: retrieving documents for: {query}")
-                    results = self.memory.retrieve(query)
-                    for ev in results:
-                        ev.query = query
-                    local_evidence.extend(results)
-                if use_web:
-                    query_events.append(f"Retriever: searching web sources for: {query}")
-                    results = free_web_search(query)
-                    for ev in results:
-                        ev.query = query
-                    local_evidence.extend(results)
-                return local_evidence, query_events
-
-            with ThreadPoolExecutor(max_workers=len(queries_to_run) if queries_to_run else 1) as executor:
-                for result, events in executor.map(_fetch_for_query, queries_to_run):
-                    new_evidence.extend(result)
-                    new_events.extend(events)
+            web_evidence, web_events = run_async(self._async_search(queries_to_run, use_local=use_local, use_web=use_web))
+            new_evidence.extend(web_evidence)
+            new_events.extend(web_events)
                     
             if use_finance:
                 tickers = extract_tickers(question)
@@ -294,7 +336,6 @@ class ResearchAgent:
                         ev.query = "Market Snapshots"
                     new_evidence.extend(results)
 
-        
         return {"evidence": new_evidence, "events": new_events}
 
     def node_draft(self, state: AgentState) -> dict:
@@ -318,7 +359,7 @@ class ResearchAgent:
         if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
             system = (
                 "You are ARIA's Lead Planner. Break down the user's research "
-                "question into 3 to 5 distinct, highly specific search queries targeting technical specifications, "
+                "question into 2 to 3 distinct, highly specific search queries targeting technical specifications, "
                 "standards, key developments, risks, or relevant parameters.\n"
                 "Output each query on a new line. Do not include numbers, bullets, or markdown."
             )
@@ -327,7 +368,7 @@ class ResearchAgent:
             queries = [line.strip() for line in response.splitlines() if line.strip()]
             cleaned_queries = clean_queries(queries)
             if cleaned_queries:
-                return cleaned_queries[:5]
+                return cleaned_queries[:3]
         
         return generate_diverse_fallback_queries(question)
 
