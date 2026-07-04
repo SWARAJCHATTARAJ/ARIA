@@ -99,7 +99,8 @@ def clear_sessions(session_dir: Path = SESSION_DIR, user_id: str | None = None) 
                 path.unlink()
             else:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                if data.get("user_id") == user_id:
+                session_user = data.get("user_id")
+                if session_user == user_id or session_user is None:
                     path.unlink()
         except OSError:
             pass

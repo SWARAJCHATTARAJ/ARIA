@@ -150,11 +150,6 @@ function App() {
   };
 
   const clearMemory = async () => {
-    if (memoryCount === 0) {
-      setMemoryStatus({ type: "info", message: "Local memory is already empty." });
-      return;
-    }
-
     setMemoryStatus(null);
     try {
       const response = await fetch(`${API_BASE}/api/memory/clear?user_id=${userId}`, { method: "POST" });
