@@ -30,7 +30,8 @@ if not exist .venv (
 echo [INFO] Activating virtual environment...
 call .venv\Scripts\activate.bat
 
-if not exist .venv\InstalledDependencies (
+python -c "import webview, uvicorn, fastapi" >nul 2>&1
+if %errorlevel% neq 0 (
     echo [INFO] Installing python dependencies...
     pip install -r requirements.txt
     if %errorlevel% neq 0 (
@@ -38,11 +39,10 @@ if not exist .venv\InstalledDependencies (
         pause
         exit /b 1
     )
-    echo Done > .venv\InstalledDependencies
 )
 
-:: Run Streamlit App
-echo [INFO] Starting ARIA locally...
-streamlit run app.py --server.port 8501 --server.headless true
+:: Run Desktop App
+echo [INFO] Starting ARIA locally as desktop app...
+python desktop_app.py
 
 pause
