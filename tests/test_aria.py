@@ -518,7 +518,8 @@ class LLMClientTests(unittest.TestCase):
                 user1_sessions = list_sessions(tmp_path, user_id="user1")
                 # Legacy sessions (user_id=None) are accessible to all identified users
                 self.assertEqual(len(user1_sessions), 2)
-                self.assertEqual(user1_sessions[1]["user_id"], "user1")
+                user_ids = {s["user_id"] for s in user1_sessions}
+                self.assertEqual(user_ids, {"user1", None})
 
                 public_admin_sessions = list_sessions(tmp_path, user_id="admin")
                 self.assertEqual(len(public_admin_sessions), 3)

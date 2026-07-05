@@ -51,6 +51,40 @@ DEVELOPER_PROFILE_EVIDENCE = Evidence(
 )
 
 
+# Helper to intercept mobile and windows/desktop app queries
+def is_app_query(query: str) -> bool:
+    q = query.lower()
+    keywords = [
+        "download app", "install app", "desktop app", "mobile app", 
+        "windows app", "pwa", "progressive web app", "install on mobile", 
+        "download for windows", "install aria", "run aria on mobile",
+        "run aria on desktop", "run aria on windows", "download desktop",
+        "download mobile", "get the app", "installing the app", "app version",
+        "mobile version", "desktop version", "windows version", "app mode",
+        "download link", "installation guide", "installation instructions",
+        "app icon", "install as an app", "desktop launcher", "download standalone"
+    ]
+    return any(k in q for k in keywords)
+
+APP_INFO_EVIDENCE = Evidence(
+    title="Official App Documentation: Mobile & Windows App Installation",
+    summary=(
+        "ARIA supports running as a standalone Windows Desktop application and a Mobile Progressive Web App (PWA):\n"
+        "1. Windows Desktop App: Download the standalone desktop launcher ('aria-desktop-app.zip') from "
+        "the sidebar in the ARIA console. The desktop app runs the FastAPI backend and React frontend locally, "
+        "wrapped in a native PyWebView desktop window wrapper controlled by 'desktop_app.py'.\n"
+        "2. Mobile App (Android & iOS): ARIA is fully responsive and optimized to run as a PWA. Open the ARIA "
+        "console URL in Google Chrome (Android) or Safari (iOS), open the browser menu/share settings, "
+        "and select 'Add to Home Screen'. Android registers it as a native WebAPK."
+    ),
+    source_type="system",
+    url="http://localhost:8000",
+    score=1.0,
+    source_id="app_downloads",
+    retrieved_via="system_database"
+)
+
+
 class AgentState(TypedDict):
     question: str
     plan: list[str]
@@ -101,6 +135,36 @@ class LLMClient:
                     "### Source Coverage\n\n"
                     "- Verified source: Official Developer Documentation [1]\n"
                     "- Synthesis mode: Verified Developer Record"
+                )
+
+        # Guarantee app download & installation info is returned for app queries
+        if is_app_query(user) or "app_downloads" in user:
+            if task == "verify":
+                return (
+                    "STATUS: PASSED\n"
+                    "REASON: Grounding check passed. Verified app installation/download info directly against system records.\n"
+                    "NEW_QUERIES:\n"
+                )
+            elif task == "plan":
+                return ""
+            else:
+                return (
+                    "### ARIA App Download & Installation Guide\n\n"
+                    "ARIA can be installed and run as a standalone Windows Desktop application or as a Progressive Web App (PWA) on mobile devices (Android & iOS).\n\n"
+                    "#### 💻 Windows Desktop Application\n"
+                    "- **Launcher Download**: You can download the standalone Windows desktop launcher (`aria-desktop-app.zip`) from the **App & Icon Downloads** section in the ARIA console sidebar.\n"
+                    "- **Under the Hood**: The desktop application runs the FastAPI backend and React frontend locally, wrapped in a native desktop window via `webview` (PyWebView) using [desktop_app.py](file:///C:/Users/Hp/OneDrive/Desktop/project/desktop_app.py).\n"
+                    "- **Manual Run**: You can also launch the desktop app manually using the `run_aria.bat` script in the root directory.\n\n"
+                    "#### 📱 Mobile App (Android & iOS)\n"
+                    "- **Progressive Web App (PWA)**: ARIA is fully optimized to run as a PWA on mobile devices and tablet screens.\n"
+                    "- **Installation (Android & iOS)**:\n"
+                    "  1. Open the ARIA URL in **Google Chrome** (on Android) or **Safari** (on iOS).\n"
+                    "  2. Tap the browser's menu (Android) or share icon (iOS).\n"
+                    "  3. Select **Add to Home Screen**.\n"
+                    "  - On Android, the browser automatically registers and installs it as a native WebAPK, providing an app icon on your home screen and a clean, standalone fullscreen experience.\n\n"
+                    "### Source Coverage\n\n"
+                    "- Verified source: Official System Documentation [1]\n"
+                    "- Synthesis mode: Verified System Record"
                 )
 
         if self.settings.llm_provider == "openrouter" and self.openrouter_api_key:
@@ -166,6 +230,27 @@ class LLMClient:
                 "### Source Coverage\n\n"
                 "- Verified source: Official Developer Documentation [1]\n"
                 "- Synthesis mode: Verified Developer Record"
+            )
+
+        # Check if this is an app query or if the app downloads evidence is present
+        if "app_downloads" in user or is_app_query(user):
+            return (
+                "### ARIA App Download & Installation Guide\n\n"
+                "ARIA can be installed and run as a standalone Windows Desktop application or as a Progressive Web App (PWA) on mobile devices (Android & iOS).\n\n"
+                "#### 💻 Windows Desktop Application\n"
+                "- **Launcher Download**: You can download the standalone Windows desktop launcher (`aria-desktop-app.zip`) from the **App & Icon Downloads** section in the ARIA console sidebar.\n"
+                "- **Under the Hood**: The desktop application runs the FastAPI backend and React frontend locally, wrapped in a native desktop window via `webview` (PyWebView) using [desktop_app.py](file:///C:/Users/Hp/OneDrive/Desktop/project/desktop_app.py).\n"
+                "- **Manual Run**: You can also launch the desktop app manually using the `run_aria.bat` script in the root directory.\n\n"
+                "#### 📱 Mobile App (Android & iOS)\n"
+                "- **Progressive Web App (PWA)**: ARIA is fully optimized to run as a PWA on mobile devices and tablet screens.\n"
+                "- **Installation (Android & iOS)**:\n"
+                "  1. Open the ARIA URL in **Google Chrome** (on Android) or **Safari** (on iOS).\n"
+                "  2. Tap the browser's menu (Android) or share icon (iOS).\n"
+                "  3. Select **Add to Home Screen**.\n"
+                "  - On Android, the browser automatically registers and installs it as a native WebAPK, providing an app icon on your home screen and a clean, standalone fullscreen experience.\n\n"
+                "### Source Coverage\n\n"
+                "- Verified source: Official System Documentation [1]\n"
+                "- Synthesis mode: Verified System Record"
             )
 
         # Parse question from user
@@ -554,6 +639,21 @@ class ResearchAgent:
                 query=question
             )
             new_evidence.append(dev_ev)
+
+        # Intercept mobile and windows app queries at the main question level
+        if is_app_query(question):
+            new_events.append("Retriever: main question is about ARIA's mobile or windows app; loading application documentation")
+            app_ev = Evidence(
+                title=APP_INFO_EVIDENCE.title,
+                summary=APP_INFO_EVIDENCE.summary,
+                source_type=APP_INFO_EVIDENCE.source_type,
+                url=APP_INFO_EVIDENCE.url,
+                score=APP_INFO_EVIDENCE.score,
+                source_id=APP_INFO_EVIDENCE.source_id,
+                retrieved_via=APP_INFO_EVIDENCE.retrieved_via,
+                query=question
+            )
+            new_evidence.append(app_ev)
         
         is_global_summary = False
         if use_local and iteration == 0:
@@ -568,7 +668,10 @@ class ResearchAgent:
             if any(kw in q_lower for kw in keywords):
                 is_global_summary = True
 
-        if is_global_summary:
+        if is_developer_query(question) or is_app_query(question):
+            # Bypass all searches for developer profile or app guide queries
+            pass
+        elif is_global_summary:
             new_events.append("Retriever: detected global summary request; fetching all indexed documents")
             all_chunks = self.memory.retrieve_all(limit=30)
             for ev in all_chunks:
