@@ -46,3 +46,11 @@ streamlit.server.log
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Android / Gradle / TWA Build Caches & Signing Keys
+.gradle/
+build/
+android.keystore
+app-release-signed.apk
+app-release-unsigned-aligned.apk
+app-release-signed.apk.idsig

@@ -1,0 +1,46 @@
+{
+  "packageId": "com.swarajchattaraj.aria",
+  "host": "aria-2-f3kq.onrender.com",
+  "name": "ARIA Research Console",
+  "launcherName": "ARIA",
+  "display": "standalone",
+  "themeColor": "#00E5FF",
+  "themeColorDark": "#00E5FF",
+  "navigationColor": "#0A0A0F",
+  "navigationColorDark": "#0A0A0F",
+  "navigationDividerColor": "#0A0A0F",
+  "navigationDividerColorDark": "#0A0A0F",
+  "backgroundColor": "#0A0A0F",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://aria-2-f3kq.onrender.com/icon-512.png",
+  "maskableIconUrl": "https://aria-2-f3kq.onrender.com/icon-512-maskable.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "aria"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 3,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "fallbackType": "customtabs",
+  "features": {
+    "playBilling": {
+      "enabled": false
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "minSdkVersion": 21,
+  "orientation": "any",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "displayOverride": [],
+  "appVersion": "1.0.0"
+}
