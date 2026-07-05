@@ -772,6 +772,15 @@ function App() {
                 <span>Install</span>
               </button>
             )}
+            <a
+              href="/downloads/aria.apk"
+              download="ARIA.apk"
+              className="flex items-center gap-1 px-2.5 py-0.5 bg-aria-accent/10 border border-aria-accent/30 hover:bg-aria-accent hover:text-white text-aria-accent text-[9px] font-bold rounded-full transition-all shrink-0 cursor-pointer"
+              title="Download Android APK"
+            >
+              <Smartphone size={9} />
+              <span>Android App</span>
+            </a>
           </div>
 
 
