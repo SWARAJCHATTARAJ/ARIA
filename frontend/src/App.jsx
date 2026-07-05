@@ -1853,7 +1853,14 @@ function App() {
                 </div>
 
                 {/* App Installation & Icon Downloads Section */}
-                {!(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+                {!(
+                  window.location.hostname === 'localhost' || 
+                  window.location.hostname === '127.0.0.1' || 
+                  window.location.hostname.startsWith('192.168.') || 
+                  window.location.hostname.startsWith('10.') || 
+                  window.location.hostname.startsWith('172.') || 
+                  window.location.hostname.endsWith('.local')
+                ) && (
                   <div className="space-y-3.5 pt-4 border-t border-aria-border">
                     <span className="text-[10px] font-semibold text-aria-muted uppercase tracking-wider block">App & Icon Downloads</span>
                     
