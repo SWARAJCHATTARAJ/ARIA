@@ -80,7 +80,7 @@ class SearchModesTestCase(unittest.TestCase):
 
     def test_global_summary_fallback(self):
         result = self.agent.run(
-            question="Summarize my indexed documents.", 
+            question="Summarize my indexed documents.",
             use_web=False, 
             use_local=True, 
             max_iterations=1

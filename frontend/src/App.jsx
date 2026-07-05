@@ -3,7 +3,7 @@ import {
   Search, Play, Settings, History, Layers, ChevronDown, ChevronUp, 
   ExternalLink, ShieldCheck, Download, 
   CheckCircle, AlertCircle, Plus, X, RefreshCw,
-  Sun, Moon, Menu
+  Sun, Moon, Menu, Monitor, Smartphone, LayoutGrid
 } from 'lucide-react';
 
 
@@ -119,7 +119,45 @@ function App() {
   });
   const [localUserId, setLocalUserId] = useState(userId);
 
+  // PWA states & listeners
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
 
+  useEffect(() => {
+    // Check if already in standalone mode
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+      setIsAppInstalled(true);
+    }
+
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setIsAppInstalled(true);
+      setDeferredPrompt(null);
+      console.log('ARIA PWA was installed successfully');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User installation choice: ${outcome}`);
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   const [error, setError] = useState(null);
   const [expandedCitationId, setExpandedCitationId] = useState(null);
@@ -550,7 +588,14 @@ function App() {
         {/* Brand Header */}
         <div className="h-14 px-4 flex items-center justify-between border-b border-aria-border">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-xs tracking-wider uppercase text-aria-text">A R I A</span>
+            <span className="font-semibold text-xs tracking-wider uppercase text-aria-text flex items-center">
+              A R&nbsp;
+              <span className="relative inline-block mr-1">
+                I
+                <span className="absolute -top-0.5 left-[1.5px] w-1 h-1 rounded-full bg-[#00E5FF] shadow-[0_0_5px_#00E5FF] animate-pulse" />
+              </span>
+              A
+            </span>
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-aria-border text-aria-muted font-mono font-medium">v1.2</span>
           </div>
 
@@ -717,6 +762,16 @@ function App() {
               </svg>
             </button>
             <span className="text-xs font-semibold tracking-wide text-aria-text uppercase truncate">Research Workspace</span>
+            {deferredPrompt && (
+              <button
+                onClick={handleInstallClick}
+                className="flex items-center gap-1 px-2.5 py-0.5 bg-aria-accent/10 border border-aria-accent/30 hover:bg-aria-accent hover:text-white text-aria-accent text-[9px] font-bold rounded-full transition-all shrink-0 animate-pulse hover:animate-none cursor-pointer"
+                title="Install ARIA to your device"
+              >
+                <Monitor size={9} />
+                <span>Install</span>
+              </button>
+            )}
           </div>
 
 
@@ -1796,6 +1851,69 @@ function App() {
                     Use a custom session identifier to save and retrieve your research history.
                   </span>
                 </div>
+
+                {/* App Installation & Icon Downloads Section */}
+                <div className="space-y-3.5 pt-4 border-t border-aria-border">
+                  <span className="text-[10px] font-semibold text-aria-muted uppercase tracking-wider block">App & Icon Downloads</span>
+                  
+                  {/* Icon Card */}
+                  <div className="flex gap-3 items-center p-3 bg-aria-bg/40 border border-aria-border rounded-xl">
+                    <div className="relative group shrink-0">
+                      <div className="absolute -inset-0.5 bg-gradient-to-r from-aria-accent to-[#47bfff] rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-300"></div>
+                      <img 
+                        src="/aria-app-icon.png" 
+                        alt="ARIA App Icon" 
+                        className="relative w-12 h-12 rounded-xl object-cover border border-aria-border/50"
+                        onError={(e) => {
+                          e.target.src = "/favicon.svg";
+                        }}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold text-aria-text block text-xs truncate">ARIA Agent Console</span>
+                      <span className="text-[10px] text-aria-muted block leading-relaxed">
+                        Install as a Progressive Web App on mobile &amp; PC.
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Installer / Instruction Actions */}
+                  <div className="space-y-2">
+                    {deferredPrompt ? (
+                      <button
+                        onClick={handleInstallClick}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-aria-accent to-[#6366f1] hover:from-aria-accent/90 hover:to-[#6366f1]/90 text-white rounded-xl font-semibold transition-all shadow-md shadow-aria-accent/15 hover:shadow-aria-accent/25 focus:outline-none cursor-pointer text-xs"
+                      >
+                        <Monitor size={13} />
+                        Install App on Device
+                      </button>
+                    ) : isAppInstalled ? (
+                      <div className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-aria-complete/10 border border-aria-complete/20 text-aria-complete rounded-xl font-semibold text-[11px]">
+                        <CheckCircle size={13} />
+                        Running in App Mode
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-aria-bg/25 border border-aria-border rounded-xl text-[10px] text-aria-muted leading-relaxed">
+                        <span className="font-semibold text-aria-text block mb-1 flex items-center gap-1.5">
+                          <Smartphone size={11} className="text-aria-accent" />
+                          How to install on Mobile &amp; PC:
+                        </span>
+                        On mobile, tap the browser's menu (e.g. Chrome's ⋮ or Safari's Share button) and select <strong className="text-aria-text">Add to Home Screen</strong>. On PC, click the install icon in the address bar.
+                      </div>
+                    )}
+
+                    <a 
+                      href="/aria-app-icon.png" 
+                      download="aria-app-icon.png"
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text rounded-xl font-semibold transition-colors focus:outline-none cursor-pointer text-xs"
+                      title="Download high-resolution PNG icon"
+                    >
+                      <Download size={13} />
+                      Download High-Res Icon
+                    </a>
+                  </div>
+                </div>
+
               </div>
 
 
