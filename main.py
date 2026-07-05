@@ -396,7 +396,16 @@ async def get_settings():
     }
 
 # Serving frontend build
-dist_path = Path("frontend/dist")
+def get_resource_path(relative_path: str) -> Path:
+    try:
+        import sys
+        if hasattr(sys, "_MEIPASS"):
+            return Path(sys._MEIPASS) / relative_path
+    except Exception:
+        pass
+    return Path(__file__).parent / relative_path
+
+dist_path = get_resource_path("frontend/dist")
 if dist_path.exists():
     app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="static")
 

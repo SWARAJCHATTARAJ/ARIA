@@ -29,9 +29,18 @@ def start_backend():
     # Run uvicorn server serving fastapi and the React dist
     uvicorn.run("main:app", host="127.0.0.1", port=PORT, log_level="warning")
 
+def get_resource_path(relative_path: str) -> Path:
+    try:
+        import sys as sys_lib
+        if hasattr(sys_lib, "_MEIPASS"):
+            return Path(sys_lib._MEIPASS) / relative_path
+    except Exception:
+        pass
+    return Path(__file__).parent / relative_path
+
 if __name__ == "__main__":
     # Ensure frontend dist folder is built, if not, print warning
-    dist_path = Path(__file__).parent / "frontend" / "dist"
+    dist_path = get_resource_path("frontend/dist")
     if not dist_path.exists():
         print("[ERROR] frontend/dist folder is missing. Please build the frontend before running the desktop app.")
         sys.exit(1)
