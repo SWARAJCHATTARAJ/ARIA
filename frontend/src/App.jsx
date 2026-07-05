@@ -1853,79 +1853,70 @@ function App() {
                 </div>
 
                 {/* App Installation & Icon Downloads Section */}
-                <div className="space-y-3.5 pt-4 border-t border-aria-border">
-                  <span className="text-[10px] font-semibold text-aria-muted uppercase tracking-wider block">App & Icon Downloads</span>
-                  
-                  {/* Icon Card */}
-                  <div className="flex gap-3 items-center p-3 bg-aria-bg/40 border border-aria-border rounded-xl">
-                    <div className="relative group shrink-0">
-                      <div className="absolute -inset-0.5 bg-gradient-to-r from-aria-accent to-[#47bfff] rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-300"></div>
-                      <img 
-                        src="/aria-app-icon.png" 
-                        alt="ARIA App Icon" 
-                        className="relative w-12 h-12 rounded-xl object-cover border border-aria-border/50"
-                        onError={(e) => {
-                          e.target.src = "/favicon.svg";
-                        }}
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="font-semibold text-aria-text block text-xs truncate">ARIA Agent Console</span>
-                      <span className="text-[10px] text-aria-muted block leading-relaxed">
-                        Install as a Progressive Web App on mobile &amp; PC.
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Installer / Instruction Actions */}
-                  <div className="space-y-2">
-                    {deferredPrompt ? (
-                      <button
-                        onClick={handleInstallClick}
-                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-aria-accent to-[#00b4d8] text-black font-bold rounded-xl transition-all shadow-md shadow-aria-accent/15 hover:shadow-aria-accent/25 focus:outline-none cursor-pointer text-xs"
-                      >
-                        <Monitor size={13} />
-                        Install App (PWA)
-                      </button>
-                    ) : isAppInstalled ? (
-                      <div className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-aria-complete/10 border border-aria-complete/20 text-aria-complete rounded-xl font-semibold text-[11px]">
-                        <CheckCircle size={13} />
-                        Running in App Mode
+                {!(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
+                  <div className="space-y-3.5 pt-4 border-t border-aria-border">
+                    <span className="text-[10px] font-semibold text-aria-muted uppercase tracking-wider block">App & Icon Downloads</span>
+                    
+                    {/* Icon Card */}
+                    <div className="flex gap-3 items-center p-3 bg-aria-bg/40 border border-aria-border rounded-xl">
+                      <div className="relative group shrink-0">
+                        <div className="absolute -inset-0.5 bg-gradient-to-r from-aria-accent to-[#47bfff] rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-300"></div>
+                        <img 
+                          src="/aria-app-icon.png" 
+                          alt="ARIA App Icon" 
+                          className="relative w-12 h-12 rounded-xl object-cover border border-aria-border/50"
+                          onError={(e) => {
+                            e.target.src = "/favicon.svg";
+                          }}
+                        />
                       </div>
-                    ) : null}
-
-                    {/* Windows Desktop Download */}
-                    <a 
-                      href="/aria-desktop-app.zip" 
-                      download="aria-desktop-app.zip"
-                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text rounded-xl font-semibold transition-colors focus:outline-none cursor-pointer text-xs"
-                      title="Download standalone Windows desktop launcher (.zip)"
-                    >
-                      <Monitor size={13} className="text-[#00E5FF]" />
-                      Download for Windows Desktop
-                    </a>
-
-                    {/* Mobile App Install Instructions */}
-                    <div className="p-3 bg-aria-bg/25 border border-aria-border rounded-xl text-[10px] text-aria-muted leading-relaxed">
-                      <span className="font-semibold text-aria-text block mb-1 flex items-center gap-1.5">
-                        <Smartphone size={11} className="text-[#00E5FF]" />
-                        Download/Install on Mobile (Android &amp; iOS):
-                      </span>
-                      Open this site in Chrome (Android) or Safari (iOS), tap the browser's menu / share icon, and select <strong className="text-aria-text">Add to Home Screen</strong>. Android registers it automatically as a native WebAPK.
+                      <div className="flex-1 min-w-0">
+                        <span className="font-semibold text-aria-text block text-xs truncate">ARIA Agent Console</span>
+                        <span className="text-[10px] text-aria-muted block leading-relaxed">
+                          Install as a Progressive Web App on mobile &amp; PC.
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Logo Download */}
-                    <a 
-                      href="/aria-app-icon.png" 
-                      download="aria-app-icon.png"
-                      className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text/80 hover:text-aria-text rounded-xl transition-colors focus:outline-none cursor-pointer text-xs"
-                      title="Download high-resolution PNG icon"
-                    >
-                      <Download size={12} />
-                      Download High-Res Logo
-                    </a>
+                    {/* Installer / Instruction Actions */}
+                    <div className="space-y-2">
+                      {deferredPrompt ? (
+                        <button
+                          onClick={handleInstallClick}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-aria-accent to-[#00b4d8] text-black font-bold rounded-xl transition-all shadow-md shadow-aria-accent/15 hover:shadow-aria-accent/25 focus:outline-none cursor-pointer text-xs"
+                        >
+                          <Monitor size={13} />
+                          Install App (PWA)
+                        </button>
+                      ) : isAppInstalled ? (
+                        <div className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-aria-complete/10 border border-aria-complete/20 text-aria-complete rounded-xl font-semibold text-[11px]">
+                          <CheckCircle size={13} />
+                          Running in App Mode
+                        </div>
+                      ) : null}
+
+                      {/* Windows Desktop Download */}
+                      <a 
+                        href="/aria-desktop-app.zip" 
+                        download="aria-desktop-app.zip"
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text rounded-xl font-semibold transition-colors focus:outline-none cursor-pointer text-xs"
+                        title="Download standalone Windows desktop launcher (.zip)"
+                      >
+                        <Monitor size={13} className="text-[#00E5FF]" />
+                        Download for Windows Desktop
+                      </a>
+
+                      {/* Mobile App Install Instructions */}
+                      <div className="p-3 bg-aria-bg/25 border border-aria-border rounded-xl text-[10px] text-aria-muted leading-relaxed">
+                        <span className="font-semibold text-aria-text block mb-1 flex items-center gap-1.5">
+                          <Smartphone size={11} className="text-[#00E5FF]" />
+                          Download/Install on Mobile (Android &amp; iOS):
+                        </span>
+                        Open this site in Chrome (Android) or Safari (iOS), tap the browser's menu / share icon, and select <strong className="text-aria-text">Add to Home Screen</strong>. Android registers it automatically as a native WebAPK.
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
 
               </div>
 

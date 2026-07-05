@@ -69,9 +69,35 @@ class NumberedCanvas(canvas.Canvas):
         self.restoreState()
 
 
-def clean_markdown_text(text: str) -> str:
+def clean_unsupported_characters(text: str) -> str:
+    """Replace common non-ASCII characters that cause black boxes/spots in ReportLab Helvetica."""
+    replacements = {
+        '\u201c': '"',  # Left double quote
+        '\u201d': '"',  # Right double quote
+        '\u2018': "'",  # Left single quote
+        '\u2019': "'",  # Right single quote
+        '\u2014': ' -- ', # Em dash
+        '\u2013': '-',   # En dash
+        '\u2212': '-',   # Unicode minus sign
+        '\u2022': '•',   # Unicode bullet point
+        '\u200b': '',    # Zero-width space
+        '\u00a0': ' ',   # Non-breaking space
+        '\u2011': '-',   # Non-breaking hyphen
+    }
+    for char, rep in replacements.items():
+        text = text.replace(char, rep)
+    return text
+
+
+def clean_markdown_text(text: str, evidence: list[Evidence] | None = None) -> str:
     """Convert a small Markdown subset into ReportLab-safe inline markup."""
+    # 1. Clean unsupported characters first
+    text = clean_unsupported_characters(text)
+    
+    # 2. Escape HTML special characters
     text = escape(text)
+    
+    # 3. Standardize markdown bold, italic, code
     text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
     text = re.sub(r'__(.*?)__', r'<b>\1</b>', text)
     text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
@@ -81,19 +107,46 @@ def clean_markdown_text(text: str) -> str:
         r'<font name="Courier" size="9" color="#1E293B"><b>\1</b></font>',
         text
     )
+    
+    # 4. Format citations beautifully as superscripts, removing brackets, with blue links
+    if evidence:
+        urls = citation_url_map(evidence)
+        
+        # Standardize punctuation and citations:
+        # Move period/comma before the citation and remove spaces:
+        text = re.sub(r'\s+([.,;?!])', r'\1', text)
+        text = re.sub(r'\s*\[(\d+)\]\s*([.,;?!])', r'\2[\1]', text)
+        text = re.sub(r'([.,;?!])\s*\[(\d+)\]', r'\1[\2]', text)
+        text = re.sub(r'\s+\[(\d+)\]', r'[\1]', text)
+        
+        def replace_citation(match: re.Match) -> str:
+            number = int(match.group(1))
+            if number < 1 or number > len(evidence):
+                return match.group(0)
+            
+            url = urls.get(number)
+            if url:
+                # Clickable blue superscript number
+                return f'<super rise="4.5" size="7"><a href="{escape(url)}"><font color="#2563EB"><b>{number}</b></font></a></super>'
+            else:
+                # Default grey/slate superscript number
+                return f'<super rise="4.5" size="7"><font color="#475569"><b>{number}</b></font></super>'
+                
+        text = re.sub(r'\[(\d+)\]', replace_citation, text)
+        
     return text
 
 
-def safe_paragraph(text: str, style) -> Paragraph:
+def safe_paragraph(text: str, style, bulletText=None) -> Paragraph:
     """Helper to safely build a Paragraph, falling back to clean text on XML parse error."""
     try:
-        p = Paragraph(text, style)
+        p = Paragraph(text, style, bulletText=bulletText)
         p.wrap(500, 100)
         return p
     except Exception:
         clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
         clean_text = re.sub(r'<[^>]+>', '', clean_text)
-        return Paragraph(clean_text, style)
+        return Paragraph(clean_text, style, bulletText=bulletText)
 
 
 def confidence_label(result: ResearchResult) -> str:
@@ -347,7 +400,7 @@ def analytics_flowables(result: ResearchResult, styles) -> list:
     ]
 
 
-def text_to_flowables(text: str, styles) -> list:
+def text_to_flowables(text: str, styles, evidence: list[Evidence] | None = None) -> list:
     """Turn simple Markdown text into ReportLab flowables."""
     flowables = []
     paragraphs = text.split('\n\n')
@@ -420,20 +473,19 @@ def text_to_flowables(text: str, styles) -> list:
             for line in lines:
                 line_str = line.strip().lstrip('-*+').strip()
                 if line_str:
-                    bullet_text = f"&bull; {clean_markdown_text(line_str)}"
-                    flowables.append(safe_paragraph(bullet_text, bullet_style))
+                    flowables.append(safe_paragraph(clean_markdown_text(line_str, evidence), bullet_style, bulletText='•'))
             flowables.append(Spacer(1, 6))
         else:
             if para.startswith('### '):
-                header_text = clean_markdown_text(para[4:].strip())
+                header_text = clean_markdown_text(para[4:].strip(), evidence)
                 flowables.append(safe_paragraph(header_text, subsubheading_style))
             elif para.startswith('## '):
-                header_text = clean_markdown_text(para[3:].strip())
+                header_text = clean_markdown_text(para[3:].strip(), evidence)
                 flowables.append(safe_paragraph(header_text, subheading_style))
             else:
                 clean_lines = [line.strip() for line in lines if line.strip()]
                 clean_para_text = " ".join(clean_lines)
-                flowables.append(safe_paragraph(clean_markdown_text(clean_para_text), styles['BodyText']))
+                flowables.append(safe_paragraph(clean_markdown_text(clean_para_text, evidence), styles['BodyText']))
                 flowables.append(Spacer(1, 6))
 
     return flowables
@@ -675,14 +727,14 @@ def build_pdf_report(result: ResearchResult) -> bytes:
     story.append(Paragraph("Research Brief", section_heading))
     story.append(add_divider())
     story.append(Spacer(1, 6))
-    story.extend(text_to_flowables(result.answer, styles))
+    story.extend(text_to_flowables(result.answer, styles, result.evidence))
     story.append(Spacer(1, 10))
 
     story.append(Paragraph("Research Plan", section_heading))
     story.append(add_divider())
     story.append(Spacer(1, 6))
     for query in result.plan:
-        query_para = safe_paragraph(f"&bull; <i>{clean_markdown_text(query)}</i>", bullet_style)
+        query_para = safe_paragraph(f"<i>{clean_markdown_text(query)}</i>", bullet_style, bulletText='•')
         story.append(query_para)
     story.append(Spacer(1, 10))
 
@@ -690,7 +742,7 @@ def build_pdf_report(result: ResearchResult) -> bytes:
         story.append(Paragraph("Verification", section_heading))
         story.append(add_divider())
         story.append(Spacer(1, 6))
-        story.extend(text_to_flowables(result.verification, styles))
+        story.extend(text_to_flowables(result.verification, styles, result.evidence))
         story.append(Spacer(1, 10))
 
     story.append(Paragraph("Evidence Register", section_heading))

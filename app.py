@@ -308,7 +308,7 @@ try:
 except Exception as exc:
     st.error(str(exc))
     st.code(
-        "cd C:\\Users\\Hp\\OneDrive\\Desktop\\project\n"
+        f"cd {ROOT}\n"
         "cd frontend\n"
         "npm ci\n"
         "npm run build\n"
