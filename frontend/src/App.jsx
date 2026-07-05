@@ -1882,34 +1882,47 @@ function App() {
                     {deferredPrompt ? (
                       <button
                         onClick={handleInstallClick}
-                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-aria-accent to-[#6366f1] hover:from-aria-accent/90 hover:to-[#6366f1]/90 text-white rounded-xl font-semibold transition-all shadow-md shadow-aria-accent/15 hover:shadow-aria-accent/25 focus:outline-none cursor-pointer text-xs"
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-aria-accent to-[#00b4d8] text-black font-bold rounded-xl transition-all shadow-md shadow-aria-accent/15 hover:shadow-aria-accent/25 focus:outline-none cursor-pointer text-xs"
                       >
                         <Monitor size={13} />
-                        Install App on Device
+                        Install App (PWA)
                       </button>
                     ) : isAppInstalled ? (
                       <div className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-aria-complete/10 border border-aria-complete/20 text-aria-complete rounded-xl font-semibold text-[11px]">
                         <CheckCircle size={13} />
                         Running in App Mode
                       </div>
-                    ) : (
-                      <div className="p-3 bg-aria-bg/25 border border-aria-border rounded-xl text-[10px] text-aria-muted leading-relaxed">
-                        <span className="font-semibold text-aria-text block mb-1 flex items-center gap-1.5">
-                          <Smartphone size={11} className="text-aria-accent" />
-                          How to install on Mobile &amp; PC:
-                        </span>
-                        On mobile, tap the browser's menu (e.g. Chrome's ⋮ or Safari's Share button) and select <strong className="text-aria-text">Add to Home Screen</strong>. On PC, click the install icon in the address bar.
-                      </div>
-                    )}
+                    ) : null}
 
+                    {/* Windows Desktop Download */}
+                    <a 
+                      href="/aria-desktop-app.zip" 
+                      download="aria-desktop-app.zip"
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text rounded-xl font-semibold transition-colors focus:outline-none cursor-pointer text-xs"
+                      title="Download standalone Windows desktop launcher (.zip)"
+                    >
+                      <Monitor size={13} className="text-[#00E5FF]" />
+                      Download for Windows Desktop
+                    </a>
+
+                    {/* Mobile App Install Instructions */}
+                    <div className="p-3 bg-aria-bg/25 border border-aria-border rounded-xl text-[10px] text-aria-muted leading-relaxed">
+                      <span className="font-semibold text-aria-text block mb-1 flex items-center gap-1.5">
+                        <Smartphone size={11} className="text-[#00E5FF]" />
+                        Download/Install on Mobile (Android &amp; iOS):
+                      </span>
+                      Open this site in Chrome (Android) or Safari (iOS), tap the browser's menu / share icon, and select <strong className="text-aria-text">Add to Home Screen</strong>. Android registers it automatically as a native WebAPK.
+                    </div>
+
+                    {/* Logo Download */}
                     <a 
                       href="/aria-app-icon.png" 
                       download="aria-app-icon.png"
-                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text rounded-xl font-semibold transition-colors focus:outline-none cursor-pointer text-xs"
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text/80 hover:text-aria-text rounded-xl transition-colors focus:outline-none cursor-pointer text-xs"
                       title="Download high-resolution PNG icon"
                     >
-                      <Download size={13} />
-                      Download High-Res Icon
+                      <Download size={12} />
+                      Download High-Res Logo
                     </a>
                   </div>
                 </div>
