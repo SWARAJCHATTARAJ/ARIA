@@ -36,8 +36,6 @@ beautifulsoup4==4.15.0
     # via yfinance
 blinker==1.9.0
     # via streamlit
-bottle==0.13.4
-    # via pywebview
 build==1.5.0
     # via chromadb
 cachetools==7.1.4
@@ -50,9 +48,7 @@ certifi==2026.6.17
     #   kubernetes
     #   requests
 cffi==2.0.0
-    # via
-    #   clr-loader
-    #   curl-cffi
+    # via curl-cffi
 charset-normalizer==3.4.7
     # via
     #   reportlab
@@ -64,8 +60,6 @@ click==8.4.2
     #   huggingface-hub
     #   streamlit
     #   uvicorn
-clr-loader==0.3.1
-    # via pythonnet
 colorama==0.4.6
     # via
     #   build
@@ -256,8 +250,6 @@ protobuf==3.20.3
     #   opentelemetry-proto
     #   streamlit
     #   yfinance
-proxy-tools==0.1.0
-    # via pywebview
 pyarrow==24.0.0
     # via streamlit
 pybase64==1.4.3
@@ -299,12 +291,8 @@ python-multipart==0.0.32
     # via
     #   aria-research-assistant (pyproject.toml)
     #   streamlit
-pythonnet==3.1.0
-    # via pywebview
 pytz==2026.2
     # via yfinance
-pywebview==6.2.1
-    # via aria-research-assistant (pyproject.toml)
 pyyaml==6.0.3
     # via
     #   chromadb
@@ -391,7 +379,6 @@ typing-extensions==4.16.0
     #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
-    #   pywebview
     #   streamlit
     #   typing-inspection
 typing-inspection==0.4.2
