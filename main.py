@@ -36,6 +36,24 @@ load_dotenv()
 
 app = FastAPI(title="ARIA API", description="FastAPI backend for ARIA Agentic RAG System")
 
+@app.get("/.well-known/assetlinks.json")
+async def get_assetlinks():
+    return [
+        {
+            "relation": [
+                "delegate_permission/common.handle_all_urls"
+            ],
+            "target": {
+                "namespace": "android_app",
+                "package_name": "com.swarajchattaraj.aria",
+                "sha256_cert_fingerprints": [
+                    "20:A0:87:84:C8:8F:7A:69:99:86:C5:2A:BC:0A:0B:5B:2B:C6:B6:6C:52:5C:12:E8:B9:D7:02:CD:2C:57:2C:28"
+                ]
+            }
+        }
+    ]
+
+
 # Configure CORS origins securely (can be configured via environment variable)
 allowed_origins_str = os.getenv("ARIA_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000,http://localhost:8501,http://127.0.0.1:8501")
 origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
