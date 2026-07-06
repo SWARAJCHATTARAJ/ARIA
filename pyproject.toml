@@ -37,7 +37,9 @@ dependencies = [
     "langchain-core>=0.1.40",
     "yfinance>=0.2.30",
     "pysqlite3-binary; sys_platform == 'linux'",
-    "protobuf==3.20.3"
+    "protobuf==3.20.3",
+    "tokenizers>=0.22.0,<=0.23.0",
+    "pywebview>=5.1.0"
 ]
 
 [project.urls]
