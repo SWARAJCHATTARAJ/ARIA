@@ -38,8 +38,16 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event handler - Network first, fallback to cache
 self.addEventListener('fetch', (event) => {
-  // Only handle HTTP/HTTPS (ignore chrome-extension, etc.)
-  if (!event.request.url.startsWith(self.location.origin)) return;
+  const url = new URL(event.request.url);
+
+  // Only handle GET requests, same-origin, and ignore /api/ calls
+  if (
+    event.request.method !== 'GET' ||
+    !event.request.url.startsWith(self.location.origin) ||
+    url.pathname.startsWith('/api/')
+  ) {
+    return;
+  }
 
   event.respondWith(
     fetch(event.request)
@@ -59,3 +67,4 @@ self.addEventListener('fetch', (event) => {
       })
   );
 });
+

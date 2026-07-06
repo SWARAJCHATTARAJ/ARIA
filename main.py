@@ -221,6 +221,8 @@ async def run_research(request: ResearchRequest):
                 events=final_state["events"],
             )
             result.metrics = result_metrics(result)
+            if hasattr(agent, "_latencies"):
+                result.metrics.update(agent._latencies)
             
             # Save session
             session = save_session(result, user_id=request.user_id)

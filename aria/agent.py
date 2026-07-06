@@ -401,6 +401,43 @@ def first_sentence(text: str) -> str:
     return text[:240]
 
 
+def track_node_latency(node_name: str):
+    def decorator(func):
+        def wrapper(self, state: AgentState, *args, **kwargs):
+            import time
+            from datetime import datetime, timezone
+            from pathlib import Path
+            
+            start = time.perf_counter()
+            result = func(self, state, *args, **kwargs)
+            elapsed = time.perf_counter() - start
+            
+            if not hasattr(self, "_latencies"):
+                self._latencies = {}
+            self._latencies[f"latency_{node_name}"] = round(elapsed, 3)
+            
+            print(f"[Metrics] LangGraph Node '{node_name}' took {elapsed:.3f}s")
+            
+            log_dir = Path("C:/Users/Hp/OneDrive/Desktop/project/.aria_sessions")
+            log_dir.mkdir(parents=True, exist_ok=True)
+            metrics_file = log_dir / "latencies.log"
+            timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+            try:
+                with open(metrics_file, "a", encoding="utf-8") as f:
+                    f.write(f"{timestamp} - Node: {node_name} - Latency: {elapsed:.3f}s - Iteration: {state.get('iteration', 0)}\n")
+            except Exception as e:
+                print(f"[Warning] Failed to log latency: {e}")
+                
+            if isinstance(result, dict):
+                if "events" in result:
+                    result["events"].append(f"System: Node '{node_name}' completed in {elapsed:.3f}s")
+                else:
+                    result["events"] = [f"System: Node '{node_name}' completed in {elapsed:.3f}s"]
+            return result
+        return wrapper
+    return decorator
+
+
 class ResearchAgent:
     def __init__(self, settings: Settings, memory: VectorMemory) -> None:
         self.settings = settings
@@ -452,18 +489,26 @@ class ResearchAgent:
             "field_focus": field_focus
         }
         
+        self._latencies = {}
         final_state = self.graph.invoke(initial_state)
+        
+        final_evidence = dedupe_evidence(final_state["evidence"])
+        final_evidence = cross_encoder_rerank_evidence(question, final_evidence)
+        
+        metrics = build_run_metrics(final_state)
+        metrics.update(self._latencies)
         
         return ResearchResult(
             question=final_state["question"],
             plan=final_state["plan"],
             answer=final_state["answer"],
             verification=final_state["verification"],
-            evidence=dedupe_evidence(final_state["evidence"]),
+            evidence=final_evidence,
             events=final_state["events"],
-            metrics=build_run_metrics(final_state),
+            metrics=metrics,
         )
 
+    @track_node_latency("plan")
     def node_plan(self, state: AgentState) -> dict:
         question = state["question"]
         plan = state.get("plan")
@@ -613,6 +658,7 @@ class ResearchAgent:
 
         return evidence, events
 
+    @track_node_latency("search")
     def node_search(self, state: AgentState) -> dict:
         question = state["question"]
         plan = state["plan"]
@@ -721,28 +767,33 @@ class ResearchAgent:
 
         return {"evidence": new_evidence, "events": new_events}
 
+    @track_node_latency("draft")
     def node_draft(self, state: AgentState) -> dict:
         question = state["question"]
         evidence = dedupe_evidence(state["evidence"])
+        evidence = cross_encoder_rerank_evidence(question, evidence)
         iteration = state["iteration"]
         
         answer = self._draft(question, evidence)
         return {"answer": answer, "events": [f"Synthesis: generated research draft (pass {iteration + 1})"]}
 
+    @track_node_latency("verify")
     def node_verify(self, state: AgentState) -> dict:
         question = state["question"]
         answer = state["answer"]
         evidence = dedupe_evidence(state["evidence"])
+        evidence = cross_encoder_rerank_evidence(question, evidence)
         iteration = state["iteration"]
         
         verification = self._verify(question, answer, evidence)
         return {"verification": verification, "events": ["Auditor: verified draft against retrieved evidence"], "iteration": iteration + 1}
 
     def _plan(self, question: str) -> list[str]:
+        target_queries = classify_question_complexity(question)
         if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
             system = (
                 "You are ARIA's Lead Planner. Break down the user's research "
-                "question into 2 to 3 distinct, highly specific search queries targeting technical specifications, "
+                f"question into EXACTLY {target_queries} distinct, highly specific search queries targeting technical specifications, "
                 "standards, key developments, risks, or relevant parameters.\n"
                 "Output each query on a new line. Do not include numbers, bullets, or markdown."
             )
@@ -751,9 +802,10 @@ class ResearchAgent:
             queries = [line.strip() for line in response.splitlines() if line.strip()]
             cleaned_queries = clean_queries(queries)
             if cleaned_queries:
-                return cleaned_queries[:3]
+                return cleaned_queries[:target_queries]
         
-        return generate_diverse_fallback_queries(question)
+        fallback_queries = generate_diverse_fallback_queries(question)
+        return fallback_queries[:target_queries]
 
     def _draft(self, question: str, evidence: list[Evidence]) -> str:
         system = (
@@ -770,9 +822,72 @@ class ResearchAgent:
         user = f"Question:\n{question}\n\nEvidence:\n{format_evidence(evidence, limit=12)}"
         return self.llm.complete(system, user, task="draft", evidence=evidence)
 
+    def _log_verification_failure(self, question: str, claim: str, evidence_id: str, mismatch_reason: str, confidence: float):
+        import json
+        from datetime import datetime, timezone
+        from pathlib import Path
+        log_dir = Path("C:/Users/Hp/OneDrive/Desktop/project/.aria_sessions")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "verification_failures.jsonl"
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "question": question,
+            "claim": claim,
+            "evidence_id": evidence_id,
+            "mismatch_reason": mismatch_reason,
+            "confidence": confidence
+        }
+        try:
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception as e:
+            print(f"[Warning] Failed to write verification failure log: {e}")
+
+    def _parse_and_log_claims_confidence(self, question: str, verification_output: str):
+        lines = verification_output.splitlines()
+        parsing = False
+        for line in lines:
+            if line.strip().startswith("CLAIMS_CONFIDENCE:"):
+                parsing = True
+                continue
+            if parsing:
+                if line.strip().startswith("- Claim:"):
+                    parts = line.strip().split("|")
+                    claim = ""
+                    source = ""
+                    confidence = 1.0
+                    reason = ""
+                    for part in parts:
+                        part = part.strip()
+                        if part.startswith("- Claim:"):
+                            claim = part.replace("- Claim:", "").strip()
+                        elif part.startswith("Cited Source:"):
+                            source = part.replace("Cited Source:", "").strip()
+                        elif part.startswith("Confidence:"):
+                            try:
+                                confidence = float(part.replace("Confidence:", "").strip())
+                            except ValueError:
+                                pass
+                        elif part.startswith("Reason:"):
+                            reason = part.replace("Reason:", "").strip()
+                    
+                    if confidence < 0.9:
+                        self._log_verification_failure(question, claim, source, reason, confidence)
+                else:
+                    if line.strip() and not line.strip().startswith("-"):
+                        parsing = False
+
     def _verify(self, question: str, answer: str, evidence: list[Evidence]) -> str:
         deterministic_issues = audit_answer_grounding(answer, evidence)
         if deterministic_issues:
+            for issue in deterministic_issues:
+                self._log_verification_failure(
+                    question=question,
+                    claim="Entire Draft (Grounding Audit)",
+                    evidence_id="N/A",
+                    mismatch_reason=issue,
+                    confidence=0.0
+                )
             return (
                 "STATUS: NEEDS_MORE_RESEARCH\n"
                 f"REASON: Deterministic grounding audit failed: {'; '.join(deterministic_issues)}\n"
@@ -784,12 +899,15 @@ class ResearchAgent:
             system = (
                 "You are ARIA's Grounding & Verification Analyst. Your job is to verify if the draft "
                 "research analysis is fully grounded in the retrieved evidence and completely addresses the user's query.\n"
-                "Review the draft report and the evidence carefully. Detect any hallucinations, claims, figures, or URLs "
-                "in the draft that are not explicitly stated in the retrieved evidence.\n"
+                "Review the draft report and the evidence carefully. Break down the draft report into individual claims. "
+                "For each claim, assign a confidence score between 0.0 and 1.0 based on how directly the cited evidence supports it "
+                "(1.0 = explicitly stated in evidence, 0.5 = partially supported or extrapolated, 0.0 = unsupported or hallucinated).\n"
                 "If the draft contains ANY ungrounded statements or assumptions, or fails to cite sources, you MUST set the STATUS to NEEDS_MORE_RESEARCH.\n"
                 "Output your findings EXACTLY in this format:\n"
                 "STATUS: [PASSED or NEEDS_MORE_RESEARCH]\n"
-                "REASON: [Brief explanation of verified parameters or what design/research details/sources are missing, incorrect, or hallucinated]\n"
+                "CLAIMS_CONFIDENCE:\n"
+                "- Claim: [Text of the claim] | Cited Source: [Source ID/number] | Confidence: [0.0-1.0] | Reason: [If confidence < 1.0, explain why, otherwise state 'Grounded']\n"
+                "REASON: [Overall brief explanation of verified parameters or mismatch patterns]\n"
                 "NEW_QUERIES:\n"
                 "[List 1 or 2 new search queries to retrieve missing details, each on a new line. Leave empty if status is PASSED]"
             )
@@ -801,6 +919,7 @@ class ResearchAgent:
             )
             llm_verification = self.llm.complete(system, user, task="verify", evidence=evidence)
             if llm_verification:
+                self._parse_and_log_claims_confidence(question, llm_verification)
                 return llm_verification
             
         official = sum(1 for item in evidence if item.source_type in {"pdf", "research", "finance"})
@@ -928,6 +1047,86 @@ def generate_diverse_fallback_queries(question: str) -> list[str]:
     return clean_queries(queries)
 
 
+def deduplicate_by_similarity(evidence: list[Evidence]) -> list[Evidence]:
+    if not evidence or len(evidence) <= 1:
+        return evidence
+        
+    summaries = [item.summary for item in evidence if item.summary]
+    
+    def get_jaccard_similarity(t1: str, t2: str) -> float:
+        w1 = set(re.findall(r"\w+", t1.lower()))
+        w2 = set(re.findall(r"\w+", t2.lower()))
+        if not w1 or not w2:
+            return 0.0
+        return len(w1 & w2) / len(w1 | w2)
+
+    def cosine_similarity(u, v) -> float:
+        import numpy as np
+        dot = np.dot(u, v)
+        norm_u = np.linalg.norm(u)
+        norm_v = np.linalg.norm(v)
+        if norm_u == 0 or norm_v == 0:
+            return 0.0
+        return float(dot / (norm_u * norm_v))
+
+    embeddings = None
+    try:
+        from chromadb.utils import embedding_functions
+        default_ef = embedding_functions.DefaultEmbeddingFunction()
+        embeddings = default_ef(summaries)
+    except Exception as e:
+        print(f"[Warning] Failed to generate Chroma embeddings for deduplication: {e}")
+
+    use_embeddings = embeddings is not None and len(embeddings) == len(evidence)
+    
+    merged: list[Evidence] = []
+    merged_indices = set()
+    
+    for i in range(len(evidence)):
+        if i in merged_indices:
+            continue
+            
+        current_item = evidence[i]
+        current_cluster = [current_item]
+        merged_indices.add(i)
+        
+        for j in range(i + 1, len(evidence)):
+            if j in merged_indices:
+                continue
+                
+            other_item = evidence[j]
+            is_dup = False
+            
+            if use_embeddings and embeddings[i] is not None and embeddings[j] is not None:
+                sim = cosine_similarity(embeddings[i], embeddings[j])
+                if sim >= 0.9:
+                    is_dup = True
+            else:
+                sim = get_jaccard_similarity(current_item.summary or "", other_item.summary or "")
+                if sim >= 0.7:
+                    is_dup = True
+                    
+            if is_dup:
+                current_cluster.append(other_item)
+                merged_indices.add(j)
+                
+        current_cluster.sort(key=lambda x: x.score, reverse=True)
+        representative = current_cluster[0]
+        
+        if len(current_cluster) > 1:
+            agreed_ids = []
+            for item in current_cluster:
+                if item.source_id and item.source_id not in agreed_ids:
+                    agreed_ids.append(item.source_id)
+            if representative.summary:
+                representative.summary += f"\n[Agreed by multiple sources: {', '.join(agreed_ids)}]"
+            representative.title = f"{representative.title} (+{len(current_cluster) - 1} matches)"
+            
+        merged.append(representative)
+        
+    return merged
+
+
 def dedupe_evidence(evidence: list[Evidence]) -> list[Evidence]:
     seen: set[str] = set()
     unique: list[Evidence] = []
@@ -941,6 +1140,7 @@ def dedupe_evidence(evidence: list[Evidence]) -> list[Evidence]:
             continue
         seen.add(key)
         unique.append(item)
+    unique = deduplicate_by_similarity(unique)
     return unique[:30]
 
 
@@ -955,6 +1155,40 @@ def build_run_metrics(state: AgentState) -> dict[str, int | float | str]:
         "verification_tokens_est": estimate_tokens(verification),
         "total_output_tokens_est": estimate_tokens(answer) + estimate_tokens(verification),
     }
+_CROSS_ENCODER = None
+
+def get_cross_encoder():
+    global _CROSS_ENCODER
+    if _CROSS_ENCODER is not None:
+        return _CROSS_ENCODER
+    try:
+        from sentence_transformers import CrossEncoder
+        _CROSS_ENCODER = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        return _CROSS_ENCODER
+    except Exception as e:
+        print(f"[Warning] Failed to initialize CrossEncoder: {e}")
+        return None
+
+def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[Evidence]:
+    if not query or not evidence:
+        return evidence
+        
+    model = get_cross_encoder()
+    if model is None:
+        return re_rank_evidence(query, evidence)
+        
+    try:
+        pairs = [(query, item.summary) for item in evidence]
+        scores = model.predict(pairs)
+        import numpy as np
+        normalized = 1.0 / (1.0 + np.exp(-np.array(scores)))
+        for item, score in zip(evidence, normalized):
+            item.score = round(float(score), 2)
+        evidence.sort(key=lambda x: x.score, reverse=True)
+        return evidence
+    except Exception as e:
+        print(f"[Warning] CrossEncoder inference failed: {e}. Falling back to token overlap.")
+        return re_rank_evidence(query, evidence)
 
 
 def re_rank_evidence(query: str, evidence: list[Evidence]) -> list[Evidence]:
@@ -998,3 +1232,29 @@ def re_rank_evidence(query: str, evidence: list[Evidence]) -> list[Evidence]:
         
     evidence.sort(key=lambda x: x.score, reverse=True)
     return evidence
+
+
+def classify_question_complexity(question: str) -> int:
+    q = question.lower().strip()
+    words = q.split()
+    if len(words) <= 6:
+        return 1
+        
+    lookup_keywords = ["who is", "who built", "what is the date", "when was", "where is", "what is the symbol for"]
+    if any(q.startswith(kw) for kw in lookup_keywords) and " and " not in q:
+        return 1
+        
+    comp_keywords = [" vs ", " versus ", "compare ", "comparison", "difference between", "contrasting", "alternative to"]
+    is_comparative = any(kw in q for kw in comp_keywords)
+    
+    multi_part_indicators = [", and ", " and also ", " as well as ", "; ", " additionally ", " besides "]
+    is_multi_part = any(ind in q for ind in multi_part_indicators) or q.count("?") > 1
+    
+    if is_comparative and is_multi_part:
+        return 5
+    elif is_comparative:
+        return 4
+    elif is_multi_part:
+        return 3
+    else:
+        return 2
