@@ -19,8 +19,8 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import Response, StreamingResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header
+from fastapi.responses import Response, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -69,9 +69,9 @@ app.add_middleware(
 def get_memory() -> VectorMemory:
     return VectorMemory(Settings.from_env())
 
-def get_agent() -> ResearchAgent:
+def get_agent(openrouter_api_key: str | None = None) -> ResearchAgent:
     settings = Settings.from_env()
-    return ResearchAgent(settings=settings, memory=get_memory())
+    return ResearchAgent(settings=settings, memory=get_memory(), openrouter_api_key=openrouter_api_key)
 
 
 def result_metrics(result) -> dict[str, int | float | str]:
@@ -189,9 +189,9 @@ def fetch_url_text(url: str) -> tuple[str, str]:
     return parsed.netloc, text[:80_000]
 
 @app.post("/api/research")
-async def run_research(request: ResearchRequest):
+async def run_research(request: ResearchRequest, x_openrouter_key: str | None = Header(None)):
     """Run research loop and stream the progress as SSE."""
-    agent = get_agent()
+    agent = get_agent(openrouter_api_key=x_openrouter_key)
     
     initial_state = {
         "question": request.question,
@@ -253,10 +253,10 @@ async def run_research(request: ResearchRequest):
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 @app.post("/api/research/plan")
-async def generate_plan(request: ResearchRequest):
+async def generate_plan(request: ResearchRequest, x_openrouter_key: str | None = Header(None)):
     """Generate search queries for a research objective without running the full RAG loop."""
     try:
-        agent = get_agent()
+        agent = get_agent(openrouter_api_key=x_openrouter_key)
         queries = agent._plan(request.question)
         return {"queries": queries}
     except Exception as e:
@@ -401,10 +401,12 @@ async def download_session_md(session_id: str, user_id: str | None = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/settings")
-async def get_settings():
+async def get_settings(x_openrouter_key: str | None = Header(None)):
     """Fetch current ARIA configuration."""
     settings = Settings.from_env()
-    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    key = x_openrouter_key.strip() if x_openrouter_key else ""
+    if not key:
+        key = os.getenv("OPENROUTER_API_KEY", "").strip()
     key_configured = bool(key and not key.startswith("your_"))
     
     return {
@@ -414,6 +416,54 @@ async def get_settings():
         "memory_path": settings.memory_path,
         "key_configured": key_configured
     }
+
+class SettingsRequest(BaseModel):
+    openrouter_api_key: str | None = None
+
+@app.post("/api/settings")
+async def update_settings(request: SettingsRequest):
+    """Update current ARIA configuration."""
+    if request.openrouter_api_key is not None:
+        key = request.openrouter_api_key.strip()
+        # Save to os.environ so it's active immediately
+        os.environ["OPENROUTER_API_KEY"] = key
+        
+        # Also write to .env to persist across restarts
+        env_path = Path(__file__).parent / ".env"
+        if env_path.exists():
+            try:
+                content = env_path.read_text(encoding="utf-8")
+                lines = content.splitlines()
+                updated = False
+                for i, line in enumerate(lines):
+                    if line.startswith("OPENROUTER_API_KEY="):
+                        lines[i] = f"OPENROUTER_API_KEY={key}"
+                        updated = True
+                        break
+                if not updated:
+                    lines.append(f"OPENROUTER_API_KEY={key}")
+                env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            except Exception:
+                pass
+        else:
+            try:
+                env_path.write_text(f"OPENROUTER_API_KEY={key}\n", encoding="utf-8")
+            except Exception:
+                pass
+            
+    return {"status": "success", "message": "Settings updated successfully"}
+
+@app.get("/downloads/aria.apk")
+async def download_apk():
+    """Download the prebuilt signed Android APK."""
+    apk_path = Path(__file__).parent / "app-release-signed.apk"
+    if apk_path.exists():
+        return FileResponse(
+            path=str(apk_path),
+            filename="ARIA.apk",
+            media_type="application/vnd.android.package-archive"
+        )
+    raise HTTPException(status_code=404, detail="APK file not found.")
 
 # Serving frontend build
 def get_resource_path(relative_path: str) -> Path:

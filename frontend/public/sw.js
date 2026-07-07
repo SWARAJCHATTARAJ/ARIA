@@ -36,7 +36,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch event handler - Network first, fallback to cache
+// Fetch event handler - Stale-While-Revalidate
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
@@ -50,21 +50,25 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Cache the new response if valid
-        if (response && response.status === 200 && response.type === 'basic') {
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-        }
-        return response;
-      })
-      .catch(() => {
-        // If network fails, try matching in cache
-        return caches.match(event.request);
-      })
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request)
+        .then((networkResponse) => {
+          // Cache the new response if valid
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return networkResponse;
+        })
+        .catch((err) => {
+          console.warn('Network fetch failed in service worker:', err);
+        });
+
+      // Return cached response immediately if available, fallback to network fetch
+      return cachedResponse || fetchPromise;
+    })
   );
 });
 

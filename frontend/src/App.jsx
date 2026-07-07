@@ -98,6 +98,13 @@ function App() {
     key_configured: false
   });
 
+  // Connection and API Key configuration states
+  const [connectionStatus, setConnectionStatus] = useState("connecting"); // connecting, connected, error
+  const [connectionError, setConnectionError] = useState(null);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("aria_openrouter_api_key") || "");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
+
   
 
   // Settings controls
@@ -224,22 +231,66 @@ function App() {
 
 
   const fetchSettings = async () => {
+    setConnectionStatus("connecting");
     try {
-      const response = await fetch(`${API_BASE}/api/settings`);
+      const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
+      const headers = {};
+      if (userApiKey) {
+        headers["X-OpenRouter-Key"] = userApiKey;
+      }
+      const response = await fetch(`${API_BASE}/api/settings`, { headers });
       if (response.ok) {
         const data = await response.json();
         setSettings(data);
+        setConnectionStatus("connected");
+        setConnectionError(null);
+      } else {
+        throw new Error(`Server returned status ${response.status}`);
       }
     } catch (err) {
       console.error("Failed to load settings:", err);
+      setConnectionStatus("error");
+      setConnectionError(err.message || "Failed to load settings");
     }
   };
 
-
+  const handleSaveApiKey = async () => {
+    const trimmedKey = apiKey.trim();
+    setIsSavingApiKey(true);
+    
+    // Save to local storage
+    if (trimmedKey) {
+      localStorage.setItem("aria_openrouter_api_key", trimmedKey);
+    } else {
+      localStorage.removeItem("aria_openrouter_api_key");
+    }
+    
+    // Also attempt to save to the backend for persistence on self-hosted instances
+    try {
+      const response = await fetch(`${API_BASE}/api/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ openrouter_api_key: trimmedKey || "" })
+      });
+      if (!response.ok) {
+        console.warn("Server settings update failed, fallback to client-side localStorage.");
+      }
+    } catch (err) {
+      console.warn("Failed to post settings to backend, fallback to client-side localStorage:", err);
+    } finally {
+      setIsSavingApiKey(false);
+      fetchSettings(); // Refresh settings to update the "key_configured" badge
+    }
+  };
 
   const fetchMemoryCount = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/memory/count`);
+      const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
+      const headers = {};
+      if (userApiKey) {
+        headers["X-OpenRouter-Key"] = userApiKey;
+      }
+      const response = await fetch(`${API_BASE}/api/memory/count`, { headers });
       if (response.ok) {
         const data = await response.json();
         setMemoryCount(data.count);
@@ -249,11 +300,14 @@ function App() {
     }
   };
 
-
-
   const fetchSessions = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/sessions?user_id=${encodeURIComponent(userId)}`);
+      const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
+      const headers = {};
+      if (userApiKey) {
+        headers["X-OpenRouter-Key"] = userApiKey;
+      }
+      const response = await fetch(`${API_BASE}/api/sessions?user_id=${encodeURIComponent(userId)}`, { headers });
       if (response.ok) {
         const data = await response.json();
         setSessions(data.sessions);
@@ -290,9 +344,16 @@ function App() {
     setIsPlanning(true);
     setError(null);
     try {
+      const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
+      const headers = { 
+        "Content-Type": "application/json"
+      };
+      if (userApiKey) {
+        headers["X-OpenRouter-Key"] = userApiKey;
+      }
       const response = await fetch(`${API_BASE}/api/research/plan`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: headers,
         body: JSON.stringify({ question }),
       });
       if (response.ok) {
@@ -325,9 +386,16 @@ function App() {
     
 
     try {
+      const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
+      const headers = { 
+        "Content-Type": "application/json"
+      };
+      if (userApiKey) {
+        headers["X-OpenRouter-Key"] = userApiKey;
+      }
       const response = await fetch(`${API_BASE}/api/research`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: headers,
         body: JSON.stringify({
           question: question.trim(),
           use_local: useLocal,
@@ -781,6 +849,36 @@ function App() {
               <Smartphone size={9} />
               <span>Android App</span>
             </a>
+
+            {/* Connection & Key Status Badges */}
+            {connectionStatus === "connecting" && (
+              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[9px] font-bold rounded-full shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
+                <span>Connecting...</span>
+              </div>
+            )}
+            {connectionStatus === "error" && (
+              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-bold rounded-full shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                <span>Offline</span>
+              </div>
+            )}
+            {connectionStatus === "connected" && (
+              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-green-500/10 border border-green-500/20 text-green-500 text-[9px] font-bold rounded-full shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span>Online</span>
+              </div>
+            )}
+            {connectionStatus === "connected" && !settings.key_configured && (
+              <button
+                onClick={() => setShowSettings(true)}
+                className="flex items-center gap-1 px-2.5 py-0.5 bg-orange-500/15 border border-orange-500/30 text-orange-500 hover:bg-orange-500 hover:text-white text-[9px] font-bold rounded-full shrink-0 cursor-pointer transition-colors animate-pulse"
+                title="Click to set OpenRouter API Key in Settings"
+              >
+                <AlertCircle size={9} />
+                <span>API Key Not Set</span>
+              </button>
+            )}
           </div>
 
 
@@ -1636,6 +1734,38 @@ function App() {
                     {settings.key_configured ? "READY" : "NOT SET"}
                   </span>
                 </div>
+              </div>
+
+              {/* Configure API Key */}
+              <div className="p-3 bg-aria-bg border border-aria-border rounded-xl space-y-2.5">
+                <h4 className="font-semibold text-aria-muted uppercase tracking-wider text-[10px]">Configure API Key</h4>
+                <div className="flex gap-2">
+                  <input 
+                    type={showApiKey ? "text" : "password"} 
+                    value={apiKey} 
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-or-v1-..."
+                    className="flex-1 bg-aria-bg/50 border border-aria-border rounded-lg px-2.5 py-1.5 text-[11px] font-mono text-aria-text focus:outline-none focus:border-aria-accent"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="px-2 bg-aria-surface hover:bg-aria-border border border-aria-border rounded-lg text-[9px] font-semibold text-aria-muted hover:text-aria-text transition-colors"
+                  >
+                    {showApiKey ? "Hide" : "Show"}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={handleSaveApiKey}
+                    disabled={isSavingApiKey}
+                    className="px-3 bg-aria-accent hover:bg-aria-accent/80 disabled:opacity-50 rounded-lg text-[10px] font-semibold text-aria-bg transition-colors"
+                  >
+                    {isSavingApiKey ? "Saving..." : "Save"}
+                  </button>
+                </div>
+                <p className="text-[9px] text-aria-muted leading-relaxed">
+                  Enter your OpenRouter API Key. It is stored securely on your device and sent with your research requests.
+                </p>
               </div>
 
 

@@ -103,9 +103,9 @@ class AgentState(TypedDict):
 class LLMClient:
     """Small LLM adapter with a deterministic local fallback."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, openrouter_api_key: str | None = None) -> None:
         self.settings = settings
-        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+        self.openrouter_api_key = openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
         self.session = requests.Session()
 
     def complete(self, system: str, user: str, task: str = "draft", evidence: list[Evidence] | None = None) -> str:
@@ -439,10 +439,10 @@ def track_node_latency(node_name: str):
 
 
 class ResearchAgent:
-    def __init__(self, settings: Settings, memory: VectorMemory) -> None:
+    def __init__(self, settings: Settings, memory: VectorMemory, openrouter_api_key: str | None = None) -> None:
         self.settings = settings
         self.memory = memory
-        self.llm = LLMClient(settings)
+        self.llm = LLMClient(settings, openrouter_api_key=openrouter_api_key)
 
         workflow = StateGraph(AgentState)
         
