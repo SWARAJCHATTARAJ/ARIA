@@ -19,7 +19,7 @@ RUN apt-get update \
 
 COPY requirements.txt pyproject.toml README.md ./
 COPY aria ./aria
-COPY main.py app.py ./
+COPY main.py app.py app-release-signed.apk ./
 
 # Copy built frontend assets from Stage 1
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
