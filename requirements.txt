@@ -258,6 +258,8 @@ protobuf==3.20.3
     #   opentelemetry-proto
     #   streamlit
     #   yfinance
+psycopg2-binary==2.9.12
+    # via aria-research-assistant (pyproject.toml)
 pyarrow==24.0.0
     # via streamlit
 pyasn1==0.6.3

@@ -40,7 +40,8 @@ dependencies = [
     "protobuf==3.20.3",
     "tokenizers>=0.22.0,<=0.23.0",
     "python-jose[cryptography]>=3.3.0",
-    "bcrypt>=4.0.0"
+    "bcrypt>=4.0.0",
+    "psycopg2-binary>=2.9.9"
 ]
 
 [project.optional-dependencies]

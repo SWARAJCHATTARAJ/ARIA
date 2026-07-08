@@ -13,14 +13,34 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=Fals
 ALGORITHM = "HS256"
 DB_PATH = Path(".aria_sessions") / "users.db"
 
+def get_db_connection():
+    db_url = os.getenv("DATABASE_URL")
+    if db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")):
+        # Render database URLs start with postgres://, but psycopg2 prefers postgresql://
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        import psycopg2
+        return psycopg2.connect(db_url)
+    else:
+        conn = sqlite3.connect(str(DB_PATH))
+        return conn
+
 def init_db():
     Path(".aria_sessions").mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
+    db_url = os.getenv("DATABASE_URL")
+    is_postgres = db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://"))
+    
+    conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute(
-            "CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL)"
-        )
+        if is_postgres:
+            cursor.execute(
+                "CREATE TABLE IF NOT EXISTS users (username VARCHAR(255) PRIMARY KEY, password_hash VARCHAR(255) NOT NULL)"
+            )
+        else:
+            cursor.execute(
+                "CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL)"
+            )
         conn.commit()
     finally:
         conn.close()
@@ -43,10 +63,16 @@ def get_user_hash(username: str) -> str | None:
         return master_hash
 
     # Check database
-    conn = sqlite3.connect(str(DB_PATH))
+    db_url = os.getenv("DATABASE_URL")
+    is_postgres = db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://"))
+    
+    conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
+        if is_postgres:
+            cursor.execute("SELECT password_hash FROM users WHERE username = %s", (username,))
+        else:
+            cursor.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
         row = cursor.fetchone()
         return row[0] if row else None
     finally:
@@ -62,13 +88,19 @@ def create_user(username: str, password: str) -> bool:
         
     hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     
-    conn = sqlite3.connect(str(DB_PATH))
+    db_url = os.getenv("DATABASE_URL")
+    is_postgres = db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://"))
+    
+    conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, hashed))
+        if is_postgres:
+            cursor.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, hashed))
+        else:
+            cursor.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, hashed))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
+    except Exception:
         return False
     finally:
         conn.close()
