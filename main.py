@@ -31,7 +31,7 @@ from aria.core import Settings, validate_pdf_upload, estimate_tokens
 from aria.rag import VectorMemory
 from aria.reports import build_markdown_report, build_pdf_report
 from aria.sessions import find_session_path, is_admin_user, list_sessions, load_session, save_session, result_to_dict
-from aria.auth import get_current_user, verify_password, create_access_token, get_auth_settings
+from aria.auth import get_current_user, verify_password, create_access_token, get_auth_settings, get_user_hash, create_user
 
 
 load_dotenv()
@@ -85,6 +85,10 @@ def result_metrics(result) -> dict[str, int | float | str]:
     }
 
 class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class RegisterRequest(BaseModel):
     username: str
     password: str
 
@@ -196,22 +200,45 @@ def fetch_url_text(url: str) -> tuple[str, str]:
 
 @app.post("/api/auth/login")
 async def login(request: LoginRequest):
-    username, password_hash, _ = get_auth_settings()
-    if not username or not password_hash:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server authentication settings are not fully configured."
-        )
-    
-    if request.username != username or not verify_password(request.password, password_hash):
+    db_hash = get_user_hash(request.username)
+    if not db_hash or not verify_password(request.password, db_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    access_token = create_access_token(data={"sub": username})
+    access_token = create_access_token(data={"sub": request.username.strip().lower()})
     return {"access_token": access_token, "token_type": "bearer"}
+
+@app.post("/api/auth/register")
+async def register(request: RegisterRequest):
+    import re
+    username = request.username.strip().lower()
+    if not re.match(r"^[a-zA-Z0-9_\-]+$", username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username can only contain alphanumeric characters, underscores, and hyphens."
+        )
+    if len(username) < 3 or len(username) > 30:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username must be between 3 and 30 characters."
+        )
+    if len(request.password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters long."
+        )
+    
+    success = create_user(username, request.password)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username is already taken."
+        )
+    
+    return {"status": "success", "message": "User registered successfully."}
 
 @app.post("/api/research")
 async def run_research(request: ResearchRequest, x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):

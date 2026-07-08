@@ -20,6 +20,7 @@ function App() {
 
   // Authentication states
   const [token, setToken] = useState(() => localStorage.getItem("aria_auth_token") || "");
+  const [authMode, setAuthMode] = useState("login");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -54,6 +55,11 @@ function App() {
         const data = await response.json();
         localStorage.setItem("aria_auth_token", data.access_token);
         setToken(data.access_token);
+        
+        const lowerUser = loginUsername.trim().toLowerCase();
+        setUserId(lowerUser);
+        localStorage.setItem("aria_user_id", lowerUser);
+        
         setLoginUsername("");
         setLoginPassword("");
         setTimeout(() => {
@@ -67,6 +73,54 @@ function App() {
       }
     } catch (err) {
       setLoginError("Could not connect to the authentication server.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError("");
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword })
+      });
+      if (response.ok) {
+        // Success! Log them in automatically
+        const loginResponse = await fetch(`${API_BASE}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: loginUsername, password: loginPassword })
+        });
+        if (loginResponse.ok) {
+          const data = await loginResponse.json();
+          localStorage.setItem("aria_auth_token", data.access_token);
+          setToken(data.access_token);
+          
+          const lowerUser = loginUsername.trim().toLowerCase();
+          setUserId(lowerUser);
+          localStorage.setItem("aria_user_id", lowerUser);
+          
+          setLoginUsername("");
+          setLoginPassword("");
+          setTimeout(() => {
+            fetchSettings();
+            fetchMemoryCount();
+            fetchSessions();
+          }, 100);
+        } else {
+          setAuthMode("login");
+          setLoginError("Account created! Please log in.");
+        }
+      } else {
+        const data = await response.json().catch(() => ({ detail: "Registration failed" }));
+        setLoginError(data.detail || "Registration failed. Username may be taken.");
+      }
+    } catch (err) {
+      setLoginError("Could not connect to the registration server.");
     } finally {
       setIsLoggingIn(false);
     }
@@ -205,73 +259,7 @@ function App() {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
-    if (!token) {
-    return (
-      <div className={`min-h-screen w-full flex items-center justify-center bg-aria-bg text-aria-text p-4 font-sans select-none ${darkMode ? 'dark' : ''}`}>
-        <div className="w-full max-w-md p-8 rounded-2xl bg-aria-surface border border-aria-border glow-cyan-md flex flex-col gap-6 transition-all duration-300">
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-12 h-12 rounded-xl bg-aria-accent/10 border border-aria-accent/20 flex items-center justify-center text-aria-accent mb-2">
-              <ShieldCheck size={28} className="animate-pulse" />
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight">Access Control</h1>
-            <p className="text-sm text-aria-muted">Please log in to use ARIA</p>
-          </div>
-
-          <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            {loginError && (
-              <div className="p-3 rounded-lg bg-aria-error/10 border border-aria-error/20 text-aria-error text-xs flex items-center gap-2">
-                <AlertCircle size={14} className="shrink-0" />
-                <span>{loginError}</span>
-              </div>
-            )}
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-aria-muted uppercase tracking-wider">Username</label>
-              <input
-                type="text"
-                placeholder="Enter username"
-                value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
-                disabled={isLoggingIn}
-                required
-                className="w-full px-4 py-2.5 rounded-lg bg-aria-bg border border-aria-border focus:border-aria-accent focus:outline-none text-sm transition-all"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-aria-muted uppercase tracking-wider">Password</label>
-              <input
-                type="password"
-                placeholder="Enter password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                disabled={isLoggingIn}
-                required
-                className="w-full px-4 py-2.5 rounded-lg bg-aria-bg border border-aria-border focus:border-aria-accent focus:outline-none text-sm transition-all"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoggingIn}
-              className="mt-2 w-full py-2.5 bg-aria-accent hover:opacity-90 disabled:opacity-50 text-aria-bg font-bold rounded-lg transition-all flex items-center justify-center gap-2"
-            >
-              {isLoggingIn ? (
-                <>
-                  <RefreshCw size={16} className="animate-spin" />
-                  <span>Logging in...</span>
-                </>
-              ) : (
-                <span>Access ARIA</span>
-              )}
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  return () => {
+    return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
@@ -759,7 +747,109 @@ function App() {
     ? [...(result.evidence || [])].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5)
     : [];
 
+  if (!token) {
+    return (
+      <div className={`min-h-screen w-full flex items-center justify-center bg-aria-bg text-aria-text p-4 font-sans select-none ${darkMode ? 'dark' : ''}`}>
+        <div className="w-full max-w-md p-8 rounded-2xl bg-aria-surface border border-aria-border glow-cyan-md flex flex-col gap-6 transition-all duration-300">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-12 h-12 rounded-xl bg-aria-accent/10 border border-aria-accent/20 flex items-center justify-center text-aria-accent mb-2">
+              <ShieldCheck size={28} className="animate-pulse" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight">
+              {authMode === "login" ? "Access Control" : "Create Account"}
+            </h1>
+            <p className="text-sm text-aria-muted text-center">
+              {authMode === "login"
+                ? "Please log in to use ARIA"
+                : "Register a new profile to start using your ARIA instance"}
+            </p>
+          </div>
 
+          <form onSubmit={authMode === "login" ? handleLogin : handleRegister} className="flex flex-col gap-4">
+            {loginError && (
+              <div className="p-3 rounded-lg bg-aria-error/10 border border-aria-error/20 text-aria-error text-xs flex items-center gap-2">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-aria-muted uppercase tracking-wider">Username</label>
+              <input
+                type="text"
+                placeholder="Enter username"
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                disabled={isLoggingIn}
+                required
+                className="w-full px-4 py-2.5 rounded-lg bg-aria-bg border border-aria-border focus:border-aria-accent focus:outline-none text-sm transition-all"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-aria-muted uppercase tracking-wider">Password</label>
+              <input
+                type="password"
+                placeholder="Enter password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                disabled={isLoggingIn}
+                required
+                className="w-full px-4 py-2.5 rounded-lg bg-aria-bg border border-aria-border focus:border-aria-accent focus:outline-none text-sm transition-all"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="mt-2 w-full py-2.5 bg-aria-accent hover:opacity-90 disabled:opacity-50 text-aria-bg font-bold rounded-lg transition-all flex items-center justify-center gap-2"
+            >
+              {isLoggingIn ? (
+                <>
+                  <RefreshCw size={16} className="animate-spin" />
+                  <span>{authMode === "login" ? "Logging in..." : "Registering..."}</span>
+                </>
+              ) : (
+                <span>{authMode === "login" ? "Access ARIA" : "Register & Login"}</span>
+              )}
+            </button>
+          </form>
+
+          <div className="text-center text-xs text-aria-muted mt-2 border-t border-aria-border pt-4">
+            {authMode === "login" ? (
+              <span>
+                Don't have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("register");
+                    setLoginError("");
+                  }}
+                  className="text-aria-accent hover:underline font-semibold"
+                >
+                  Register
+                </button>
+              </span>
+            ) : (
+              <span>
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("login");
+                    setLoginError("");
+                  }}
+                  className="text-aria-accent hover:underline font-semibold"
+                >
+                  Log In
+                </button>
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-aria-bg text-aria-text font-sans antialiased">
@@ -811,6 +901,8 @@ function App() {
               onClick={() => {
                 localStorage.removeItem("aria_auth_token");
                 setToken("");
+                localStorage.removeItem("aria_user_id");
+                setUserId(OWNER_USER_ID);
               }}
               className="p-1 rounded text-aria-muted hover:text-aria-text transition-colors"
               title="Logout"
