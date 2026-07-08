@@ -19,7 +19,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Header
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends, status
 from fastapi.responses import Response, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -31,6 +31,8 @@ from aria.core import Settings, validate_pdf_upload, estimate_tokens
 from aria.rag import VectorMemory
 from aria.reports import build_markdown_report, build_pdf_report
 from aria.sessions import find_session_path, is_admin_user, list_sessions, load_session, save_session, result_to_dict
+from aria.auth import get_current_user, verify_password, create_access_token, get_auth_settings
+
 
 load_dotenv()
 
@@ -81,6 +83,10 @@ def result_metrics(result) -> dict[str, int | float | str]:
         "verification_tokens_est": estimate_tokens(result.verification),
         "total_output_tokens_est": estimate_tokens(result.answer) + estimate_tokens(result.verification),
     }
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 class ResearchRequest(BaseModel):
     question: str
@@ -188,8 +194,27 @@ def fetch_url_text(url: str) -> tuple[str, str]:
         raise ValueError("The URL did not return enough readable text to index.")
     return parsed.netloc, text[:80_000]
 
+@app.post("/api/auth/login")
+async def login(request: LoginRequest):
+    username, password_hash, _ = get_auth_settings()
+    if not username or not password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server authentication settings are not fully configured."
+        )
+    
+    if request.username != username or not verify_password(request.password, password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token = create_access_token(data={"sub": username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
 @app.post("/api/research")
-async def run_research(request: ResearchRequest, x_openrouter_key: str | None = Header(None)):
+async def run_research(request: ResearchRequest, x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):
     """Run research loop and stream the progress as SSE."""
     agent = get_agent(openrouter_api_key=x_openrouter_key)
     
@@ -253,7 +278,7 @@ async def run_research(request: ResearchRequest, x_openrouter_key: str | None = 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 @app.post("/api/research/plan")
-async def generate_plan(request: ResearchRequest, x_openrouter_key: str | None = Header(None)):
+async def generate_plan(request: ResearchRequest, x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):
     """Generate search queries for a research objective without running the full RAG loop."""
     try:
         agent = get_agent(openrouter_api_key=x_openrouter_key)
@@ -263,7 +288,7 @@ async def generate_plan(request: ResearchRequest, x_openrouter_key: str | None =
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/ingest/pdf")
-async def ingest_pdf(file: UploadFile = File(...)):
+async def ingest_pdf(file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
     """Upload and index a PDF file into the local vector database."""
     try:
         validate_pdf_upload(file.filename, file.size)
@@ -286,7 +311,7 @@ async def ingest_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/ingest/url")
-async def ingest_url(request: IngestUrlRequest):
+async def ingest_url(request: IngestUrlRequest, current_user: str = Depends(get_current_user)):
     """Fetch content from a URL and index it."""
     try:
         source_name, text = fetch_url_text(request.url)
@@ -299,7 +324,7 @@ async def ingest_url(request: IngestUrlRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/ingest/text")
-async def ingest_text(request: IngestTextRequest):
+async def ingest_text(request: IngestTextRequest, current_user: str = Depends(get_current_user)):
     """Index manual note or pasted text."""
     try:
         memory = get_memory()
@@ -320,7 +345,7 @@ async def get_memory_count():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/memory/clear")
-async def clear_memory(user_id: str | None = None):
+async def clear_memory(user_id: str | None = None, current_user: str = Depends(get_current_user)):
     """Clear local vector memory and optionally user's session history."""
     try:
         if is_admin_user(user_id):
@@ -333,7 +358,7 @@ async def clear_memory(user_id: str | None = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sessions")
-async def get_sessions(user_id: str | None = None, limit: int = 50):
+async def get_sessions(user_id: str | None = None, limit: int = 50, current_user: str = Depends(get_current_user)):
     """Retrieve list of saved research sessions isolated by user."""
     try:
         sessions = list_sessions(limit=limit, user_id=user_id)
@@ -342,7 +367,7 @@ async def get_sessions(user_id: str | None = None, limit: int = 50):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sessions/{session_id}")
-async def get_session(session_id: str, user_id: str | None = None):
+async def get_session(session_id: str, user_id: str | None = None, current_user: str = Depends(get_current_user)):
     """Retrieve detailed research result of a specific session."""
     try:
         path = find_session_path(session_id, user_id=user_id)
@@ -363,7 +388,7 @@ async def get_session(session_id: str, user_id: str | None = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sessions/{session_id}/download/pdf")
-async def download_session_pdf(session_id: str, user_id: str | None = None):
+async def download_session_pdf(session_id: str, user_id: str | None = None, current_user: str = Depends(get_current_user)):
     """Download research brief of a session as a formatted PDF."""
     try:
         path = find_session_path(session_id, user_id=user_id)
@@ -382,7 +407,7 @@ async def download_session_pdf(session_id: str, user_id: str | None = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sessions/{session_id}/download/md")
-async def download_session_md(session_id: str, user_id: str | None = None):
+async def download_session_md(session_id: str, user_id: str | None = None, current_user: str = Depends(get_current_user)):
     """Download research brief of a session as a Markdown file."""
     try:
         path = find_session_path(session_id, user_id=user_id)
@@ -401,7 +426,7 @@ async def download_session_md(session_id: str, user_id: str | None = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/settings")
-async def get_settings(x_openrouter_key: str | None = Header(None)):
+async def get_settings(x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):
     """Fetch current ARIA configuration."""
     settings = Settings.from_env()
     key = x_openrouter_key.strip() if x_openrouter_key else ""
@@ -421,7 +446,7 @@ class SettingsRequest(BaseModel):
     openrouter_api_key: str | None = None
 
 @app.post("/api/settings")
-async def update_settings(request: SettingsRequest):
+async def update_settings(request: SettingsRequest, current_user: str = Depends(get_current_user)):
     """Update current ARIA configuration."""
     if request.openrouter_api_key is not None:
         key = request.openrouter_api_key.strip()

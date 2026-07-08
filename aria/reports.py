@@ -491,6 +491,18 @@ def text_to_flowables(text: str, styles, evidence: list[Evidence] | None = None)
     return flowables
 
 
+def bold_key_terms(text: str) -> str:
+    """Wraps key findings, conclusions, and important terms in markdown bold."""
+    import re
+    if not text:
+        return text
+    term_regex = re.compile(
+        r"(?<!\*)\b(key findings?|conclusions?|recommendations?|executive summary|in conclusion|overall|most notably|significantly|in summary|successfully)\b(?!\*)",
+        re.IGNORECASE
+    )
+    return term_regex.sub(lambda m: f"**{m.group(0)}**", text)
+
+
 def build_markdown_report(result: ResearchResult) -> str:
     """Build the downloadable Markdown report."""
     evidence_lines = []
@@ -524,7 +536,7 @@ def build_markdown_report(result: ResearchResult) -> str:
 
 ## Research Brief
 
-{linkify_citations_markdown(result.answer, result.evidence)}
+{bold_key_terms(linkify_citations_markdown(result.answer, result.evidence))}
 
 ## Verification
 

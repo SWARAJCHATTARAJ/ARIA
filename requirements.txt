@@ -31,7 +31,9 @@ attrs==26.1.0
 backoff==2.2.1
     # via opentelemetry-exporter-otlp-proto-grpc
 bcrypt==5.0.0
-    # via chromadb
+    # via
+    #   aria-research-assistant (pyproject.toml)
+    #   chromadb
 beautifulsoup4==4.15.0
     # via yfinance
 blinker==1.9.0
@@ -48,7 +50,9 @@ certifi==2026.6.17
     #   kubernetes
     #   requests
 cffi==2.0.0
-    # via curl-cffi
+    # via
+    #   cryptography
+    #   curl-cffi
 charset-normalizer==3.4.8
     # via
     #   reportlab
@@ -67,12 +71,16 @@ colorama==0.4.6
     #   tqdm
     #   typer
     #   uvicorn
+cryptography==49.0.0
+    # via python-jose
 curl-cffi==0.15.0
     # via yfinance
 distro==1.9.0
     # via langsmith
 durationpy==0.10
     # via kubernetes
+ecdsa==0.19.2
+    # via python-jose
 fastapi==0.139.0
     # via aria-research-assistant (pyproject.toml)
 filelock==3.29.5
@@ -252,6 +260,10 @@ protobuf==3.20.3
     #   yfinance
 pyarrow==24.0.0
     # via streamlit
+pyasn1==0.6.3
+    # via
+    #   python-jose
+    #   rsa
 pybase64==1.4.3
     # via chromadb
 pycparser==3.0
@@ -287,6 +299,8 @@ python-dotenv==1.2.2
     #   aria-research-assistant (pyproject.toml)
     #   pydantic-settings
     #   uvicorn
+python-jose==3.5.0
+    # via aria-research-assistant (pyproject.toml)
 python-multipart==0.0.32
     # via
     #   aria-research-assistant (pyproject.toml)
@@ -328,10 +342,13 @@ rpds-py==2026.6.3
     # via
     #   jsonschema
     #   referencing
+rsa==4.9.1
+    # via python-jose
 shellingham==1.5.4
     # via typer
 six==1.17.0
     # via
+    #   ecdsa
     #   kubernetes
     #   python-dateutil
 smmap==5.0.3

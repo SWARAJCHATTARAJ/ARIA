@@ -38,7 +38,9 @@ dependencies = [
     "yfinance>=0.2.30",
     "pysqlite3-binary; sys_platform == 'linux'",
     "protobuf==3.20.3",
-    "tokenizers>=0.22.0,<=0.23.0"
+    "tokenizers>=0.22.0,<=0.23.0",
+    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.0.0"
 ]
 
 [project.optional-dependencies]

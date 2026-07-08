@@ -19,6 +19,12 @@ class Settings:
     @classmethod
     def from_env(cls) -> Settings:
         provider = os.getenv("ARIA_LLM_PROVIDER", "free").strip().lower()
+        api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        if provider != "openrouter" and api_key and not api_key.startswith("your_"):
+            import logging
+            msg = f"[Warning] ARIA_LLM_PROVIDER is set to '{provider}', but an OPENROUTER_API_KEY is configured. The API key will not be used."
+            logging.getLogger("aria.core").warning(msg)
+            print(msg)
         return cls(
             llm_provider=provider,
             model=os.getenv("ARIA_MODEL", "local-extractive"),

@@ -107,6 +107,13 @@ class LLMClient:
         self.settings = settings
         self.openrouter_api_key = openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
         self.session = requests.Session()
+        
+        # Warning if provider is not openrouter but API key is passed/configured
+        if self.settings.llm_provider != "openrouter" and self.openrouter_api_key and not self.openrouter_api_key.startswith("your_"):
+            import logging
+            msg = f"[Warning] LLMClient initialized with an API key, but ARIA_LLM_PROVIDER is '{self.settings.llm_provider}'. The OpenRouter client will not be used."
+            logging.getLogger("aria.agent").warning(msg)
+            print(msg)
 
     def complete(self, system: str, user: str, task: str = "draft", evidence: list[Evidence] | None = None) -> str:
         # Guarantee developer information is returned for creator queries
@@ -775,6 +782,8 @@ class ResearchAgent:
         iteration = state["iteration"]
         
         answer = self._draft(question, evidence)
+        from aria.reports import bold_key_terms
+        answer = bold_key_terms(answer)
         return {"answer": answer, "events": [f"Synthesis: generated research draft (pass {iteration + 1})"]}
 
     @track_node_latency("verify")
@@ -817,6 +826,7 @@ class ResearchAgent:
             "- If the provided evidence is empty, contains no factual details, or does not contain information directly relevant to answering the question, you MUST respond with: 'No sufficient evidence found to answer the query.' and nothing else.\n"
             "- For any product, technology, standard, component, or algorithm described, explicitly state its core purpose and intended function as supported by the evidence.\n"
             "- Cite all sources using bracketed numbers [1], [2], etc., corresponding to the exact index in the provided evidence. Every claim must have a citation.\n"
+            "- Wrap key findings, conclusions, and important terms in markdown bold (**term**) for readability (do not bold entire sentences, just the key terms).\n"
             "Keep the tone professional, objective, technical, and evidence-led."
         )
         user = f"Question:\n{question}\n\nEvidence:\n{format_evidence(evidence, limit=12)}"
@@ -1175,7 +1185,11 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
         
     model = get_cross_encoder()
     if model is None:
-        return re_rank_evidence(query, evidence)
+        ranked = re_rank_evidence(query, evidence)
+        filtered = [item for item in ranked if item.score >= 0.35]
+        if not filtered and ranked:
+            filtered = [ranked[0]]
+        return filtered
         
     try:
         pairs = [(query, item.summary) for item in evidence]
@@ -1185,10 +1199,18 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
         for item, score in zip(evidence, normalized):
             item.score = round(float(score), 2)
         evidence.sort(key=lambda x: x.score, reverse=True)
-        return evidence
+        # Filter results that are only loosely/tangentially related (threshold 0.3)
+        filtered = [item for item in evidence if item.score >= 0.3]
+        if not filtered and evidence:
+            filtered = [evidence[0]]
+        return filtered
     except Exception as e:
         print(f"[Warning] CrossEncoder inference failed: {e}. Falling back to token overlap.")
-        return re_rank_evidence(query, evidence)
+        ranked = re_rank_evidence(query, evidence)
+        filtered = [item for item in ranked if item.score >= 0.35]
+        if not filtered and ranked:
+            filtered = [ranked[0]]
+        return filtered
 
 
 def re_rank_evidence(query: str, evidence: list[Evidence]) -> list[Evidence]:

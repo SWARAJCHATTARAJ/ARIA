@@ -220,6 +220,8 @@ class SessionTests(unittest.TestCase):
                 return original_find_session_path(session_id, tmp_path, user_id)
 
             main.find_session_path = temp_find_session_path
+            from aria.auth import get_current_user
+            main.app.dependency_overrides[get_current_user] = lambda: "user1"
             try:
                 client = TestClient(main.app)
                 pdf_response = client.get(f"/api/sessions/{session['id']}/download/pdf?user_id=user1")
@@ -234,6 +236,7 @@ class SessionTests(unittest.TestCase):
                 self.assertEqual(blocked_response.status_code, 404)
             finally:
                 main.find_session_path = original_find_session_path
+                main.app.dependency_overrides.pop(get_current_user, None)
 
 
 class LLMClientTests(unittest.TestCase):

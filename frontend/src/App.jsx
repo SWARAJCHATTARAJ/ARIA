@@ -3,6 +3,7 @@ import {
   Search, Play, Settings, History, Layers, ChevronDown, ChevronUp, 
   ExternalLink, ShieldCheck, Download, 
   CheckCircle, AlertCircle, Plus, X, RefreshCw,
+  LogOut,
   Sun, Moon, Menu, Monitor, Smartphone, LayoutGrid
 } from 'lucide-react';
 
@@ -16,6 +17,60 @@ const OWNER_USER_ID = "swaraj_admin";
 function App() {
   // Theme state
   const [darkMode, setDarkMode] = useState(true);
+
+  // Authentication states
+  const [token, setToken] = useState(() => localStorage.getItem("aria_auth_token") || "");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const authorizedFetch = async (url, options = {}) => {
+    const headers = options.headers ? { ...options.headers } : {};
+    const currentToken = localStorage.getItem("aria_auth_token") || token;
+    if (currentToken) {
+      headers["Authorization"] = `Bearer ${currentToken}`;
+    }
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401) {
+      localStorage.removeItem("aria_auth_token");
+      setToken("");
+      throw new Error("Session expired. Please log in again.");
+    }
+    return response;
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError("");
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        localStorage.setItem("aria_auth_token", data.access_token);
+        setToken(data.access_token);
+        setLoginUsername("");
+        setLoginPassword("");
+        setTimeout(() => {
+          fetchSettings();
+          fetchMemoryCount();
+          fetchSessions();
+        }, 100);
+      } else {
+        const data = await response.json().catch(() => ({ detail: "Login failed" }));
+        setLoginError(data.detail || "Incorrect username or password.");
+      }
+    } catch (err) {
+      setLoginError("Could not connect to the authentication server.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
 
 
@@ -150,7 +205,73 @@ function App() {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
-    return () => {
+    if (!token) {
+    return (
+      <div className={`min-h-screen w-full flex items-center justify-center bg-aria-bg text-aria-text p-4 font-sans select-none ${darkMode ? 'dark' : ''}`}>
+        <div className="w-full max-w-md p-8 rounded-2xl bg-aria-surface border border-aria-border glow-cyan-md flex flex-col gap-6 transition-all duration-300">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-12 h-12 rounded-xl bg-aria-accent/10 border border-aria-accent/20 flex items-center justify-center text-aria-accent mb-2">
+              <ShieldCheck size={28} className="animate-pulse" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight">Access Control</h1>
+            <p className="text-sm text-aria-muted">Please log in to use ARIA</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="flex flex-col gap-4">
+            {loginError && (
+              <div className="p-3 rounded-lg bg-aria-error/10 border border-aria-error/20 text-aria-error text-xs flex items-center gap-2">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-aria-muted uppercase tracking-wider">Username</label>
+              <input
+                type="text"
+                placeholder="Enter username"
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                disabled={isLoggingIn}
+                required
+                className="w-full px-4 py-2.5 rounded-lg bg-aria-bg border border-aria-border focus:border-aria-accent focus:outline-none text-sm transition-all"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-aria-muted uppercase tracking-wider">Password</label>
+              <input
+                type="password"
+                placeholder="Enter password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                disabled={isLoggingIn}
+                required
+                className="w-full px-4 py-2.5 rounded-lg bg-aria-bg border border-aria-border focus:border-aria-accent focus:outline-none text-sm transition-all"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="mt-2 w-full py-2.5 bg-aria-accent hover:opacity-90 disabled:opacity-50 text-aria-bg font-bold rounded-lg transition-all flex items-center justify-center gap-2"
+            >
+              {isLoggingIn ? (
+                <>
+                  <RefreshCw size={16} className="animate-spin" />
+                  <span>Logging in...</span>
+                </>
+              ) : (
+                <span>Access ARIA</span>
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
@@ -238,7 +359,7 @@ function App() {
       if (userApiKey) {
         headers["X-OpenRouter-Key"] = userApiKey;
       }
-      const response = await fetch(`${API_BASE}/api/settings`, { headers });
+      const response = await authorizedFetch(`${API_BASE}/api/settings`, { headers });
       if (response.ok) {
         const data = await response.json();
         setSettings(data);
@@ -267,7 +388,7 @@ function App() {
     
     // Also attempt to save to the backend for persistence on self-hosted instances
     try {
-      const response = await fetch(`${API_BASE}/api/settings`, {
+      const response = await authorizedFetch(`${API_BASE}/api/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ openrouter_api_key: trimmedKey || "" })
@@ -290,7 +411,7 @@ function App() {
       if (userApiKey) {
         headers["X-OpenRouter-Key"] = userApiKey;
       }
-      const response = await fetch(`${API_BASE}/api/memory/count`, { headers });
+      const response = await authorizedFetch(`${API_BASE}/api/memory/count`, { headers });
       if (response.ok) {
         const data = await response.json();
         setMemoryCount(data.count);
@@ -307,7 +428,7 @@ function App() {
       if (userApiKey) {
         headers["X-OpenRouter-Key"] = userApiKey;
       }
-      const response = await fetch(`${API_BASE}/api/sessions?user_id=${encodeURIComponent(userId)}`, { headers });
+      const response = await authorizedFetch(`${API_BASE}/api/sessions?user_id=${encodeURIComponent(userId)}`, { headers });
       if (response.ok) {
         const data = await response.json();
         setSessions(data.sessions);
@@ -322,7 +443,7 @@ function App() {
   const clearMemory = async () => {
     setMemoryStatus(null);
     try {
-      const response = await fetch(`${API_BASE}/api/memory/clear?user_id=${encodeURIComponent(userId)}`, { method: "POST" });
+      const response = await authorizedFetch(`${API_BASE}/api/memory/clear?user_id=${encodeURIComponent(userId)}`, { method: "POST" });
       if (response.ok) {
         setMemoryCount(0);
         setMemoryStatus({ type: "success", message: "Local memory and search history cleared." });
@@ -351,7 +472,7 @@ function App() {
       if (userApiKey) {
         headers["X-OpenRouter-Key"] = userApiKey;
       }
-      const response = await fetch(`${API_BASE}/api/research/plan`, {
+      const response = await authorizedFetch(`${API_BASE}/api/research/plan`, {
         method: "POST",
         headers: headers,
         body: JSON.stringify({ question }),
@@ -393,7 +514,7 @@ function App() {
       if (userApiKey) {
         headers["X-OpenRouter-Key"] = userApiKey;
       }
-      const response = await fetch(`${API_BASE}/api/research`, {
+      const response = await authorizedFetch(`${API_BASE}/api/research`, {
         method: "POST",
         headers: headers,
         body: JSON.stringify({
@@ -504,7 +625,7 @@ function App() {
   const loadSessionDetails = async (sessionId) => {
     setError(null);
     try {
-      const response = await fetch(`${API_BASE}/api/sessions/${sessionId}?user_id=${encodeURIComponent(userId)}`);
+      const response = await authorizedFetch(`${API_BASE}/api/sessions/${sessionId}?user_id=${encodeURIComponent(userId)}`);
       if (response.ok) {
         const data = await response.json();
         setResult(data.result);
@@ -537,20 +658,20 @@ function App() {
         if (!ingestFile) throw new Error("Please select a PDF file.");
         const formData = new FormData();
         formData.append("file", ingestFile);
-        response = await fetch(`${API_BASE}/api/ingest/pdf`, {
+        response = await authorizedFetch(`${API_BASE}/api/ingest/pdf`, {
           method: "POST",
           body: formData
         });
       } else if (ingestType === "url") {
         if (!ingestUrlStr) throw new Error("Please enter a valid HTTP/HTTPS URL.");
-        response = await fetch(`${API_BASE}/api/ingest/url`, {
+        response = await authorizedFetch(`${API_BASE}/api/ingest/url`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: ingestUrlStr })
         });
       } else {
         if (!ingestTextBody.trim()) throw new Error("Please paste text content to index.");
-        response = await fetch(`${API_BASE}/api/ingest/text`, {
+        response = await authorizedFetch(`${API_BASE}/api/ingest/text`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -603,18 +724,27 @@ function App() {
 
 
 
-  const downloadReport = (format) => {
+    const downloadReport = async (format) => {
     if (!selectedSessionId) {
       setError("No saved research session is selected for download.");
       return;
     }
 
-
-
     setError(null);
     try {
-      const url = `${API_BASE}/api/sessions/${selectedSessionId}/download/${format}?user_id=${encodeURIComponent(userId)}`;
-      window.open(url, "_blank");
+      const response = await authorizedFetch(`${API_BASE}/api/sessions/${selectedSessionId}/download/${format}?user_id=${encodeURIComponent(userId)}`);
+      if (!response.ok) {
+        throw new Error(`Failed to download ${format.toUpperCase()} report.`);
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `aria_brief_${selectedSessionId}.${format === "md" ? "md" : "pdf"}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
     } catch (err) {
       setError(err.message || `Failed to download ${format.toUpperCase()} report.`);
     }
@@ -676,6 +806,16 @@ function App() {
               title="Toggle Theme"
             >
               {darkMode ? <Sun size={14} /> : <Moon size={14} />}
+            </button>
+            <button 
+              onClick={() => {
+                localStorage.removeItem("aria_auth_token");
+                setToken("");
+              }}
+              className="p-1 rounded text-aria-muted hover:text-aria-text transition-colors"
+              title="Logout"
+            >
+              <LogOut size={14} />
             </button>
 
             
@@ -1386,24 +1526,18 @@ function App() {
                 <div className="flex gap-2 justify-end">
                   {selectedSessionId ? (
                     <>
-                      <a
-                        href={`${API_BASE}/api/sessions/${selectedSessionId}/download/pdf?user_id=${encodeURIComponent(userId)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download={`aria_brief_${selectedSessionId}.pdf`}
+                      <button
+                        onClick={() => downloadReport("pdf")}
                         className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                       >
                         <Download size={11} /> Download PDF
-                      </a>
-                      <a
-                        href={`${API_BASE}/api/sessions/${selectedSessionId}/download/md?user_id=${encodeURIComponent(userId)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download={`aria_brief_${selectedSessionId}.md`}
+                      </button>
+                      <button
+                        onClick={() => downloadReport("md")}
                         className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                       >
                         <Download size={11} /> Download MD
-                      </a>
+                      </button>
                     </>
                   ) : (
                     <>
