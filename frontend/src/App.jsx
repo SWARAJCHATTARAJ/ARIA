@@ -24,6 +24,7 @@ function App() {
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [loginSuccess, setLoginSuccess] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const authorizedFetch = async (url, options = {}) => {
@@ -45,6 +46,7 @@ function App() {
     e.preventDefault();
     setIsLoggingIn(true);
     setLoginError("");
+    setLoginSuccess("");
     try {
       const response = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
@@ -82,6 +84,7 @@ function App() {
     e.preventDefault();
     setIsLoggingIn(true);
     setLoginError("");
+    setLoginSuccess("");
     try {
       const response = await fetch(`${API_BASE}/api/auth/register`, {
         method: "POST",
@@ -89,32 +92,9 @@ function App() {
         body: JSON.stringify({ username: loginUsername, password: loginPassword })
       });
       if (response.ok) {
-        // Success! Log them in automatically
-        const loginResponse = await fetch(`${API_BASE}/api/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: loginUsername, password: loginPassword })
-        });
-        if (loginResponse.ok) {
-          const data = await loginResponse.json();
-          localStorage.setItem("aria_auth_token", data.access_token);
-          setToken(data.access_token);
-          
-          const lowerUser = loginUsername.trim().toLowerCase();
-          setUserId(lowerUser);
-          localStorage.setItem("aria_user_id", lowerUser);
-          
-          setLoginUsername("");
-          setLoginPassword("");
-          setTimeout(() => {
-            fetchSettings();
-            fetchMemoryCount();
-            fetchSessions();
-          }, 100);
-        } else {
-          setAuthMode("login");
-          setLoginError("Account created! Please log in.");
-        }
+        setAuthMode("login");
+        setLoginSuccess("Account created successfully! Please log in using your credentials.");
+        setLoginPassword("");
       } else {
         const data = await response.json().catch(() => ({ detail: "Registration failed" }));
         setLoginError(data.detail || "Registration failed. Username may be taken.");
@@ -766,6 +746,13 @@ function App() {
           </div>
 
           <form onSubmit={authMode === "login" ? handleLogin : handleRegister} className="flex flex-col gap-4">
+            {loginSuccess && (
+              <div className="p-3 rounded-lg bg-aria-accent/10 border border-aria-accent/20 text-aria-accent text-xs flex items-center gap-2">
+                <CheckCircle size={14} className="shrink-0" />
+                <span>{loginSuccess}</span>
+              </div>
+            )}
+
             {loginError && (
               <div className="p-3 rounded-lg bg-aria-error/10 border border-aria-error/20 text-aria-error text-xs flex items-center gap-2">
                 <AlertCircle size={14} className="shrink-0" />
@@ -824,6 +811,7 @@ function App() {
                   onClick={() => {
                     setAuthMode("register");
                     setLoginError("");
+                    setLoginSuccess("");
                   }}
                   className="text-aria-accent hover:underline font-semibold"
                 >
@@ -838,6 +826,7 @@ function App() {
                   onClick={() => {
                     setAuthMode("login");
                     setLoginError("");
+                    setLoginSuccess("");
                   }}
                   className="text-aria-accent hover:underline font-semibold"
                 >

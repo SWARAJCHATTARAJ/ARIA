@@ -225,10 +225,27 @@ async def register(request: RegisterRequest):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username must be between 3 and 30 characters."
         )
-    if len(request.password) < 6:
+    password = request.password
+    if len(password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 6 characters long."
+            detail="Password must be at least 8 characters long."
+        )
+    if not any(c.isalpha() for c in password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one letter."
+        )
+    if not any(c.isdigit() for c in password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one number."
+        )
+    special_chars = set("!@#$%^&*(),.?\":{}|<>-_+=~`[]\\/;:'")
+    if not any(c in special_chars for c in password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one special character."
         )
     
     success = create_user(username, request.password)
