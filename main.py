@@ -200,7 +200,16 @@ def fetch_url_text(url: str) -> tuple[str, str]:
 
 @app.post("/api/auth/login")
 async def login(request: LoginRequest):
-    db_hash = get_user_hash(request.username)
+    username = request.username.strip().lower()
+    db_hash = get_user_hash(username)
+    
+    print(f"[Auth Debug] Login attempt for username: '{username}'")
+    print(f"[Auth Debug] Hash found in DB: {'Yes' if db_hash else 'No'}")
+    
+    if db_hash:
+        is_verified = verify_password(request.password, db_hash)
+        print(f"[Auth Debug] Password verified: {is_verified}")
+        
     if not db_hash or not verify_password(request.password, db_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -208,7 +217,7 @@ async def login(request: LoginRequest):
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    access_token = create_access_token(data={"sub": request.username.strip().lower()})
+    access_token = create_access_token(data={"sub": username})
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/api/auth/register")
