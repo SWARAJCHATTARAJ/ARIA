@@ -51,6 +51,6 @@ Thumbs.db
 .gradle/
 build/
 android.keystore
-app-release-signed.apk
+# app-release-signed.apk
 app-release-unsigned-aligned.apk
 app-release-signed.apk.idsig
