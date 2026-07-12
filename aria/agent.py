@@ -213,13 +213,28 @@ class LLMClient:
                     "X-Title": "ARIA Research Workspace",
                 },
                 json=payload,
-                timeout=30,
+                timeout=60, # Increased timeout to 60s for complex reasoning/pipeline steps
             )
+            if response.status_code == 429:
+                raise RuntimeError("OpenRouter API rate limit exceeded (HTTP 429). Please wait a moment before retrying, or check your OpenRouter account billing/limits.")
+            elif response.status_code == 401:
+                raise RuntimeError("OpenRouter API unauthorized (HTTP 401). Please check that your API key is correct and valid in your settings.")
+            elif response.status_code == 400:
+                detail = "Bad Request"
+                try:
+                    detail = response.json().get("error", {}).get("message", "Bad Request")
+                except Exception:
+                    pass
+                raise RuntimeError(f"OpenRouter API Bad Request (HTTP 400): {detail}")
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
-        except (requests.RequestException, KeyError, IndexError):
-            return ""
+        except requests.Timeout as e:
+            raise TimeoutError("OpenRouter API request timed out after 60 seconds. The model is taking too long to generate a response.") from e
+        except requests.RequestException as e:
+            raise RuntimeError(f"OpenRouter API connection failed: {e}") from e
+        except (KeyError, IndexError) as e:
+            raise RuntimeError(f"Failed to parse OpenRouter response JSON: {e}") from e
 
     def _fallback(self, user: str, evidence: list[Evidence] | None = None) -> str:
         # Check if this is a developer query or if the developer evidence is present

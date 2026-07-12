@@ -464,15 +464,13 @@ function App() {
   const runResearch = async () => {
     if (!question.trim()) return;
 
-    
+    const startTime = Date.now();
 
     setIsResearching(true);
     setResult(null);
     setError(null);
     setCurrentStage("plan");
     setResearchLogs(["Initializing ARIA Research Workspace..."]);
-
-    
 
     try {
       const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
@@ -496,8 +494,6 @@ function App() {
           user_id: userId
         })
       });
-
-
 
       if (!response.ok) {
         throw new Error(`Server returned error code ${response.status}`);
@@ -567,7 +563,18 @@ function App() {
       }
 
       if (!hasResult && !hasError) {
-        throw new Error("Research stream disconnected before brief generation could complete. The backend server might have timed out or run out of memory.");
+        const elapsed = (Date.now() - startTime) / 1000;
+        let diagnosticMsg = "Research stream disconnected before brief generation could complete. ";
+        if (currentStage === "plan" && elapsed > 25) {
+          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). This is highly likely a cold-start delay from Render spinning down the container. Waking the container took too long, causing the proxy to close the connection. Please try resubmitting your query now that the server is awake.`;
+        } else if (currentStage === "search") {
+          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). The connection timed out during the search/retrieval stage. This usually happens if the live web search API calls or the vector memory lookup take longer than 60-90 seconds.`;
+        } else if (currentStage === "draft" || currentStage === "verify") {
+          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s, Stage: ${currentStage}). The connection timed out during the generative synthesis or self-correction stages. This is typically caused by slow OpenRouter API responses or hosting provider (Render) idle limits.`;
+        } else {
+          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s, Last Stage: ${currentStage}). This could be due to a server-side timeout, rate limits, or out-of-memory crash. Check the backend logs.`;
+        }
+        throw new Error(diagnosticMsg);
       }
     } catch (err) {
       setError(err.message);

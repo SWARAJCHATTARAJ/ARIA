@@ -372,9 +372,17 @@ async def run_research(request: ResearchRequest, x_openrouter_key: str | None = 
         node_started_at = time.perf_counter()
         
         try:
+            last_ping_time = time.perf_counter()
             while True:
                 while q.empty():
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.2)
+                    # Check if thread is still alive
+                    if not t.is_alive() and q.empty():
+                        raise RuntimeError("ARIA research engine thread terminated unexpectedly.")
+                    # Keep-alive ping to prevent proxy/load balancer timeouts
+                    if time.perf_counter() - last_ping_time > 15:
+                        yield ": ping\n\n"
+                        last_ping_time = time.perf_counter()
                 
                 status, val = q.get()
                 if status == "done":
@@ -387,6 +395,8 @@ async def run_research(request: ResearchRequest, x_openrouter_key: str | None = 
                         final_state = {**final_state, **state_update}
                         yield f"event: stage_complete\ndata: {json.dumps({'stage': node_name, 'elapsed': round(elapsed, 2), 'events': state_update.get('events', [])})}\n\n"
                         node_started_at = time.perf_counter()
+                        # Reset ping timer when we output a stage
+                        last_ping_time = time.perf_counter()
             
             # Post-process final state
             from aria.agent import dedupe_evidence
