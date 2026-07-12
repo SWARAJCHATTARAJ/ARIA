@@ -56,8 +56,17 @@ async def get_assetlinks():
     ]
 
 
+def redact_secrets(text: str) -> str:
+    if not text:
+        return text
+    for key in ["OPENROUTER_API_KEY", "DATABASE_URL", "ARIA_JWT_SECRET", "ARIA_PASSWORD_HASH"]:
+        val = os.getenv(key, "").strip()
+        if val and len(val) > 4 and not val.startswith("your_"):
+            text = text.replace(val, f"[{key}_REDACTED]")
+    return text
+
 # Configure CORS origins securely (can be configured via environment variable)
-allowed_origins_str = os.getenv("ARIA_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000,http://localhost:8501,http://127.0.0.1:8501")
+allowed_origins_str = os.getenv("ARIA_ALLOWED_ORIGINS", "https://aria-2-f3kq.onrender.com,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000,http://localhost:8501,http://127.0.0.1:8501")
 origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
 
 app.add_middleware(
@@ -101,6 +110,29 @@ class ResearchRequest(BaseModel):
     custom_plan: list[str] | None = None
     field_focus: str = "all"
     user_id: str | None = None
+    session_id: str | None = None
+
+class InMemoryRateLimiter:
+    def __init__(self, limit_per_minute: int = 5):
+        self.limit = limit_per_minute
+        from collections import defaultdict
+        self.history = defaultdict(list)
+        from threading import Lock
+        self.lock = Lock()
+        
+    def check_rate_limit(self, user_id: str) -> None:
+        with self.lock:
+            now = time.time()
+            self.history[user_id] = [t for t in self.history[user_id] if now - t < 60]
+            if len(self.history[user_id]) >= self.limit:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Rate limit exceeded. Please try again in a minute."
+                )
+            self.history[user_id].append(now)
+
+research_limiter = InMemoryRateLimiter(limit_per_minute=5)
+ingest_limiter = InMemoryRateLimiter(limit_per_minute=10)
 
 class IngestUrlRequest(BaseModel):
     url: str
@@ -269,12 +301,28 @@ async def register(request: RegisterRequest):
 @app.post("/api/research")
 async def run_research(request: ResearchRequest, x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):
     """Run research loop and stream the progress as SSE."""
+    research_limiter.check_rate_limit(current_user)
     agent = get_agent(openrouter_api_key=x_openrouter_key)
     
+    previous_history = []
+    previous_evidence = []
+    if request.session_id:
+        from aria.sessions import find_session_path, load_session
+        try:
+            path = find_session_path(request.session_id, user_id=request.user_id)
+            if path:
+                prev_result = load_session(path)
+                previous_history = list(getattr(prev_result, "history", [])) + [
+                    {"question": prev_result.question, "answer": prev_result.answer}
+                ]
+                previous_evidence = prev_result.evidence
+        except Exception as e:
+            print(f"[Warning] Failed to load previous session: {e}")
+            
     initial_state = {
         "question": request.question,
         "plan": request.custom_plan if request.custom_plan else [],
-        "evidence": [],
+        "evidence": previous_evidence,
         "answer": "",
         "verification": "No verification run.",
         "events": [],
@@ -283,26 +331,62 @@ async def run_research(request: ResearchRequest, x_openrouter_key: str | None = 
         "use_local": request.use_local,
         "use_finance": request.use_finance,
         "max_iterations": request.max_iterations,
-        "field_focus": request.field_focus
+        "field_focus": request.field_focus,
+        "history": previous_history,
+        "validation_warning": False
     }
 
     async def sse_generator():
         # Yield init
         yield f"event: init\ndata: {json.dumps({'message': 'Initializing ARIA Research Workspace...'})}\n\n"
         
+        # Check query cache
+        from aria.cache import check_cache, store_cache
+        cached_result = check_cache(request.question)
+        if cached_result:
+            yield f"event: stage_complete\ndata: {json.dumps({'stage': 'cache_hit', 'elapsed': 0.0, 'events': ['Retrieved results from query cache (embedding similarity hit).']})}\n\n"
+            session = save_session(cached_result, user_id=request.user_id)
+            yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(cached_result)})}\n\n"
+            return
+
+        import asyncio
+        from queue import Queue
+        from threading import Thread
+        
+        q = Queue()
+        
+        def run_graph():
+            try:
+                for output in agent.graph.stream(initial_state):
+                    q.put(("output", output))
+                q.put(("done", None))
+            except Exception as exc:
+                import traceback
+                traceback.print_exc()
+                q.put(("error", exc))
+                
+        t = Thread(target=run_graph, daemon=True)
+        t.start()
+        
         final_state = initial_state
         node_started_at = time.perf_counter()
         
         try:
-            # We stream events from the LangGraph graph
-            for output in agent.graph.stream(initial_state):
-                for node_name, state_update in output.items():
-                    elapsed = time.perf_counter() - node_started_at
-                    final_state = {**final_state, **state_update}
-                    
-                    # Yield progress update
-                    yield f"event: stage_complete\ndata: {json.dumps({'stage': node_name, 'elapsed': round(elapsed, 2), 'events': state_update.get('events', [])})}\n\n"
-                    node_started_at = time.perf_counter()
+            while True:
+                while q.empty():
+                    await asyncio.sleep(0.1)
+                
+                status, val = q.get()
+                if status == "done":
+                    break
+                elif status == "error":
+                    raise val
+                elif status == "output":
+                    for node_name, state_update in val.items():
+                        elapsed = time.perf_counter() - node_started_at
+                        final_state = {**final_state, **state_update}
+                        yield f"event: stage_complete\ndata: {json.dumps({'stage': node_name, 'elapsed': round(elapsed, 2), 'events': state_update.get('events', [])})}\n\n"
+                        node_started_at = time.perf_counter()
             
             # Post-process final state
             from aria.agent import dedupe_evidence
@@ -315,6 +399,8 @@ async def run_research(request: ResearchRequest, x_openrouter_key: str | None = 
                 verification=final_state["verification"],
                 evidence=dedupe_evidence(final_state["evidence"]),
                 events=final_state["events"],
+                history=final_state.get("history", []),
+                validation_warning=final_state.get("validation_warning", False)
             )
             result.metrics = result_metrics(result)
             if hasattr(agent, "_latencies"):
@@ -323,27 +409,37 @@ async def run_research(request: ResearchRequest, x_openrouter_key: str | None = 
             # Save session
             session = save_session(result, user_id=request.user_id)
             
+            # Store in cache
+            store_cache(request.question, result)
+            
             yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(result)})}\n\n"
             
         except Exception as e:
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            yield f"event: error\ndata: {json.dumps({'error': redact_secrets(str(e))})}\n\n"
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 @app.post("/api/research/plan")
 async def generate_plan(request: ResearchRequest, x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):
-    """Generate search queries for a research objective without running the full RAG loop."""
+    research_limiter.check_rate_limit(current_user)
     try:
         agent = get_agent(openrouter_api_key=x_openrouter_key)
         queries = agent._plan(request.question)
         return {"queries": queries}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.post("/api/ingest/pdf")
 async def ingest_pdf(file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
     """Upload and index a PDF file into the local vector database."""
+    ingest_limiter.check_rate_limit(current_user)
     try:
+        # Read the first 4 bytes to check magic header
+        header = await file.read(4)
+        await file.seek(0)
+        if header != b"%PDF":
+            raise ValueError("Invalid PDF format: file must be a valid PDF document.")
+            
         validate_pdf_upload(file.filename, file.size)
         memory = get_memory()
         
@@ -359,13 +455,14 @@ async def ingest_pdf(file: UploadFile = File(...), current_user: str = Depends(g
             tmp_path.unlink(missing_ok=True)
             
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=redact_secrets(str(exc)))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.post("/api/ingest/url")
 async def ingest_url(request: IngestUrlRequest, current_user: str = Depends(get_current_user)):
     """Fetch content from a URL and index it."""
+    ingest_limiter.check_rate_limit(current_user)
     try:
         source_name, text = fetch_url_text(request.url)
         memory = get_memory()
@@ -374,11 +471,12 @@ async def ingest_url(request: IngestUrlRequest, current_user: str = Depends(get_
     except (ValueError, requests.RequestException) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.post("/api/ingest/text")
 async def ingest_text(request: IngestTextRequest, current_user: str = Depends(get_current_user)):
     """Index manual note or pasted text."""
+    ingest_limiter.check_rate_limit(current_user)
     try:
         memory = get_memory()
         count = memory.ingest_text(request.text, source_name=request.source_name, source_type=request.source_type)
@@ -386,7 +484,7 @@ async def ingest_text(request: IngestTextRequest, current_user: str = Depends(ge
             raise HTTPException(status_code=400, detail="Text to index must not be empty.")
         return {"message": "Successfully indexed manual note", "chunks": count}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.get("/api/memory/count")
 async def get_memory_count():
@@ -395,7 +493,7 @@ async def get_memory_count():
         memory = get_memory()
         return {"count": memory.count()}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.post("/api/memory/clear")
 async def clear_memory(user_id: str | None = None, current_user: str = Depends(get_current_user)):
@@ -408,7 +506,7 @@ async def clear_memory(user_id: str | None = None, current_user: str = Depends(g
         clear_sessions(user_id=user_id)
         return {"message": "Memory cleared successfully."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.get("/api/sessions")
 async def get_sessions(user_id: str | None = None, limit: int = 50, current_user: str = Depends(get_current_user)):
@@ -417,7 +515,7 @@ async def get_sessions(user_id: str | None = None, limit: int = 50, current_user
         sessions = list_sessions(limit=limit, user_id=user_id)
         return {"sessions": sessions}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.get("/api/sessions/{session_id}")
 async def get_session(session_id: str, user_id: str | None = None, current_user: str = Depends(get_current_user)):
@@ -438,7 +536,7 @@ async def get_session(session_id: str, user_id: str | None = None, current_user:
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.get("/api/sessions/{session_id}/download/pdf")
 async def download_session_pdf(session_id: str, user_id: str | None = None, current_user: str = Depends(get_current_user)):
@@ -457,7 +555,7 @@ async def download_session_pdf(session_id: str, user_id: str | None = None, curr
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.get("/api/sessions/{session_id}/download/md")
 async def download_session_md(session_id: str, user_id: str | None = None, current_user: str = Depends(get_current_user)):
@@ -476,7 +574,7 @@ async def download_session_md(session_id: str, user_id: str | None = None, curre
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.get("/api/settings")
 async def get_settings(x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):

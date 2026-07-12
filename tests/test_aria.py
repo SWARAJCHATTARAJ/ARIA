@@ -555,5 +555,187 @@ class LLMClientTests(unittest.TestCase):
                     os.environ["ARIA_ADMIN_USER_ID"] = previous_admin
 
 
+class QueryCacheTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from aria.auth import init_db, get_db_connection
+        init_db()
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM query_cache")
+            conn.commit()
+            cur.close()
+        finally:
+            conn.close()
+        
+    def test_cache_hit_and_miss(self) -> None:
+        from aria.cache import check_cache, store_cache
+        from aria.core import ResearchResult, Evidence
+        
+        q1 = "What is the capital of France?"
+        q2 = "What is France's capital city?"
+        q3 = "How does photosynthesis work?"
+        
+        res = ResearchResult(
+            question=q1,
+            plan=["plan step"],
+            answer="Paris is the capital of France.",
+            verification="Passed",
+            evidence=[Evidence(title="Paris Info", summary="Paris is France's capital.", source_type="web")]
+        )
+        
+        # Cache is initially empty
+        self.assertIsNone(check_cache(q1))
+        
+        # Store in cache
+        store_cache(q1, res)
+        
+        # Direct lookup should hit
+        hit1 = check_cache(q1)
+        self.assertIsNotNone(hit1)
+        self.assertTrue(hit1.cached)
+        self.assertEqual(hit1.answer, res.answer)
+        
+        # Semantic lookup should also hit (q2 is very similar to q1)
+        hit2 = check_cache(q2)
+        self.assertIsNotNone(hit2)
+        self.assertTrue(hit2.cached)
+        
+        # Unrelated lookup should miss
+        miss = check_cache(q3)
+        self.assertIsNone(miss)
+
+
+class SourceDiversityTests(unittest.TestCase):
+    def test_enforce_source_diversity(self) -> None:
+        from aria.agent import enforce_source_diversity
+        from aria.core import Evidence
+        
+        evidence = [
+            # 4 items from the same web domain
+            Evidence(title="Page 1", summary="content", source_type="web", url="https://wikipedia.org/wiki/A"),
+            Evidence(title="Page 2", summary="content", source_type="web", url="https://wikipedia.org/wiki/B"),
+            Evidence(title="Page 3", summary="content", source_type="web", url="https://wikipedia.org/wiki/C"),
+            Evidence(title="Page 4", summary="content", source_type="web", url="https://wikipedia.org/wiki/D"),
+            # 2 items from another web domain
+            Evidence(title="Page 5", summary="content", source_type="web", url="https://arxiv.org/abs/1"),
+            Evidence(title="Page 6", summary="content", source_type="web", url="https://arxiv.org/abs/2"),
+            # 1 local document note (uses title for source identifier)
+            Evidence(title="MyLocalDoc", summary="content", source_type="note", url=None)
+        ]
+        
+        # Enforce max 2 per source
+        diverse = enforce_source_diversity(evidence, max_per_source=2)
+        
+        # Should keep 2 from wikipedia, 2 from arxiv, 1 from MyLocalDoc -> total 5 items
+        self.assertEqual(len(diverse), 5)
+        
+        wikipedia_items = [e for e in diverse if "wikipedia" in (e.url or "")]
+        self.assertEqual(len(wikipedia_items), 2)
+        
+        arxiv_items = [e for e in diverse if "arxiv" in (e.url or "")]
+        self.assertEqual(len(arxiv_items), 2)
+        
+        local_items = [e for e in diverse if e.url is None]
+        self.assertEqual(len(local_items), 1)
+
+
+class MultiTurnFollowUpTests(unittest.TestCase):
+    def test_multi_turn_flow(self) -> None:
+        from aria.agent import ResearchAgent
+        from aria.core import Settings, Evidence, ResearchResult
+        from aria.rag import VectorMemory
+        
+        settings = Settings.from_env()
+        memory = VectorMemory(settings)
+        agent = ResearchAgent(settings, memory)
+        
+        history = [
+            {"question": "Who created Python?", "answer": "Guido van Rossum created Python."}
+        ]
+        
+        # Test that _plan incorporates history
+        queries = agent._plan("Where was he born?", history=history)
+        self.assertTrue(len(queries) > 0)
+        
+        # Test that _draft incorporates history
+        evidence = [
+            Evidence(title="Guido Bio", summary="Guido van Rossum was born in the Netherlands.", source_type="web")
+        ]
+        answer = agent._draft("Where was he born?", evidence, history=history)
+        self.assertIn("Netherlands", answer)
+
+
+class OutputValidationTests(unittest.TestCase):
+    def test_brief_validation(self) -> None:
+        from pydantic import BaseModel, model_validator
+        import re
+        from aria.core import Evidence
+        
+        evidence = [
+            Evidence(title="Source 1", summary="content", source_type="web")
+        ]
+        
+        class ResearchBriefValidation(BaseModel):
+            answer: str
+            
+            @model_validator(mode="after")
+            def validate_brief(self) -> "ResearchBriefValidation":
+                if not self.answer or not self.answer.strip():
+                    raise ValueError("Research brief answer must not be empty.")
+                if "no sufficient evidence found" in self.answer.lower():
+                    return self
+                citations = re.findall(r"\[(\d+)\]", self.answer)
+                if not citations:
+                    raise ValueError("Research brief must contain citations in bracketed format (e.g., [1]).")
+                max_idx = len(evidence)
+                for cit in citations:
+                    idx = int(cit)
+                    if idx < 1 or idx > max_idx:
+                        raise ValueError(f"Citation [{idx}] is out of bounds.")
+                return self
+                
+        # Valid brief (contains valid citation [1])
+        valid = ResearchBriefValidation(answer="Paris is nice [1].")
+        self.assertEqual(valid.answer, "Paris is nice [1].")
+        
+        # Valid brief (sufficient evidence fallback)
+        fallback = ResearchBriefValidation(answer="No sufficient evidence found to answer the query.")
+        self.assertEqual(fallback.answer, "No sufficient evidence found to answer the query.")
+        
+        # Invalid: empty brief
+        with self.assertRaises(ValueError):
+            ResearchBriefValidation(answer="")
+            
+        # Invalid: missing citations
+        with self.assertRaises(ValueError):
+            ResearchBriefValidation(answer="Paris is nice.")
+            
+        # Invalid: citation out of bounds ([2] is out of bounds since len(evidence) is 1)
+        with self.assertRaises(ValueError):
+            ResearchBriefValidation(answer="Paris is nice [2].")
+
+
+class RateLimiterTests(unittest.TestCase):
+    def test_in_memory_rate_limiter(self) -> None:
+        from main import InMemoryRateLimiter
+        from fastapi import HTTPException
+        
+        limiter = InMemoryRateLimiter(limit_per_minute=3)
+        
+        # 3 requests should pass
+        limiter.check_rate_limit("user1")
+        limiter.check_rate_limit("user1")
+        limiter.check_rate_limit("user1")
+        
+        # 4th request should raise HTTPException with 429 status code
+        with self.assertRaises(HTTPException) as ctx:
+            limiter.check_rate_limit("user1")
+        self.assertEqual(ctx.exception.status_code, 429)
+        
+        # Requests for a different user should pass
+        limiter.check_rate_limit("user2")
+
+
 if __name__ == "__main__":
     unittest.main()

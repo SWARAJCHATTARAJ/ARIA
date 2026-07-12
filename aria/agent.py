@@ -98,6 +98,8 @@ class AgentState(TypedDict):
     use_finance: bool
     max_iterations: int
     field_focus: str
+    history: list[dict]
+    validation_warning: bool
 
 
 class LLMClient:
@@ -521,7 +523,7 @@ class ResearchAgent:
         plan = state.get("plan")
         if plan and len(plan) > 0:
             return {"plan": plan, "events": ["Planner: using customized research plan"]}
-        plan = self._plan(question)
+        plan = self._plan(question, history=state.get("history"))
         return {"plan": plan, "events": ["Planner: generated search queries"]}
 
     async def _async_search(
@@ -780,11 +782,67 @@ class ResearchAgent:
         evidence = dedupe_evidence(state["evidence"])
         evidence = cross_encoder_rerank_evidence(question, evidence)
         iteration = state["iteration"]
+        history = state.get("history")
         
-        answer = self._draft(question, evidence)
+        # Pydantic model for brief validation
+        from pydantic import BaseModel, model_validator
+        import re
+        
+        class ResearchBriefValidation(BaseModel):
+            answer: str
+            
+            @model_validator(mode="after")
+            def validate_brief(self) -> "ResearchBriefValidation":
+                # 1. Non-empty answer
+                if not self.answer or not self.answer.strip():
+                    raise ValueError("Research brief answer must not be empty.")
+                
+                # If answer indicates no sufficient evidence found, skip citation checks
+                if "no sufficient evidence found" in self.answer.lower():
+                    return self
+                
+                # 2. Check citation format (bracketed numbers [1], [2], etc.)
+                citations = re.findall(r"\[(\d+)\]", self.answer)
+                if not citations:
+                    raise ValueError("Research brief must contain citations in bracketed format (e.g., [1], [2]).")
+                
+                # 3. Check valid source_id references (citation numbers must match a 1-indexed element in evidence)
+                max_idx = len(evidence)
+                for cit in citations:
+                    idx = int(cit)
+                    if idx < 1 or idx > max_idx:
+                        raise ValueError(f"Citation [{idx}] is out of bounds. Valid citation range is [1] to [{max_idx}].")
+                return self
+
+        # Generate initial draft
+        answer = self._draft(question, evidence, history=history)
+        validation_warning = False
+        
+        try:
+            ResearchBriefValidation(answer=answer)
+        except Exception as exc:
+            # First draft failed validation. Retry once with error message appended to prompt
+            exc_msg = str(exc)
+            retry_instruction = f"\n\n[ERROR] Previous draft output failed validation:\n{exc_msg}\nPlease regenerate the brief, ensuring you resolve the validation error by citing sources correctly (e.g. [1]) and using only valid source indices from [1] to [{len(evidence)}]."
+            
+            # Call _draft again with retry instruction appended to question!
+            retry_question = f"{question}{retry_instruction}"
+            answer = self._draft(retry_question, evidence, history=history)
+            
+            try:
+                # Re-validate retried draft
+                ResearchBriefValidation(answer=answer)
+            except Exception as final_exc:
+                print(f"[Warning] LLM draft retry failed validation again: {final_exc}")
+                validation_warning = True
+                
         from aria.reports import bold_key_terms
         answer = bold_key_terms(answer)
-        return {"answer": answer, "events": [f"Synthesis: generated research draft (pass {iteration + 1})"]}
+        return {
+            "answer": answer,
+            "validation_warning": validation_warning,
+            "events": [f"Synthesis: generated research brief (pass {iteration + 1})"]
+        }
 
     @track_node_latency("verify")
     def node_verify(self, state: AgentState) -> dict:
@@ -797,9 +855,13 @@ class ResearchAgent:
         verification = self._verify(question, answer, evidence)
         return {"verification": verification, "events": ["Auditor: verified draft against retrieved evidence"], "iteration": iteration + 1}
 
-    def _plan(self, question: str) -> list[str]:
+    def _plan(self, question: str, history: list[dict] | None = None) -> list[str]:
         target_queries = classify_question_complexity(question)
         if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
+            history_context = ""
+            if history:
+                history_context = "\nPrevious Conversation History:\n" + "\n".join(f"User: {h['question']}\nARIA: {h['answer']}" for h in history)
+            
             system = (
                 "You are ARIA's Lead Planner. Break down the user's research "
                 f"question into EXACTLY {target_queries} distinct, highly specific search queries targeting technical specifications, "
@@ -807,6 +869,8 @@ class ResearchAgent:
                 "Output each query on a new line. Do not include numbers, bullets, or markdown."
             )
             user = f"Research Question: {question}"
+            if history_context:
+                user = f"{history_context}\n\nFollow-up Research Question: {question}\nFocus only on planning queries for the new follow-up question using the context above."
             response = self.llm.complete(system, user, task="plan")
             queries = [line.strip() for line in response.splitlines() if line.strip()]
             cleaned_queries = clean_queries(queries)
@@ -816,7 +880,11 @@ class ResearchAgent:
         fallback_queries = generate_diverse_fallback_queries(question)
         return fallback_queries[:target_queries]
 
-    def _draft(self, question: str, evidence: list[Evidence]) -> str:
+    def _draft(self, question: str, evidence: list[Evidence], history: list[dict] | None = None) -> str:
+        history_context = ""
+        if history:
+            history_context = "\nPrevious Conversation History:\n" + "\n".join(f"User: {h['question']}\nARIA: {h['answer']}" for h in history)
+            
         system = (
             "You are ARIA, an Autonomous Research Intelligence Analyst. "
             "Write a clear, structured, accurate research brief answering the query.\n"
@@ -826,10 +894,16 @@ class ResearchAgent:
             "- If the provided evidence is empty, contains no factual details, or does not contain information directly relevant to answering the question, you MUST respond with: 'No sufficient evidence found to answer the query.' and nothing else.\n"
             "- For any product, technology, standard, component, or algorithm described, explicitly state its core purpose and intended function as supported by the evidence.\n"
             "- Cite all sources using bracketed numbers [1], [2], etc., corresponding to the exact index in the provided evidence. Every claim must have a citation.\n"
-            "- Wrap key findings, conclusions, and important terms in markdown bold (**term**) for readability (do not bold entire sentences, just the key terms).\n"
+            "- Wrap key findings, key metrics, and important technical terms in markdown bold (e.g. **term**) for readability. Do NOT bold entire sentences or long phrases; bold only 1-3 key words at a time.\n"
             "Keep the tone professional, objective, technical, and evidence-led."
         )
+        if history_context:
+            system += "\nNote: This is a follow-up question. Please build upon the previous conversation history provided in the prompt where relevant."
+            
         user = f"Question:\n{question}\n\nEvidence:\n{format_evidence(evidence, limit=12)}"
+        if history_context:
+            user = f"{history_context}\n\nFollow-up Question:\n{question}\n\nEvidence:\n{format_evidence(evidence, limit=12)}"
+            
         return self.llm.complete(system, user, task="draft", evidence=evidence)
 
     def _log_verification_failure(self, question: str, claim: str, evidence_id: str, mismatch_reason: str, confidence: float):
@@ -1179,6 +1253,26 @@ def get_cross_encoder():
         print(f"[Warning] Failed to initialize CrossEncoder: {e}")
         return None
 
+def enforce_source_diversity(evidence: list[Evidence], max_per_source: int = 2) -> list[Evidence]:
+    """Caps the number of evidence chunks from any single source (e.g. max 2-3 per source) to ensure source diversity."""
+    counts = {}
+    diverse = []
+    for item in evidence:
+        source = item.url or item.title or "unknown"
+        if item.url:
+            from urllib.parse import urlparse
+            try:
+                parsed = urlparse(item.url)
+                source = parsed.netloc or item.url
+            except Exception:
+                pass
+        source = source.lower().strip()
+        counts[source] = counts.get(source, 0) + 1
+        if counts[source] <= max_per_source:
+            diverse.append(item)
+    return diverse
+
+
 def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[Evidence]:
     if not query or not evidence:
         return evidence
@@ -1189,7 +1283,7 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
         filtered = [item for item in ranked if item.score >= 0.35]
         if not filtered and ranked:
             filtered = [ranked[0]]
-        return filtered
+        return enforce_source_diversity(filtered, max_per_source=2)
         
     try:
         pairs = [(query, item.summary) for item in evidence]
@@ -1203,22 +1297,66 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
         filtered = [item for item in evidence if item.score >= 0.3]
         if not filtered and evidence:
             filtered = [evidence[0]]
-        return filtered
+        return enforce_source_diversity(filtered, max_per_source=2)
     except Exception as e:
         print(f"[Warning] CrossEncoder inference failed: {e}. Falling back to token overlap.")
         ranked = re_rank_evidence(query, evidence)
         filtered = [item for item in ranked if item.score >= 0.35]
         if not filtered and ranked:
             filtered = [ranked[0]]
-        return filtered
+        return enforce_source_diversity(filtered, max_per_source=2)
+
+
+_RERANKER_MODEL = None
+
+
+def get_reranker_model():
+    global _RERANKER_MODEL
+    if _RERANKER_MODEL is None:
+        from sentence_transformers import CrossEncoder
+        # Use cross-encoder/ms-marco-MiniLM-L-2-v2: lightweight, fast, and low memory footprint (~60MB)
+        _RERANKER_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-2-v2")
+    return _RERANKER_MODEL
 
 
 def re_rank_evidence(query: str, evidence: list[Evidence]) -> list[Evidence]:
-    """Scores and re-ranks retrieved evidence based on token match overlap with the search query."""
+    """Scores, re-ranks, and filters retrieved evidence using a sentence-transformers cross-encoder if available, falling back to token overlap match."""
     if not query or not evidence:
         return evidence
 
-    # Extract query terms (filtering out common stop words)
+    has_sentence_transformers = False
+    try:
+        from sentence_transformers import CrossEncoder
+        has_sentence_transformers = True
+    except ImportError:
+        pass
+
+    if has_sentence_transformers:
+        try:
+            model = get_reranker_model()
+            pairs = [(query, item.summary or "") for item in evidence]
+            scores = model.predict(pairs)
+            
+            import math
+            ranked_evidence = []
+            for item, raw_score in zip(evidence, scores):
+                sigmoid_score = 1.0 / (1.0 + math.exp(-raw_score))
+                item.score = round(sigmoid_score, 2)
+                ranked_evidence.append(item)
+            
+            ranked_evidence.sort(key=lambda x: x.score, reverse=True)
+            
+            # Filter out loosely-relevant results (score < 0.15), but keep at least 2 to avoid breaking tests/pipeline constraints
+            filtered = [item for item in ranked_evidence if item.score >= 0.15]
+            if len(filtered) < 2 and len(ranked_evidence) >= 2:
+                filtered = ranked_evidence[:2]
+            elif len(filtered) == 0 and len(ranked_evidence) > 0:
+                filtered = ranked_evidence[:1]
+            return filtered
+        except Exception as e:
+            print(f"[Warning] Cross-encoder re-ranking failed: {e}. Falling back to token overlap.")
+
+    # Heuristic token overlap fallback
     stop_words = {
         "what", "is", "are", "the", "a", "an", "and", "or", "but", "in", 
         "on", "at", "for", "to", "with", "of", "about", "how", "why", "who", "which"

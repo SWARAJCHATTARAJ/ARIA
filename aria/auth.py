@@ -26,24 +26,75 @@ def get_db_connection():
         return conn
 
 def init_db():
-    Path(".aria_sessions").mkdir(parents=True, exist_ok=True)
-    db_url = os.getenv("DATABASE_URL")
-    is_postgres = db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://"))
-    
-    conn = get_db_connection()
     try:
-        cursor = conn.cursor()
-        if is_postgres:
-            cursor.execute(
-                "CREATE TABLE IF NOT EXISTS users (username VARCHAR(255) PRIMARY KEY, password_hash VARCHAR(255) NOT NULL)"
-            )
-        else:
-            cursor.execute(
-                "CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL)"
-            )
-        conn.commit()
-    finally:
-        conn.close()
+        Path(".aria_sessions").mkdir(parents=True, exist_ok=True)
+        db_url = os.getenv("DATABASE_URL")
+        is_postgres = db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://"))
+        
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            if is_postgres:
+                cursor.execute(
+                     "CREATE TABLE IF NOT EXISTS users (username VARCHAR(255) PRIMARY KEY, password_hash VARCHAR(255) NOT NULL)"
+                )
+                try:
+                    cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                except Exception as e:
+                    print(f"[Warning] Failed to enable pgvector extension: {e}")
+                
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS sessions (
+                        id VARCHAR(255) PRIMARY KEY,
+                        user_id VARCHAR(255),
+                        title VARCHAR(255),
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        result JSONB
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS vector_memory (
+                        id VARCHAR(255) PRIMARY KEY,
+                        document TEXT,
+                        metadata JSONB,
+                        embedding vector(384)
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS query_cache (
+                        id SERIAL PRIMARY KEY,
+                        question TEXT NOT NULL,
+                        embedding vector(384) NOT NULL,
+                        result JSONB NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            else:
+                cursor.execute(
+                    "CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL)"
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS query_cache (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        question TEXT NOT NULL,
+                        embedding TEXT NOT NULL,
+                        result TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[Warning] Database initialization failed: {e}")
 
 # Initialize DB at startup
 init_db()

@@ -25,6 +25,17 @@ class Settings:
             msg = f"[Warning] ARIA_LLM_PROVIDER is set to '{provider}', but an OPENROUTER_API_KEY is configured. The API key will not be used."
             logging.getLogger("aria.core").warning(msg)
             print(msg)
+
+        # Security pass: warning if other provider keys are configured
+        other_keys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "COHERE_API_KEY", "MISTRAL_API_KEY"]
+        for key in other_keys:
+            val = os.getenv(key, "").strip()
+            if val and not val.startswith("your_"):
+                import logging
+                msg = f"[Security Warning] LLM credential variable '{key}' is set. ARIA is configured to use OpenRouter ONLY. This credential will be ignored and should be removed to prevent leaks."
+                logging.getLogger("aria.core").warning(msg)
+                print(msg)
+
         return cls(
             llm_provider=provider,
             model=os.getenv("ARIA_MODEL", "local-extractive"),
@@ -54,6 +65,9 @@ class ResearchResult:
     evidence: list[Evidence]
     events: list[str] = field(default_factory=list)
     metrics: dict[str, int | float | str] = field(default_factory=dict)
+    cached: bool = False
+    history: list[dict] = field(default_factory=list)
+    validation_warning: bool = False
 
 
 def validate_pdf_upload(name: str, size: int) -> None:

@@ -41,12 +41,16 @@ dependencies = [
     "tokenizers>=0.22.0,<=0.23.0",
     "python-jose[cryptography]>=3.3.0",
     "bcrypt>=4.0.0",
-    "psycopg2-binary>=2.9.9"
+    "psycopg2-binary>=2.9.9",
+    "sentence-transformers>=2.2.2"
 ]
 
 [project.optional-dependencies]
 desktop = [
     "pywebview>=5.1.0"
+]
+eval = [
+    "ragas>=0.1.7"
 ]
 
 [project.urls]

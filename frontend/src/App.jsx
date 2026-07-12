@@ -503,35 +503,25 @@ function App() {
         throw new Error(`Server returned error code ${response.status}`);
       }
 
-
-
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let buffer = "";
-
-
+      let hasResult = false;
+      let hasError = false;
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
 
-
-
         buffer += decoder.decode(value, { stream: true });
-
-        
 
         let boundary = buffer.indexOf("\n\n");
         while (boundary !== -1) {
           const message = buffer.substring(0, boundary).trim();
           buffer = buffer.substring(boundary + 2);
 
-
-
           let eventType = "message";
           let eventData = "";
-
-
 
           const lines = message.split("\n");
           for (const line of lines) {
@@ -542,13 +532,9 @@ function App() {
             }
           }
 
-
-
           if (eventData) {
             try {
               const parsed = JSON.parse(eventData);
-
-              
 
               if (eventType === "init") {
                 setResearchLogs(prev => [...prev, `[System] > ${parsed.message}`]);
@@ -560,12 +546,14 @@ function App() {
                 }
                 setResearchLogs(prev => [...prev, `[System] > Timeline: ${stage} completed in ${elapsed}s`]);
               } else if (eventType === "result") {
+                hasResult = true;
                 setCurrentStage("complete");
                 setResult(parsed.result);
                 setSelectedSessionId(parsed.session_id);
                 fetchSessions();
                 fetchMemoryCount();
               } else if (eventType === "error") {
+                hasError = true;
                 setError(parsed.error);
                 setCurrentStage("idle");
               }
@@ -574,10 +562,12 @@ function App() {
             }
           }
 
-
-
           boundary = buffer.indexOf("\n\n");
         }
+      }
+
+      if (!hasResult && !hasError) {
+        throw new Error("Research stream disconnected before brief generation could complete. The backend server might have timed out or run out of memory.");
       }
     } catch (err) {
       setError(err.message);
@@ -1258,9 +1248,16 @@ function App() {
               {result && !isResearching && (
                 <div className="space-y-6">
                   {/* Objective details */}
-                  <div className="pb-4 border-b border-aria-border">
-                    <span className="text-[9px] font-bold text-aria-muted uppercase tracking-wider block mb-1">Research Question</span>
-                    <h2 className="text-sm font-semibold text-aria-text leading-relaxed">{result.question}</h2>
+                  <div className="pb-4 border-b border-aria-border flex justify-between items-start">
+                    <div>
+                      <span className="text-[9px] font-bold text-aria-muted uppercase tracking-wider block mb-1">Research Question</span>
+                      <h2 className="text-sm font-semibold text-aria-text leading-relaxed">{result.question}</h2>
+                    </div>
+                    {result.cached && (
+                      <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider mt-1">
+                        Cached
+                      </span>
+                    )}
                   </div>
 
 

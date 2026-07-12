@@ -18,6 +18,7 @@ __pycache__/
 .aria_chroma_db/
 .aria_sessions/
 .aria_memory.json
+.aria_eval_history.json
 
 # Reports & Outputs
 *.pdf
