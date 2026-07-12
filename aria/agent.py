@@ -833,7 +833,8 @@ class ResearchAgent:
                 # Re-validate retried draft
                 ResearchBriefValidation(answer=answer)
             except Exception as final_exc:
-                print(f"[Warning] LLM draft retry failed validation again: {final_exc}")
+                safe_exc = str(final_exc).encode("ascii", errors="replace").decode("ascii")
+                print(f"[Warning] LLM draft retry failed validation again: {safe_exc}")
                 validation_warning = True
                 
         from aria.reports import bold_key_terms
