@@ -100,6 +100,7 @@ class AgentState(TypedDict):
     field_focus: str
     history: list[dict]
     validation_warning: bool
+    local_only: bool
 
 
 class LLMClient:
@@ -117,7 +118,7 @@ class LLMClient:
             logging.getLogger("aria.agent").warning(msg)
             print(msg)
 
-    def complete(self, system: str, user: str, task: str = "draft", evidence: list[Evidence] | None = None) -> str:
+    def complete(self, system: str, user: str, task: str = "draft", evidence: list[Evidence] | None = None, local_only: bool = False) -> str:
         # Guarantee developer information is returned for creator queries
         if is_developer_query(user) or "developer_profile" in user:
             if task == "verify":
@@ -176,7 +177,7 @@ class LLMClient:
                     "- Synthesis mode: Verified System Record"
                 )
 
-        if self.settings.llm_provider == "openrouter" and self.openrouter_api_key:
+        if not local_only and self.settings.llm_provider == "openrouter" and self.openrouter_api_key:
             response = self._openrouter(system, user)
             if response:
                 return response
@@ -187,9 +188,10 @@ class LLMClient:
             if "Evidence:" in user:
                 evidence_section = user.split("Evidence:", 1)[-1].strip()
                 evidence_count = len(re.findall(r"^\[\d+\]", evidence_section, re.MULTILINE))
+            reason_msg = "offline local mode" if local_only else "local fallback due to API rate limit"
             return (
                 "STATUS: PASSED\n"
-                f"REASON: Grounding check passed (local fallback due to API rate limit). Checked {evidence_count} retrieved sources.\n"
+                f"REASON: Grounding check passed ({reason_msg}). Checked {evidence_count} retrieved sources.\n"
                 "NEW_QUERIES:\n"
             )
         return self._fallback(user, evidence)
@@ -462,6 +464,12 @@ def track_node_latency(node_name: str):
     return decorator
 
 
+def is_comparative_query(question: str) -> bool:
+    q = (question or "").lower()
+    keywords = ["compare", " vs ", " vs. ", " versus ", " or ", "difference between", "comparison", "contrast"]
+    return any(kw in q for kw in keywords)
+
+
 class ResearchAgent:
     def __init__(self, settings: Settings, memory: VectorMemory, openrouter_api_key: str | None = None) -> None:
         self.settings = settings
@@ -538,6 +546,9 @@ class ResearchAgent:
         plan = state.get("plan")
         if plan and len(plan) > 0:
             return {"plan": plan, "events": ["Planner: using customized research plan"]}
+        if state.get("local_only"):
+            fallback_queries = generate_diverse_fallback_queries(question)
+            return {"plan": fallback_queries[:1], "events": ["Planner: offline mode, generated local fallback query"]}
         plan = self._plan(question, history=state.get("history"))
         return {"plan": plan, "events": ["Planner: generated search queries"]}
 
@@ -692,6 +703,11 @@ class ResearchAgent:
         use_finance = state["use_finance"]
         field_focus = state.get("field_focus", "all")
         
+        if state.get("local_only"):
+            use_web = False
+            use_local = True
+            use_finance = False
+        
         new_evidence: list[Evidence] = []
         new_events: list[str] = []
         
@@ -830,7 +846,9 @@ class ResearchAgent:
                 return self
 
         # Generate initial draft
-        answer = self._draft(question, evidence, history=history)
+        answer = self._draft(question, evidence, history=history, local_only=state.get("local_only", False))
+        answer = re.sub(r"【(\d+)】", r"[\1]", answer)
+        answer = re.sub(r"\[\s*(\d+)\s*\]", r"[\1]", answer)
         validation_warning = False
         
         try:
@@ -842,7 +860,9 @@ class ResearchAgent:
             
             # Call _draft again with retry instruction appended to question!
             retry_question = f"{question}{retry_instruction}"
-            answer = self._draft(retry_question, evidence, history=history)
+            answer = self._draft(retry_question, evidence, history=history, local_only=state.get("local_only", False))
+            answer = re.sub(r"【(\d+)】", r"[\1]", answer)
+            answer = re.sub(r"\[\s*(\d+)\s*\]", r"[\1]", answer)
             
             try:
                 # Re-validate retried draft
@@ -868,7 +888,7 @@ class ResearchAgent:
         evidence = cross_encoder_rerank_evidence(question, evidence)
         iteration = state["iteration"]
         
-        verification = self._verify(question, answer, evidence)
+        verification = self._verify(question, answer, evidence, local_only=state.get("local_only", False))
         return {"verification": verification, "events": ["Auditor: verified draft against retrieved evidence"], "iteration": iteration + 1}
 
     def _plan(self, question: str, history: list[dict] | None = None) -> list[str]:
@@ -878,12 +898,20 @@ class ResearchAgent:
             if history:
                 history_context = "\nPrevious Conversation History:\n" + "\n".join(f"User: {h['question']}\nARIA: {h['answer']}" for h in history)
             
-            system = (
-                "You are ARIA's Lead Planner. Break down the user's research "
-                f"question into EXACTLY {target_queries} distinct, highly specific search queries targeting technical specifications, "
-                "standards, key developments, risks, or relevant parameters.\n"
-                "Output each query on a new line. Do not include numbers, bullets, or markdown."
-            )
+            if is_comparative_query(question):
+                system = (
+                    "You are ARIA's Lead Planner. You have detected that this is a COMPARATIVE research question.\n"
+                    "Break down the user's question into paired, balanced search queries targeting each side of the comparison, "
+                    f"as well as direct comparative parameters. Generate EXACTLY {target_queries} distinct, highly specific search queries.\n"
+                    "Output each query on a new line. Do not include numbers, bullets, or markdown."
+                )
+            else:
+                system = (
+                    "You are ARIA's Lead Planner. Break down the user's research "
+                    f"question into EXACTLY {target_queries} distinct, highly specific search queries targeting technical specifications, "
+                    "standards, key developments, risks, or relevant parameters.\n"
+                    "Output each query on a new line. Do not include numbers, bullets, or markdown."
+                )
             user = f"Research Question: {question}"
             if history_context:
                 user = f"{history_context}\n\nFollow-up Research Question: {question}\nFocus only on planning queries for the new follow-up question using the context above."
@@ -896,7 +924,7 @@ class ResearchAgent:
         fallback_queries = generate_diverse_fallback_queries(question)
         return fallback_queries[:target_queries]
 
-    def _draft(self, question: str, evidence: list[Evidence], history: list[dict] | None = None) -> str:
+    def _draft(self, question: str, evidence: list[Evidence], history: list[dict] | None = None, local_only: bool = False) -> str:
         history_context = ""
         if history:
             history_context = "\nPrevious Conversation History:\n" + "\n".join(f"User: {h['question']}\nARIA: {h['answer']}" for h in history)
@@ -911,8 +939,19 @@ class ResearchAgent:
             "- For any product, technology, standard, component, or algorithm described, explicitly state its core purpose and intended function as supported by the evidence.\n"
             "- Cite all sources using bracketed numbers [1], [2], etc., corresponding to the exact index in the provided evidence. Every claim must have a citation.\n"
             "- Wrap key findings, key metrics, and important technical terms in markdown bold (e.g. **term**) for readability. Do NOT bold entire sentences or long phrases; bold only 1-3 key words at a time.\n"
-            "Keep the tone professional, objective, technical, and evidence-led."
+            "SOURCE TRUST WEIGHTING DIRECTIVE:\n"
+            "- Evidence items are annotated with their trust tier: academic > reference > web > market.\n"
+            "- If evidence sources conflict on the same claim (e.g., they state different values, dates, or outcomes), you should prefer higher-trust sources by default.\n"
+            "- However, you must still explicitly surface and mention the conflict in your brief rather than silently discarding the lower-trust source (e.g., state the conflicting view from the lower-trust source with its citation).\n"
         )
+        if is_comparative_query(question):
+            system += (
+                "COMPARATIVE RESEARCH DIRECTIVE:\n"
+                "- This is a comparative research question. Structure the synthesized brief as an explicit side-by-side comparison (per-aspect breakdown) rather than a linear narrative.\n"
+                "- Organize your report into comparison sections based on key aspects (e.g. Architecture, Performance, Usability, Cost) rather than a linear subject-by-subject narrative.\n"
+                "- Within each aspect section, present a balanced, side-by-side comparison of the compared entities, highlighting key trade-offs and clear evidence-backed distinctions.\n"
+            )
+        system += "Keep the tone professional, objective, technical, and evidence-led."
         if history_context:
             system += "\nNote: This is a follow-up question. Please build upon the previous conversation history provided in the prompt where relevant."
             
@@ -920,7 +959,7 @@ class ResearchAgent:
         if history_context:
             user = f"{history_context}\n\nFollow-up Question:\n{question}\n\nEvidence:\n{format_evidence(evidence, limit=12)}"
             
-        return self.llm.complete(system, user, task="draft", evidence=evidence)
+        return self.llm.complete(system, user, task="draft", evidence=evidence, local_only=local_only)
 
     def _log_verification_failure(self, question: str, claim: str, evidence_id: str, mismatch_reason: str, confidence: float):
         import json
@@ -943,7 +982,7 @@ class ResearchAgent:
         except Exception as e:
             print(f"[Warning] Failed to write verification failure log: {e}")
 
-    def _parse_and_log_claims_confidence(self, question: str, verification_output: str):
+    def _parse_and_log_claims_confidence(self, question: str, verification_output: str, evidence: list[Evidence]):
         lines = verification_output.splitlines()
         parsing = False
         for line in lines:
@@ -971,13 +1010,26 @@ class ResearchAgent:
                         elif part.startswith("Reason:"):
                             reason = part.replace("Reason:", "").strip()
                     
+                    import re
+                    digits = re.findall(r"\d+", source)
+                    if digits:
+                        try:
+                            idx = int(digits[0]) - 1
+                            if 0 <= idx < len(evidence):
+                                current_conf = getattr(evidence[idx], "confidence", 1.0)
+                                if current_conf is None:
+                                    current_conf = 1.0
+                                evidence[idx].confidence = min(current_conf, confidence)
+                        except Exception:
+                            pass
+                            
                     if confidence < 0.9:
                         self._log_verification_failure(question, claim, source, reason, confidence)
                 else:
                     if line.strip() and not line.strip().startswith("-"):
                         parsing = False
 
-    def _verify(self, question: str, answer: str, evidence: list[Evidence]) -> str:
+    def _verify(self, question: str, answer: str, evidence: list[Evidence], local_only: bool = False) -> str:
         deterministic_issues = audit_answer_grounding(answer, evidence)
         if deterministic_issues:
             for issue in deterministic_issues:
@@ -1017,9 +1069,9 @@ class ResearchAgent:
                 f"Draft Report:\n{answer}\n\n"
                 f"Evidence:\n{evidence_str}"
             )
-            llm_verification = self.llm.complete(system, user, task="verify", evidence=evidence)
+            llm_verification = self.llm.complete(system, user, task="verify", evidence=evidence, local_only=local_only)
             if llm_verification:
-                self._parse_and_log_claims_confidence(question, llm_verification)
+                self._parse_and_log_claims_confidence(question, llm_verification, evidence)
                 return llm_verification
             
         official = sum(1 for item in evidence if item.source_type in {"pdf", "research", "finance"})
@@ -1036,7 +1088,8 @@ def format_evidence(evidence: list[Evidence], limit: int = 20) -> str:
     lines = []
     for index, item in enumerate(evidence[:limit], start=1):
         source = f" ({item.url})" if item.url else ""
-        lines.append(f"[{index}] {item.title}{source}\n{item.summary}")
+        tier = getattr(item, "trust_tier", "web")
+        lines.append(f"[{index}] {item.title}{source} [Trust Tier: {tier}]\n{item.summary}")
     return "\n\n".join(lines)
 
 
@@ -1434,3 +1487,42 @@ def classify_question_complexity(question: str) -> int:
         return 3
     else:
         return 2
+
+
+def generate_research_diff(old_result, new_result, agent) -> dict:
+    # 1. Compare evidence sources
+    old_urls = {item.url for item in old_result.evidence if item.url}
+    new_evidence_items = [item for item in new_result.evidence if item.url and item.url not in old_urls]
+    
+    # 2. Use LLM to identify changed claims between old and new answer
+    if agent and agent.settings.llm_provider == "openrouter" and agent.llm.openrouter_api_key:
+        system = (
+            "You are ARIA's Change Analyst. Compare the old research brief and the new research brief.\n"
+            "Identify what claims have changed, what new information was added, and what is no longer valid.\n"
+            "If nothing of substance changed, output: 'No significant changes found.'\n"
+            "Keep the output clear, bulleted, and concise."
+        )
+        user = (
+            f"Old Brief:\n{old_result.answer}\n\n"
+            f"New Brief:\n{new_result.answer}"
+        )
+        try:
+            changes = agent.llm.complete(system, user, task="diff")
+        except Exception:
+            changes = "Unable to compute changes using LLM."
+    else:
+        # Fallback comparison if no LLM key
+        if old_result.answer.strip() == new_result.answer.strip():
+            changes = "No significant changes found."
+        else:
+            changes = "The research brief content was updated with new information."
+
+    return {
+        "new_evidence": [
+            {"title": item.title, "url": item.url, "source_type": item.source_type}
+            for item in new_evidence_items
+        ],
+        "changes": changes,
+        "is_changed": len(new_evidence_items) > 0 or "No significant changes" not in changes
+    }
+

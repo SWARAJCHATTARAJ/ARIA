@@ -60,6 +60,8 @@ def result_to_dict(result: ResearchResult) -> dict:
         "cached": getattr(result, "cached", False),
         "history": getattr(result, "history", []),
         "validation_warning": getattr(result, "validation_warning", False),
+        "recurring_interval": getattr(result, "recurring_interval", None),
+        "last_run_at": getattr(result, "last_run_at", None),
     }
 
 
@@ -76,6 +78,8 @@ def result_from_dict(data: dict) -> ResearchResult:
         cached=data.get("cached", False),
         history=list(data.get("history", [])),
         validation_warning=data.get("validation_warning", False),
+        recurring_interval=data.get("recurring_interval", None),
+        last_run_at=data.get("last_run_at", None),
     )
 
 

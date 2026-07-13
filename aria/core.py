@@ -54,6 +54,20 @@ class Evidence:
     source_id: str | None = None
     retrieved_via: str | None = None
     query: str | None = None
+    trust_tier: str | None = None
+    confidence: float = 1.0
+
+    def __post_init__(self):
+        if self.trust_tier is None:
+            st = (self.source_type or "").lower()
+            if st in {"arxiv", "openalex", "doaj", "pubmed", "research", "academic"}:
+                self.trust_tier = "academic"
+            elif st in {"wikipedia", "reference", "pdf", "note", "document", "local"}:
+                self.trust_tier = "reference"
+            elif st in {"yfinance", "market"}:
+                self.trust_tier = "market"
+            else:
+                self.trust_tier = "web"
 
 
 @dataclass
@@ -68,6 +82,8 @@ class ResearchResult:
     cached: bool = False
     history: list[dict] = field(default_factory=list)
     validation_warning: bool = False
+    recurring_interval: str | None = None
+    last_run_at: str | None = None
 
 
 def validate_pdf_upload(name: str, size: int) -> None:

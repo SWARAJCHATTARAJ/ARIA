@@ -1,5 +1,7 @@
 import os
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+# Isolate unit tests from external Supabase database
+os.environ.pop("DATABASE_URL", None)
 import unittest
 from aria.core import Settings, MAX_UPLOAD_BYTES, validate_pdf_upload
 from aria.rag import split_text, VectorMemory
@@ -735,6 +737,207 @@ class RateLimiterTests(unittest.TestCase):
         
         # Requests for a different user should pass
         limiter.check_rate_limit("user2")
+
+
+class SourceTrustWeightingTests(unittest.TestCase):
+    def test_trust_tier_mapping(self) -> None:
+        from aria.core import Evidence
+        from aria.agent import format_evidence
+
+        # Check default mapping based on source_type
+        ev_academic = Evidence(title="Paper", summary="details", source_type="arxiv")
+        self.assertEqual(ev_academic.trust_tier, "academic")
+
+        ev_ref = Evidence(title="Wiki", summary="details", source_type="wikipedia")
+        self.assertEqual(ev_ref.trust_tier, "reference")
+
+        ev_market = Evidence(title="Stock", summary="details", source_type="yfinance")
+        self.assertEqual(ev_market.trust_tier, "market")
+
+        ev_web = Evidence(title="Blog", summary="details", source_type="web")
+        self.assertEqual(ev_web.trust_tier, "web")
+
+        # Explicit override
+        ev_explicit = Evidence(title="Custom", summary="details", source_type="web", trust_tier="academic")
+        self.assertEqual(ev_explicit.trust_tier, "academic")
+
+        # Formatting outputs trust_tier information
+        formatted = format_evidence([ev_academic])
+        self.assertIn("[Trust Tier: academic]", formatted)
+
+
+class ExportableTraceTests(unittest.TestCase):
+    def test_trace_report_generation(self) -> None:
+        from aria.core import Evidence, ResearchResult
+        from aria.reports import build_trace_report
+
+        ev1 = Evidence(title="Acme Corp Overview", summary="Acme is a tech leader.", source_type="web", query="Acme tech", score=0.9, retrieved_via="duckduckgo_web")
+        ev2 = Evidence(title="Acme Financials", summary="Acme revenue grew 15%.", source_type="yfinance", query="Acme revenue", score=0.85, retrieved_via="yfinance")
+
+        result = ResearchResult(
+            question="Analyze Acme Corp.",
+            plan=["Acme tech", "Acme revenue"],
+            answer="Acme is a tech leader [1].",
+            verification="STATUS: PASSED\nCLAIMS_CONFIDENCE:\n- Claim 1 | Confidence 1.0",
+            evidence=[ev1, ev2]
+        )
+
+        trace = build_trace_report(result)
+        
+        # Verify sub-queries exist
+        self.assertIn("Acme tech", trace)
+        self.assertIn("Acme revenue", trace)
+        
+        # Verify sources retrieved are mapped under their query sections
+        self.assertIn("Acme Corp Overview", trace)
+        self.assertIn("Acme Financials", trace)
+        
+        # Verify used / unused evidence classification
+        self.assertIn("### Cited / Used Evidence", trace)
+        self.assertIn("### Discarded / Unused Evidence", trace)
+        
+        # ev1 is cited (index 1), so it should be in the cited section
+        # ev2 is NOT cited, so it should have a discard reason
+        self.assertIn("Discard Reason: Not cited in final synthesized brief.", trace)
+        
+        # Verify verification block exists
+        self.assertIn("STATUS: PASSED", trace)
+
+
+class ComparativeModeTests(unittest.TestCase):
+    def test_comparative_query_detection(self) -> None:
+        from aria.agent import is_comparative_query
+
+        # True cases
+        self.assertTrue(is_comparative_query("compare react and vue"))
+        self.assertTrue(is_comparative_query("Postgres vs MySQL performance"))
+        self.assertTrue(is_comparative_query("which is better: iOS vs. Android"))
+        self.assertTrue(is_comparative_query("Ruby versus Python web development"))
+        self.assertTrue(is_comparative_query("Should I use NextJS or Remix?"))
+        self.assertTrue(is_comparative_query("difference between REST and GraphQL"))
+        self.assertTrue(is_comparative_query("comparison of AWS and GCP services"))
+
+        # False cases
+        self.assertFalse(is_comparative_query("what is the speed of light?"))
+        self.assertFalse(is_comparative_query("summarize recent tech news"))
+        self.assertFalse(is_comparative_query("latest price of TSLA stock"))
+
+
+class RecurringResearchTests(unittest.TestCase):
+    def test_research_result_serialization_recurring(self) -> None:
+        from aria.core import ResearchResult, Evidence
+        from aria.sessions import result_to_dict, result_from_dict
+
+        result = ResearchResult(
+            question="Test Q",
+            plan=["plan"],
+            answer="Answer",
+            verification="verification",
+            evidence=[Evidence(title="E1", summary="S1", source_type="web")],
+            recurring_interval="weekly",
+            last_run_at="2026-07-13T10:00:00Z"
+        )
+
+        d = result_to_dict(result)
+        self.assertEqual(d["recurring_interval"], "weekly")
+        self.assertEqual(d["last_run_at"], "2026-07-13T10:00:00Z")
+
+        deserialized = result_from_dict(d)
+        self.assertEqual(deserialized.recurring_interval, "weekly")
+        self.assertEqual(deserialized.last_run_at, "2026-07-13T10:00:00Z")
+
+    def test_generate_research_diff(self) -> None:
+        from aria.core import Evidence, ResearchResult
+        from aria.agent import generate_research_diff
+
+        ev_old = Evidence(title="Acme Info", summary="Revenue $10M", source_type="web", url="https://acme.com")
+        ev_new_same = Evidence(title="Acme Info", summary="Revenue $10M", source_type="web", url="https://acme.com")
+        ev_new_added = Evidence(title="Acme Q2 Details", summary="Revenue grew to $15M", source_type="web", url="https://acme.com/q2")
+
+        old_res = ResearchResult(
+            question="Acme updates", plan=["acme"], answer="Acme revenue is $10M.", verification="OK", evidence=[ev_old]
+        )
+        # 1. No new sources, same answer
+        new_res_same = ResearchResult(
+            question="Acme updates", plan=["acme"], answer="Acme revenue is $10M.", verification="OK", evidence=[ev_new_same]
+        )
+        diff_same = generate_research_diff(old_res, new_res_same, None)
+        self.assertFalse(diff_same["is_changed"])
+        self.assertEqual(len(diff_same["new_evidence"]), 0)
+        self.assertEqual(diff_same["changes"], "No significant changes found.")
+
+        # 2. New source added
+        new_res_diff = ResearchResult(
+            question="Acme updates", plan=["acme"], answer="Acme revenue is $15M.", verification="OK", evidence=[ev_old, ev_new_added]
+        )
+        diff_new = generate_research_diff(old_res, new_res_diff, None)
+        self.assertTrue(diff_new["is_changed"])
+        self.assertEqual(len(diff_new["new_evidence"]), 1)
+        self.assertEqual(diff_new["new_evidence"][0]["url"], "https://acme.com/q2")
+
+
+class LocalOnlyOfflineModeTests(unittest.TestCase):
+    def test_local_only_agent_nodes(self) -> None:
+        from aria.agent import ResearchAgent
+        from aria.core import Settings
+
+        settings = Settings.from_env()
+        agent = ResearchAgent(settings=settings, memory=None)
+
+        # 1. Test node_plan in local_only mode
+        state_plan = {
+            "question": "test question",
+            "plan": [],
+            "evidence": [],
+            "answer": "",
+            "verification": "",
+            "events": [],
+            "iteration": 0,
+            "use_web": True,
+            "use_local": True,
+            "use_finance": True,
+            "max_iterations": 2,
+            "field_focus": "all",
+            "history": [],
+            "validation_warning": False,
+            "local_only": True
+        }
+        res_plan = agent.node_plan(state_plan)
+        self.assertEqual(len(res_plan["plan"]), 1)
+        self.assertIn("offline mode", res_plan["events"][0])
+
+        # 2. Test complete fallback call in local_only mode
+        from aria.core import Evidence
+        ev1 = Evidence(title="Doc 1", summary="Data point A", source_type="web", url="https://a.com")
+        ans = agent.llm.complete("System prompt", "User query", task="draft", evidence=[ev1], local_only=True)
+        self.assertIn("Local Extractive Mode", ans)
+        self.assertIn("Data point A", ans)
+
+
+class GuestAccessTests(unittest.TestCase):
+    def test_guest_rate_limiting(self) -> None:
+        import main
+        from fastapi import HTTPException
+
+        main.GUEST_LIMITER.clear()
+
+        # Call check_guest_rate_limit
+        main.check_guest_rate_limit("1.2.3.4")
+        main.check_guest_rate_limit("1.2.3.4")
+        main.check_guest_rate_limit("1.2.3.4")
+
+        with self.assertRaises(HTTPException) as ctx:
+            main.check_guest_rate_limit("1.2.3.4")
+        self.assertEqual(ctx.exception.status_code, 429)
+
+        # Another IP should work
+        main.check_guest_rate_limit("5.6.7.8")
+
+    def test_get_current_user_or_guest(self) -> None:
+        import main
+
+        user = main.get_current_user_or_guest(token=None)
+        self.assertEqual(user, "guest")
 
 
 if __name__ == "__main__":

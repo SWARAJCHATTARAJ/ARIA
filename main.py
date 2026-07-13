@@ -19,19 +19,19 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends, status
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends, status, Request
 from fastapi.responses import Response, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from aria.agent import ResearchAgent
+from aria.agent import ResearchAgent, generate_research_diff
 from aria.core import Settings, validate_pdf_upload, estimate_tokens
 from aria.rag import VectorMemory
-from aria.reports import build_markdown_report, build_pdf_report
+from aria.reports import build_markdown_report, build_pdf_report, build_trace_report
 from aria.sessions import find_session_path, is_admin_user, list_sessions, load_session, save_session, result_to_dict
-from aria.auth import get_current_user, verify_password, create_access_token, get_auth_settings, get_user_hash, create_user
+from aria.auth import get_current_user, verify_password, create_access_token, get_auth_settings, get_user_hash, create_user, oauth2_scheme
 
 
 load_dotenv()
@@ -111,6 +111,7 @@ class ResearchRequest(BaseModel):
     field_focus: str = "all"
     user_id: str | None = None
     session_id: str | None = None
+    local_only: bool = False
 
 class InMemoryRateLimiter:
     def __init__(self, limit_per_minute: int = 5):
@@ -298,10 +299,54 @@ async def register(request: RegisterRequest):
     
     return {"status": "success", "message": "User registered successfully."}
 
+GUEST_LIMITER = {}
+
+def get_client_ip(request: Request) -> str:
+    x_forwarded_for = request.headers.get("x-forwarded-for")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+    return request.client.host if request.client else "127.0.0.1"
+
+def check_guest_rate_limit(ip: str):
+    import time
+    now = time.time()
+    if ip in GUEST_LIMITER:
+        GUEST_LIMITER[ip] = [t for t in GUEST_LIMITER[ip] if now - t < 86400]
+    else:
+        GUEST_LIMITER[ip] = []
+        
+    if len(GUEST_LIMITER[ip]) >= 3:
+        raise HTTPException(
+            status_code=429,
+            detail="Guest limit exceeded (3 requests/day). Please register or login for unlimited access."
+        )
+    GUEST_LIMITER[ip].append(now)
+
+def get_current_user_or_guest(token: str | None = Depends(oauth2_scheme)) -> str:
+    if not token:
+        return "guest"
+    try:
+        return get_current_user(token)
+    except Exception:
+        return "guest"
+
 @app.post("/api/research")
-async def run_research(request: ResearchRequest, x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):
+async def run_research(
+    request: ResearchRequest,
+    fastapi_request: Request,
+    x_openrouter_key: str | None = Header(None),
+    current_user: str = Depends(get_current_user_or_guest)
+):
     """Run research loop and stream the progress as SSE."""
-    research_limiter.check_rate_limit(current_user)
+    if current_user == "guest":
+        client_ip = get_client_ip(fastapi_request)
+        check_guest_rate_limit(client_ip)
+    else:
+        research_limiter.check_rate_limit(current_user)
+    
+    # Enforce that the user ID used is the authenticated current_user
+    request.user_id = current_user
+    
     agent = get_agent(openrouter_api_key=x_openrouter_key)
     
     previous_history = []
@@ -333,45 +378,46 @@ async def run_research(request: ResearchRequest, x_openrouter_key: str | None = 
         "max_iterations": request.max_iterations,
         "field_focus": request.field_focus,
         "history": previous_history,
-        "validation_warning": False
+        "validation_warning": False,
+        "local_only": request.local_only
     }
 
     async def sse_generator():
-        # Yield init
-        yield f"event: init\ndata: {json.dumps({'message': 'Initializing ARIA Research Workspace...'})}\n\n"
-        
-        # Check query cache
-        from aria.cache import check_cache, store_cache
-        cached_result = check_cache(request.question)
-        if cached_result:
-            yield f"event: stage_complete\ndata: {json.dumps({'stage': 'cache_hit', 'elapsed': 0.0, 'events': ['Retrieved results from query cache (embedding similarity hit).']})}\n\n"
-            session = save_session(cached_result, user_id=request.user_id)
-            yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(cached_result)})}\n\n"
-            return
-
-        import asyncio
-        from queue import Queue
-        from threading import Thread
-        
-        q = Queue()
-        
-        def run_graph():
-            try:
-                for output in agent.graph.stream(initial_state):
-                    q.put(("output", output))
-                q.put(("done", None))
-            except Exception as exc:
-                import traceback
-                traceback.print_exc()
-                q.put(("error", exc))
-                
-        t = Thread(target=run_graph, daemon=True)
-        t.start()
-        
-        final_state = initial_state
-        node_started_at = time.perf_counter()
-        
         try:
+            # Yield init
+            yield f"event: init\ndata: {json.dumps({'message': 'Initializing ARIA Research Workspace...'})}\n\n"
+            
+            # Check query cache
+            from aria.cache import check_cache, store_cache
+            cached_result = check_cache(request.question)
+            if cached_result:
+                yield f"event: stage_complete\ndata: {json.dumps({'stage': 'cache_hit', 'elapsed': 0.0, 'events': ['Retrieved results from query cache (embedding similarity hit).']})}\n\n"
+                session = save_session(cached_result, user_id=request.user_id)
+                yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(cached_result)})}\n\n"
+                return
+
+            import asyncio
+            from queue import Queue
+            from threading import Thread
+            
+            q = Queue()
+            
+            def run_graph():
+                try:
+                    for output in agent.graph.stream(initial_state):
+                        q.put(("output", output))
+                    q.put(("done", None))
+                except Exception as exc:
+                    import traceback
+                    traceback.print_exc()
+                    q.put(("error", exc))
+                    
+            t = Thread(target=run_graph, daemon=True)
+            t.start()
+            
+            final_state = initial_state
+            node_started_at = time.perf_counter()
+            
             last_ping_time = time.perf_counter()
             while True:
                 while q.empty():
@@ -425,6 +471,8 @@ async def run_research(request: ResearchRequest, x_openrouter_key: str | None = 
             yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(result)})}\n\n"
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             yield f"event: error\ndata: {json.dumps({'error': redact_secrets(str(e))})}\n\n"
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
@@ -585,6 +633,156 @@ async def download_session_md(session_id: str, user_id: str | None = None, curre
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
+
+@app.get("/api/sessions/{session_id}/download/trace")
+async def download_session_trace(session_id: str, user_id: str | None = None, current_user: str = Depends(get_current_user)):
+    """Download research trace/audit log of a session as a Markdown file."""
+    try:
+        path = find_session_path(session_id, user_id=user_id)
+        if not path:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        
+        result = load_session(path)
+        return Response(
+            content=build_trace_report(result).encode("utf-8"),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="aria_trace_{session_id}.md"'},
+        )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
+
+class RecurringRequest(BaseModel):
+    interval: str | None = None # "minutely", "hourly", "daily", "weekly", "debug", or None
+
+@app.post("/api/sessions/{session_id}/recurring")
+async def configure_recurring(session_id: str, request: RecurringRequest, user_id: str | None = None, current_user: str = Depends(get_current_user)):
+    """Configure recurring interval for a session."""
+    try:
+        path = find_session_path(session_id, user_id=user_id)
+        if not path:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        
+        result = load_session(path)
+        
+        # Check valid intervals
+        valid_intervals = {None, "minutely", "hourly", "daily", "weekly", "debug"}
+        if request.interval not in valid_intervals:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid interval. Must be one of: {', '.join(str(i) for i in valid_intervals)}"
+            )
+            
+        result.recurring_interval = request.interval
+        if request.interval:
+            from datetime import datetime, timezone
+            result.last_run_at = datetime.now(timezone.utc).isoformat()
+            
+        save_session(result, session_id=session_id, user_id=user_id or current_user)
+        return {"status": "success", "message": f"Recurring interval set to {request.interval}"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
+
+
+def run_scheduler_loop():
+    import threading
+    
+    def scheduler_loop():
+        time.sleep(5)
+        print("[Scheduler] Started background recurring research scheduler thread.")
+
+        while True:
+            try:
+                # Retrieve all user sessions
+                sessions_list = list_sessions(user_id="admin", limit=100)
+                for s in sessions_list:
+                    session_id = s.get("id")
+                    user_id = s.get("user_id")
+                    
+                    path = find_session_path(session_id, user_id=user_id)
+                    if not path:
+                        continue
+                    try:
+                        result = load_session(path)
+                    except Exception:
+                        continue
+                        
+                    interval = getattr(result, "recurring_interval", None)
+                    if not interval:
+                        continue
+                        
+                    last_run_str = getattr(result, "last_run_at", None)
+                    created_at_str = s.get("created_at")
+                    
+                    base_time_str = last_run_str or created_at_str
+                    if not base_time_str:
+                        continue
+                        
+                    try:
+                        from datetime import datetime, timezone
+                        base_time = datetime.fromisoformat(base_time_str.replace("Z", "+00:00"))
+                    except Exception:
+                        continue
+                        
+                    now = datetime.now(timezone.utc)
+                    delta = now - base_time
+                    
+                    should_run = False
+                    if interval == "minutely":
+                        should_run = delta.total_seconds() >= 60
+                    elif interval == "hourly":
+                        should_run = delta.total_seconds() >= 3600
+                    elif interval == "daily":
+                        should_run = delta.total_seconds() >= 86400
+                    elif interval == "weekly":
+                        should_run = delta.total_seconds() >= 604800
+                    elif interval == "debug":
+                        should_run = delta.total_seconds() >= 10
+                        
+                    if should_run:
+                        print(f"[Scheduler] Running recurring job for session {session_id} (interval: {interval})")
+                        
+                        result.last_run_at = now.isoformat()
+                        save_session(result, session_id=session_id, user_id=user_id)
+                        
+                        agent = get_agent()
+                        try:
+                            # Re-run the research question
+                            new_result = agent.run(result.question, history=getattr(result, "history", []))
+                            
+                            # Generate diff
+                            diff = generate_research_diff(result, new_result, agent)
+                            
+                            new_events = list(new_result.events)
+                            if diff["is_changed"]:
+                                new_events.append(f"Scheduler Diff: Found updates. Changes: {diff['changes']}")
+                            else:
+                                new_events.append("Scheduler Diff: Checked. No changes found.")
+                                
+                            new_result.events = new_events
+                            new_result.recurring_interval = interval
+                            new_result.last_run_at = now.isoformat()
+                            
+                            save_session(new_result, session_id=session_id, user_id=user_id)
+                            print(f"[Scheduler] Recurring job completed for session {session_id}")
+                        except Exception as e:
+                            print(f"[Scheduler Error] Job failed for session {session_id}: {e}")
+            except Exception as outer_err:
+                print(f"[Scheduler Error] Outer loop exception: {outer_err}")
+            
+            time.sleep(30)
+            
+    t = threading.Thread(target=scheduler_loop, daemon=True)
+    t.start()
+
+
+@app.on_event("startup")
+def startup_event():
+    run_scheduler_loop()
+
 
 @app.get("/api/settings")
 async def get_settings(x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):

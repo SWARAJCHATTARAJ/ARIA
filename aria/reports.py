@@ -818,3 +818,108 @@ def build_pdf_report(result: ResearchResult) -> bytes:
 
     doc.build(story, canvasmaker=NumberedCanvas)
     return buffer.getvalue()
+
+
+def build_trace_report(result: ResearchResult) -> str:
+    """Build the downloadable markdown research trace and audit log."""
+    plan_lines = "\n".join(f"- {query}" for query in result.plan)
+    
+    # Group evidence by query
+    query_evidence: dict[str, list[Evidence]] = {q: [] for q in result.plan}
+    unmapped_evidence: list[Evidence] = []
+    for item in result.evidence:
+        mapped = False
+        if item.query:
+            # Try to match the query from our plan
+            for q in result.plan:
+                if item.query == q or q in item.query or item.query in q:
+                    query_evidence[q].append(item)
+                    mapped = True
+                    break
+        if not mapped:
+            unmapped_evidence.append(item)
+            
+    # Sub-queries & retrieved sources block
+    sources_by_query_lines = []
+    for q in result.plan:
+        sources_by_query_lines.append(f"### Query: \"{q}\"")
+        evs = query_evidence[q]
+        if evs:
+            for idx, item in enumerate(evs, start=1):
+                url_str = f" ({item.url})" if item.url else ""
+                tier = getattr(item, "trust_tier", "web")
+                sources_by_query_lines.append(
+                    f"{idx}. **{item.title}**{url_str}\n"
+                    f"   - Trust Tier: `{tier}` | Relevance: `{item.score:.2f}` | Retrieved via: `{item.retrieved_via}`\n"
+                    f"   - Snippet: *{item.summary[:200].strip()}...*"
+                )
+        else:
+            sources_by_query_lines.append("*No sources retrieved for this query.*")
+        sources_by_query_lines.append("")
+        
+    if unmapped_evidence:
+        sources_by_query_lines.append("### Other / Unmapped Sources")
+        for idx, item in enumerate(unmapped_evidence, start=1):
+            url_str = f" ({item.url})" if item.url else ""
+            tier = getattr(item, "trust_tier", "web")
+            sources_by_query_lines.append(
+                f"{idx}. **{item.title}**{url_str}\n"
+                f"   - Trust Tier: `{tier}` | Relevance: `{item.score:.2f}` | Retrieved via: `{item.retrieved_via}`\n"
+                f"   - Snippet: *{item.summary[:200].strip()}...*"
+            )
+            
+    # Parse citations to find used vs discarded
+    citations = set(int(m) for m in re.findall(r"(?<!\!)\[(\d+)\]", result.answer or ""))
+    used_lines = []
+    discarded_lines = []
+    
+    for idx, item in enumerate(result.evidence, start=1):
+        url_str = f" ({item.url})" if item.url else ""
+        tier = getattr(item, "trust_tier", "web")
+        ev_info = f"- [{idx}] **{item.title}**{url_str}\n  - Trust Tier: `{tier}` | Query: \"{item.query or 'N/A'}\""
+        if idx in citations:
+            used_lines.append(ev_info)
+        else:
+            discarded_lines.append(ev_info + "\n  - Discard Reason: Not cited in final synthesized brief.")
+            
+    used_block = "\n".join(used_lines) or "*No sources were cited in the final brief.*"
+    discarded_block = "\n".join(discarded_lines) or "*No sources were discarded.*"
+    
+    verification_block = result.verification or "No verifier logs available."
+    
+    return f"""# ARIA Research Trace & Audit Log
+
+## 1. Research Question & Objective
+
+{result.question}
+
+## 2. Planner Stage: Sub-Queries Generated
+
+The lead planner analyzed the research request and generated the following targeted search queries:
+{plan_lines}
+
+## 3. Retriever Stage: Sources Retrieved per Query
+
+For each sub-query, the following sources were retrieved:
+
+{"\n".join(sources_by_query_lines)}
+
+## 4. Synthesis Stage: Evidence Usage (Used vs. Discarded)
+
+The synthesizer evaluated each source. Only verified, high-signal sources matching the trust requirements were cited in the final brief.
+
+### Cited / Used Evidence
+{used_block}
+
+### Discarded / Unused Evidence
+{discarded_block}
+
+## 5. Auditor Stage: Verifier Logs & Grounding Output
+
+Raw verification logs verifying grounding, claim-by-claim confidence scores, and reasoning:
+
+```text
+{verification_block}
+```
+"""
+

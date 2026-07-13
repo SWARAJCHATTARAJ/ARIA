@@ -151,6 +151,7 @@ function App() {
   // Active research result states
   const [result, setResult] = useState(null);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
+  const [selectedSessionRecurringInterval, setSelectedSessionRecurringInterval] = useState(null);
   const [memoryStatus, setMemoryStatus] = useState(null);
 
   
@@ -198,6 +199,7 @@ function App() {
 
   // Settings controls
   const [useLocal, setUseLocal] = useState(true);
+  const [localOnly, setLocalOnly] = useState(false);
   const [useWeb, setUseWeb] = useState(true);
   const [useFinance, setUseFinance] = useState(false);
   const [maxIterations, setMaxIterations] = useState(2);
@@ -491,7 +493,8 @@ function App() {
           max_iterations: maxIterations,
           custom_plan: customPlan.length > 0 ? customPlan : null,
           field_focus: fieldFocus,
-          user_id: userId
+          user_id: userId,
+          local_only: localOnly
         })
       });
 
@@ -597,10 +600,32 @@ function App() {
         setQuestion(data.result.question);
         setCustomPlan(data.result.plan);
         setSelectedSessionId(sessionId);
+        setSelectedSessionRecurringInterval(data.result.recurring_interval || null);
         setCurrentStage("complete");
         setActiveRightTab("citations");
       } else {
         throw new Error("Failed to load session details.");
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const updateRecurringInterval = async (interval) => {
+    if (!selectedSessionId) return;
+    setError(null);
+    try {
+      const response = await authorizedFetch(`${API_BASE}/api/sessions/${selectedSessionId}/recurring`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interval: interval || null })
+      });
+      if (response.ok) {
+        setSelectedSessionRecurringInterval(interval || null);
+        setResult(prev => prev ? { ...prev, recurring_interval: interval || null } : null);
+      } else {
+        const errData = await response.json().catch(() => ({ detail: "Failed to set interval" }));
+        throw new Error(errData.detail || "Failed to update recurring configuration.");
       }
     } catch (err) {
       setError(err.message);
@@ -705,7 +730,9 @@ function App() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `aria_brief_${selectedSessionId}.${format === "md" ? "md" : "pdf"}`;
+      const fileExt = format === "pdf" ? "pdf" : "md";
+      const filePrefix = format === "trace" ? "aria_trace_" : "aria_brief_";
+      a.download = `${filePrefix}${selectedSessionId}.${fileExt}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1290,17 +1317,33 @@ function App() {
                               const match = part.match(/^\[(\d+)\]$/);
                               if (match) {
                                 const num = parseInt(match[1]);
+                                const evidenceItem = result.evidence?.[num - 1];
+                                const conf = evidenceItem?.confidence ?? 1.0;
+                                let badgeColor = "bg-emerald-500 shadow-[0_0_4px_#10B981]";
+                                let badgeTitle = "High confidence";
+                                if (conf < 0.5) {
+                                  badgeColor = "bg-rose-500 shadow-[0_0_4px_#F43F5E]";
+                                  badgeTitle = "Low confidence";
+                                } else if (conf < 0.9) {
+                                  badgeColor = "bg-amber-500 shadow-[0_0_4px_#F59E0B]";
+                                  badgeTitle = "Medium confidence";
+                                }
                                 return (
-                                  <button 
-                                    key={ptIdx}
-                                    onClick={() => {
-                                      setActiveRightTab("citations");
-                                      setExpandedCitationId(num - 1);
-                                    }}
-                                    className="mx-0.5 px-1 bg-aria-accent/15 hover:bg-aria-accent/30 text-aria-accent rounded text-[10px] font-bold border border-aria-accent/25 transition-colors"
-                                  >
-                                    [{num}]
-                                  </button>
+                                  <span key={ptIdx} className="inline-flex items-center gap-0.5 mx-0.5">
+                                    <button 
+                                      onClick={() => {
+                                        setActiveRightTab("citations");
+                                        setExpandedCitationId(num - 1);
+                                      }}
+                                      className="px-1 bg-aria-accent/15 hover:bg-aria-accent/30 text-aria-accent rounded text-[10px] font-bold border border-aria-accent/25 transition-colors"
+                                    >
+                                      [{num}]
+                                    </button>
+                                    <span 
+                                      className={`w-1.5 h-1.5 rounded-full ${badgeColor} inline-block cursor-help`}
+                                      title={`${badgeTitle} (${conf.toFixed(2)})`}
+                                    />
+                                  </span>
                                 );
                               }
                               return part;
@@ -1608,8 +1651,26 @@ function App() {
 
               {/* Document download buttons bar */}
               <div className="p-3 border-t border-aria-border bg-aria-bg/50 flex flex-col gap-2">
-                <div className="flex gap-2 justify-end">
-                  {selectedSessionId ? (
+                <div className="flex gap-2 items-center justify-between">
+                  {selectedSessionId && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-aria-muted font-semibold uppercase tracking-wider">Recurring:</span>
+                      <select
+                        value={selectedSessionRecurringInterval || ""}
+                        onChange={(e) => updateRecurringInterval(e.target.value)}
+                        className="bg-aria-surface border border-aria-border rounded px-1.5 py-0.5 text-[10px] text-aria-text focus:outline-none focus:border-aria-accent"
+                      >
+                        <option value="">None (One-off)</option>
+                        <option value="minutely">Minutely</option>
+                        <option value="hourly">Hourly</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="debug">Debug (10s)</option>
+                      </select>
+                    </div>
+                  )}
+                  <div className="flex gap-2 justify-end ml-auto">
+                    {selectedSessionId ? (
                     <>
                       <button
                         onClick={() => downloadReport("pdf")}
@@ -1622,6 +1683,13 @@ function App() {
                         className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                       >
                         <Download size={11} /> Download MD
+                      </button>
+                      <button
+                        onClick={() => downloadReport("trace")}
+                        className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                        title="Download research reasoning trace / audit log"
+                      >
+                        <Download size={11} /> Download Trace
                       </button>
                     </>
                   ) : (
@@ -1640,9 +1708,17 @@ function App() {
                       >
                         <Download size={11} /> Download MD
                       </button>
+                      <button
+                        type="button"
+                        disabled
+                        className="px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                      >
+                        <Download size={11} /> Download Trace
+                      </button>
                     </>
                   )}
                 </div>
+              </div>
                 {selectedSessionId && window.self !== window.top && (
                   <p className="text-[9px] text-aria-muted text-right">
                     Blocked by iframe sandbox? Try opening the{" "}
@@ -2019,6 +2095,19 @@ function App() {
                     type="checkbox" 
                     checked={useLocal}
                     onChange={(e) => setUseLocal(e.target.checked)}
+                    className="accent-aria-accent h-4 w-4 rounded border-aria-border bg-aria-bg"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-2.5 bg-aria-accent/5 rounded-xl border border-aria-accent/20">
+                  <div>
+                    <span className="font-semibold text-aria-accent block">Local-only (Offline) Mode</span>
+                    <span className="text-[10px] text-aria-muted">Bypass web and remote LLM queries</span>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={localOnly}
+                    onChange={(e) => setLocalOnly(e.target.checked)}
                     className="accent-aria-accent h-4 w-4 rounded border-aria-border bg-aria-bg"
                   />
                 </div>
