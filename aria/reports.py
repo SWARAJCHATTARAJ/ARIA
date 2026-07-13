@@ -884,6 +884,7 @@ def build_trace_report(result: ResearchResult) -> str:
             
     used_block = "\n".join(used_lines) or "*No sources were cited in the final brief.*"
     discarded_block = "\n".join(discarded_lines) or "*No sources were discarded.*"
+    sources_by_query_block = "\n".join(sources_by_query_lines)
     
     verification_block = result.verification or "No verifier logs available."
     
@@ -902,7 +903,7 @@ The lead planner analyzed the research request and generated the following targe
 
 For each sub-query, the following sources were retrieved:
 
-{"\n".join(sources_by_query_lines)}
+{sources_by_query_block}
 
 ## 4. Synthesis Stage: Evidence Usage (Used vs. Discarded)
 
