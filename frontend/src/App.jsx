@@ -537,13 +537,19 @@ function App() {
 
               if (eventType === "init") {
                 setResearchLogs(prev => [...prev, `[System] > ${parsed.message}`]);
+              } else if (eventType === "stage_start") {
+                const { stage, memory_mb } = parsed;
+                setCurrentStage(stage);
+                const memInfo = memory_mb ? ` [Memory: ${memory_mb} MB]` : "";
+                setResearchLogs(prev => [...prev, `[System] > Running stage: ${stage}...${memInfo}`]);
               } else if (eventType === "stage_complete") {
-                const { stage, elapsed, events } = parsed;
+                const { stage, elapsed, events, memory_mb } = parsed;
                 setCurrentStage(stage === "verify" ? "verify" : stage);
                 if (events && events.length > 0) {
                   setResearchLogs(prev => [...prev, ...events.map(ev => `[ARIA] > ${ev}`)]);
                 }
-                setResearchLogs(prev => [...prev, `[System] > Timeline: ${stage} completed in ${elapsed}s`]);
+                const memInfo = memory_mb ? ` [Memory: ${memory_mb} MB]` : "";
+                setResearchLogs(prev => [...prev, `[System] > Timeline: ${stage} completed in ${elapsed}s${memInfo}`]);
               } else if (eventType === "result") {
                 hasResult = true;
                 setCurrentStage("complete");
@@ -568,7 +574,9 @@ function App() {
       if (!hasResult && !hasError) {
         const elapsed = (Date.now() - startTime) / 1000;
         let diagnosticMsg = "Research stream disconnected before brief generation could complete. ";
-        if (currentStage === "plan" && elapsed > 25) {
+        if (currentStage === "idle" && elapsed > 45) {
+          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). The server failed to respond in time. This is almost certainly due to a cold-start delay on Render's Free Plan, which takes 50-70 seconds to spin up the container after inactivity. Please try resubmitting your query now that the server is awake.`;
+        } else if (currentStage === "plan" && elapsed > 25) {
           diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). This is highly likely a cold-start delay from Render spinning down the container. Waking the container took too long, causing the proxy to close the connection. Please try resubmitting your query now that the server is awake.`;
         } else if (currentStage === "search") {
           diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). The connection timed out during the search/retrieval stage. This usually happens if the live web search API calls or the vector memory lookup take longer than 60-90 seconds.`;

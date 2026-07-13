@@ -88,12 +88,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def get_memory_usage_mb() -> float:
+    try:
+        import psutil
+        import os
+        process = psutil.Process(os.getpid())
+        return process.memory_info().rss / (1024 * 1024)
+    except ImportError:
+        try:
+            with open('/proc/self/status', 'r') as f:
+                for line in f:
+                    if line.startswith('VmRSS:'):
+                        return float(line.split()[1]) / 1024.0
+        except Exception:
+            pass
+        return 0.0
+
 def get_memory() -> VectorMemory:
     return VectorMemory(Settings.from_env())
 
-def get_agent(openrouter_api_key: str | None = None) -> ResearchAgent:
+def get_agent(openrouter_api_key: str | None = None, event_callback: callable | None = None) -> ResearchAgent:
     settings = Settings.from_env()
-    return ResearchAgent(settings=settings, memory=get_memory(), openrouter_api_key=openrouter_api_key)
+    return ResearchAgent(settings=settings, memory=get_memory(), openrouter_api_key=openrouter_api_key, event_callback=event_callback)
 
 
 def result_metrics(result) -> dict[str, int | float | str]:
@@ -360,13 +376,22 @@ async def run_research(
 
     async def sse_generator():
         try:
+            import asyncio
+            from queue import Queue
+            from threading import Thread
+            
+            q = Queue()
+            
+            def on_node_start(node_name: str):
+                q.put(("node_start", node_name))
+
             # Yield init
             yield f"event: init\ndata: {json.dumps({'message': 'Initializing ARIA Research Workspace...'})}\n\n"
             
             logger.info(f"Starting research loop for question: '{request.question}' (User: {request.user_id})")
             
             # Initialize agent inside the generator to catch any startup errors
-            agent = get_agent(openrouter_api_key=x_openrouter_key)
+            agent = get_agent(openrouter_api_key=x_openrouter_key, event_callback=on_node_start)
             
             previous_history = []
             previous_evidence = []
@@ -382,6 +407,11 @@ async def run_research(
                         previous_evidence = prev_result.evidence
                 except Exception as e:
                     logger.warning(f"Failed to load previous session: {e}", exc_info=True)
+            
+            # Limit max_iterations to 2 on free hosting plans to prevent timeouts
+            max_iters = min(request.max_iterations, 2)
+            if request.max_iterations > 2:
+                logger.warning(f"Requested max_iterations {request.max_iterations} capped at 2 to fit within proxy timeouts.")
                     
             initial_state = {
                 "question": request.question,
@@ -394,7 +424,7 @@ async def run_research(
                 "use_web": request.use_web,
                 "use_local": request.use_local,
                 "use_finance": request.use_finance,
-                "max_iterations": request.max_iterations,
+                "max_iterations": max_iters,
                 "field_focus": request.field_focus,
                 "history": previous_history,
                 "validation_warning": False,
@@ -411,12 +441,6 @@ async def run_research(
                 yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(cached_result)})}\n\n"
                 return
 
-            import asyncio
-            from queue import Queue
-            from threading import Thread
-            
-            q = Queue()
-            
             def run_graph():
                 try:
                     logger.info("LangGraph thread started execution.")
@@ -444,7 +468,7 @@ async def run_research(
                         raise RuntimeError("ARIA research engine thread terminated unexpectedly. This might be due to an Out-of-Memory (OOM) kill or process crash.")
                     # Keep-alive ping to prevent proxy/load balancer timeouts
                     if time.perf_counter() - last_ping_time > 15:
-                        yield ": ping\n\n"
+                        yield f"event: ping\ndata: {json.dumps({'message': 'keep-alive'})}\n\n"
                         last_ping_time = time.perf_counter()
                 
                 status, val = q.get()
@@ -453,13 +477,21 @@ async def run_research(
                 elif status == "error":
                     logger.error(f"Error received from research engine thread: {val}")
                     raise val
+                elif status == "node_start":
+                    node_name = val
+                    node_started_at = time.perf_counter()
+                    mem = get_memory_usage_mb()
+                    logger.info(f"Pipeline stage started: {node_name}. Memory: {mem:.2f} MB")
+                    yield f"event: stage_start\ndata: {json.dumps({'stage': node_name, 'memory_mb': round(mem, 2)})}\n\n"
+                    # Reset ping timer
+                    last_ping_time = time.perf_counter()
                 elif status == "output":
                     for node_name, state_update in val.items():
                         elapsed = time.perf_counter() - node_started_at
                         final_state = {**final_state, **state_update}
-                        logger.info(f"Pipeline stage completed: {node_name} in {elapsed:.2f} seconds.")
-                        yield f"event: stage_complete\ndata: {json.dumps({'stage': node_name, 'elapsed': round(elapsed, 2), 'events': state_update.get('events', [])})}\n\n"
-                        node_started_at = time.perf_counter()
+                        mem = get_memory_usage_mb()
+                        logger.info(f"Pipeline stage completed: {node_name} in {elapsed:.2f} seconds. Memory: {mem:.2f} MB")
+                        yield f"event: stage_complete\ndata: {json.dumps({'stage': node_name, 'elapsed': round(elapsed, 2), 'memory_mb': round(mem, 2), 'events': state_update.get('events', [])})}\n\n"
                         # Reset ping timer when we output a stage
                         last_ping_time = time.perf_counter()
             

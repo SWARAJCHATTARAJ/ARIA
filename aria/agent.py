@@ -437,6 +437,12 @@ def track_node_latency(node_name: str):
             from datetime import datetime, timezone
             from pathlib import Path
             
+            if hasattr(self, "event_callback") and self.event_callback:
+                try:
+                    self.event_callback(node_name)
+                except Exception as e:
+                    logger.warning(f"Error in event_callback: {e}")
+            
             start = time.perf_counter()
             result = func(self, state, *args, **kwargs)
             elapsed = time.perf_counter() - start
@@ -480,10 +486,17 @@ SUBQUERY_CACHE_LOCK = threading.Lock()
 
 
 class ResearchAgent:
-    def __init__(self, settings: Settings, memory: VectorMemory, openrouter_api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        memory: VectorMemory,
+        openrouter_api_key: str | None = None,
+        event_callback: callable | None = None
+    ) -> None:
         self.settings = settings
         self.memory = memory
         self.llm = LLMClient(settings, openrouter_api_key=openrouter_api_key)
+        self.event_callback = event_callback
 
         workflow = StateGraph(AgentState)
         
