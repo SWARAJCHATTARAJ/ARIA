@@ -3,17 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
-try:
-    __import__('pysqlite3')
-    import sys
-    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-except ImportError:
-    pass
+import sqlite3
+if sqlite3.sqlite_version_info < (3, 35, 0):
+    try:
+        import pysqlite3
+        import sys
+        sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+    except ImportError:
+        pass
 
 import os
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-import fitz
 
 from .core import Settings, Evidence, MAX_PDF_PAGES, safe_temp_pdf_path
 
@@ -32,6 +31,8 @@ class VectorMemory:
             self.client = None
             self.collection = None
         else:
+            import chromadb
+            from chromadb.config import Settings as ChromaSettings
             self.path = Path(settings.memory_path)
             self.path.mkdir(parents=True, exist_ok=True)
             
@@ -44,6 +45,7 @@ class VectorMemory:
             )
 
     def ingest_pdf(self, path: Path, source_name: str) -> int:
+        import fitz
         documents = []
         metadatas = []
         ids = []

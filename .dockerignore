@@ -1,0 +1,13 @@
+.git
+.venv
+.gradle
+.aria_sessions
+.aria_chroma_db
+__pycache__
+tests
+node_modules
+frontend/node_modules
+frontend/dist
+dist
+*.log
+*.pdf

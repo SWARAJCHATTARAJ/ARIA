@@ -470,6 +470,12 @@ def is_comparative_query(question: str) -> bool:
     return any(kw in q for kw in keywords)
 
 
+import threading
+import time
+SUBQUERY_CACHE = {}
+SUBQUERY_CACHE_LOCK = threading.Lock()
+
+
 class ResearchAgent:
     def __init__(self, settings: Settings, memory: VectorMemory, openrouter_api_key: str | None = None) -> None:
         self.settings = settings
@@ -503,7 +509,7 @@ class ResearchAgent:
         use_web: bool = True,
         use_local: bool = True,
         use_finance: bool = False,
-        max_iterations: int = 2,
+        max_iterations: int = 1,
         field_focus: str = "all",
     ) -> ResearchResult:
         initial_state = {
@@ -605,91 +611,127 @@ class ResearchAgent:
 
         # 2. Concurrent web searches inside the same client session & event loop
         if use_web and queries:
-            timeout = aiohttp.ClientTimeout(total=5)
-            async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
-                tasks = []
-                task_metadata = []
+            # Check sub-query cache first
+            uncached_queries = []
+            query_to_results = {q: [] for q in queries}
+            
+            with SUBQUERY_CACHE_LOCK:
+                now = time.time()
+                # Clean expired entries (TTL 300s)
+                for k in list(SUBQUERY_CACHE.keys()):
+                    if now - SUBQUERY_CACHE[k]["time"] > 300:
+                        del SUBQUERY_CACHE[k]
+                        
                 for q in queries:
-                    events.append(f"Retriever: searching web sources for: {q} [Focus: {field_focus}]")
-                    
-                    # Wikipedia (encyclopedic baseline)
-                    wiki_limit = 2
-                    if field_focus in {"medical", "stem"}:
-                        wiki_limit = 1
-                    elif field_focus == "general":
-                        wiki_limit = 3
-                    tasks.append(async_wikipedia_search(session, q, wiki_limit))
-                    task_metadata.append((q, "wikipedia"))
+                    cache_key = (q, field_focus)
+                    if cache_key in SUBQUERY_CACHE:
+                        events.append(f"Retriever: cache hit for sub-query: {q}")
+                        from copy import deepcopy
+                        cached_items = deepcopy(SUBQUERY_CACHE[cache_key]["results"])
+                        for ev in cached_items:
+                            ev.query = q
+                        evidence.extend(cached_items)
+                        query_to_results[q].extend(cached_items)
+                    else:
+                        uncached_queries.append(q)
+            
+            if uncached_queries:
+                timeout = aiohttp.ClientTimeout(total=5)
+                async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
+                    tasks = []
+                    task_metadata = []
+                    for q in uncached_queries:
+                        events.append(f"Retriever: searching web sources for: {q} [Focus: {field_focus}]")
+                        
+                        # Wikipedia (encyclopedic baseline)
+                        wiki_limit = 2
+                        if field_focus in {"medical", "stem"}:
+                            wiki_limit = 1
+                        elif field_focus == "general":
+                            wiki_limit = 3
+                        tasks.append(asyncio.wait_for(async_wikipedia_search(session, q, wiki_limit), 3.5))
+                        task_metadata.append((q, "wikipedia"))
 
-                    # OpenAlex (cross-disciplinary baseline)
-                    openalex_limit = 2
-                    if field_focus in {"stem", "humanities"}:
-                        openalex_limit = 3
-                    elif field_focus in {"general", "medical"}:
-                        openalex_limit = 1
-                    tasks.append(async_openalex_search(session, q, openalex_limit))
-                    task_metadata.append((q, "openalex"))
+                        # OpenAlex (cross-disciplinary baseline)
+                        openalex_limit = 2
+                        if field_focus in {"stem", "humanities"}:
+                            openalex_limit = 3
+                        elif field_focus in {"general", "medical"}:
+                            openalex_limit = 1
+                        tasks.append(asyncio.wait_for(async_openalex_search(session, q, openalex_limit), 3.5))
+                        task_metadata.append((q, "openalex"))
 
-                    # Arxiv (STEM/CS/Physics)
-                    arxiv_limit = 2
-                    if field_focus == "stem":
-                        arxiv_limit = 4
-                    elif field_focus in {"medical", "humanities", "general"}:
-                        arxiv_limit = 0
-                    if arxiv_limit > 0:
-                        tasks.append(async_arxiv_search(session, q, arxiv_limit))
-                        task_metadata.append((q, "arxiv"))
+                        # Arxiv (STEM/CS/Physics)
+                        arxiv_limit = 2
+                        if field_focus == "stem":
+                            arxiv_limit = 4
+                        elif field_focus in {"medical", "humanities", "general"}:
+                            arxiv_limit = 0
+                        if arxiv_limit > 0:
+                            tasks.append(asyncio.wait_for(async_arxiv_search(session, q, arxiv_limit), 3.5))
+                            task_metadata.append((q, "arxiv"))
 
-                    # DuckDuckGo Instant Answer (Definitions)
-                    if field_focus in {"general", "all"}:
-                        tasks.append(async_duckduckgo_instant_answer(session, q))
-                        task_metadata.append((q, "duckduckgo"))
+                        # DuckDuckGo Instant Answer (Definitions)
+                        if field_focus in {"general", "all"}:
+                            tasks.append(asyncio.wait_for(async_duckduckgo_instant_answer(session, q), 3.5))
+                            task_metadata.append((q, "duckduckgo"))
 
-                    # DuckDuckGo HTML Web Search (General Web)
-                    ddg_limit = 2
-                    if field_focus == "general":
-                        ddg_limit = 4
-                    elif field_focus in {"medical", "stem", "humanities"}:
-                        ddg_limit = 1
-                    if ddg_limit > 0:
-                        tasks.append(async_duckduckgo_search(session, q, ddg_limit))
-                        task_metadata.append((q, "duckduckgo_web"))
+                        # DuckDuckGo HTML Web Search (General Web)
+                        ddg_limit = 2
+                        if field_focus == "general":
+                            ddg_limit = 4
+                        elif field_focus in {"medical", "stem", "humanities"}:
+                            ddg_limit = 1
+                        if ddg_limit > 0:
+                            tasks.append(asyncio.wait_for(async_duckduckgo_search(session, q, ddg_limit), 3.5))
+                            task_metadata.append((q, "duckduckgo_web"))
 
-                    # DOAJ (All Open-Access Journals, humanities/general science)
-                    doaj_limit = 2
-                    if field_focus == "humanities":
-                        doaj_limit = 4
-                    elif field_focus == "medical":
-                        doaj_limit = 3
-                    elif field_focus == "general":
-                        doaj_limit = 0
-                    if doaj_limit > 0:
-                        tasks.append(async_doaj_search(session, q, doaj_limit))
-                        task_metadata.append((q, "doaj"))
+                        # DOAJ (All Open-Access Journals, humanities/general science)
+                        doaj_limit = 2
+                        if field_focus == "humanities":
+                            doaj_limit = 4
+                        elif field_focus == "medical":
+                            doaj_limit = 3
+                        elif field_focus == "general":
+                            doaj_limit = 0
+                        if doaj_limit > 0:
+                            tasks.append(asyncio.wait_for(async_doaj_search(session, q, doaj_limit), 3.5))
+                            task_metadata.append((q, "doaj"))
 
-                    # PubMed (Biomedical & Medical)
-                    pubmed_limit = 2
-                    if field_focus == "medical":
-                        pubmed_limit = 4
-                    elif field_focus in {"stem", "humanities", "general"}:
-                        pubmed_limit = 0
-                    if pubmed_limit > 0:
-                        tasks.append(async_pubmed_search(session, q, pubmed_limit))
-                        task_metadata.append((q, "pubmed"))
+                        # PubMed (Biomedical & Medical)
+                        pubmed_limit = 2
+                        if field_focus == "medical":
+                            pubmed_limit = 4
+                        elif field_focus in {"stem", "humanities", "general"}:
+                            pubmed_limit = 0
+                        if pubmed_limit > 0:
+                            tasks.append(asyncio.wait_for(async_pubmed_search(session, q, pubmed_limit), 3.5))
+                            task_metadata.append((q, "pubmed"))
 
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                query_to_results = {q: [] for q in queries}
-                for res, (q, provider) in zip(results, task_metadata):
-                    if isinstance(res, Exception) or not res:
-                        continue
-                    for ev in res:
-                        ev.query = q
-                        query_to_results[q].append(ev)
-
-                for q in queries:
-                    q_evs = query_to_results[q]
-                    evidence.extend(q_evs[:5])
+                    for res, (q, provider) in zip(results, task_metadata):
+                        if isinstance(res, Exception) or not res:
+                            continue
+                        for ev in res:
+                            ev.query = q
+                            query_to_results[q].append(ev)
+                            
+                    # Save uncached results to cache
+                    with SUBQUERY_CACHE_LOCK:
+                        now = time.time()
+                        for q in uncached_queries:
+                            if q in query_to_results and query_to_results[q]:
+                                cache_key = (q, field_focus)
+                                from copy import deepcopy
+                                SUBQUERY_CACHE[cache_key] = {
+                                    "time": now,
+                                    "results": deepcopy(query_to_results[q])
+                                }
+ 
+            for q in queries:
+                q_evs = query_to_results[q]
+                evidence.extend(q_evs[:5])
 
         return evidence, events
 
@@ -1308,19 +1350,8 @@ def build_run_metrics(state: AgentState) -> dict[str, int | float | str]:
         "verification_tokens_est": estimate_tokens(verification),
         "total_output_tokens_est": estimate_tokens(answer) + estimate_tokens(verification),
     }
-_CROSS_ENCODER = None
-
 def get_cross_encoder():
-    global _CROSS_ENCODER
-    if _CROSS_ENCODER is not None:
-        return _CROSS_ENCODER
-    try:
-        from sentence_transformers import CrossEncoder
-        _CROSS_ENCODER = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-        return _CROSS_ENCODER
-    except Exception as e:
-        print(f"[Warning] Failed to initialize CrossEncoder: {e}")
-        return None
+    return get_reranker_model()
 
 def enforce_source_diversity(evidence: list[Evidence], max_per_source: int = 2) -> list[Evidence]:
     """Caps the number of evidence chunks from any single source (e.g. max 2-3 per source) to ensure source diversity."""

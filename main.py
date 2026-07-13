@@ -106,7 +106,7 @@ class ResearchRequest(BaseModel):
     use_local: bool = True
     use_web: bool = True
     use_finance: bool = False
-    max_iterations: int = 2
+    max_iterations: int = 1
     custom_plan: list[str] | None = None
     field_focus: str = "all"
     user_id: str | None = None
