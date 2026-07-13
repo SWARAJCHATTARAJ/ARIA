@@ -5,6 +5,7 @@ import re
 import operator
 import requests
 import asyncio
+import logging
 from typing import TypedDict, Annotated
 from concurrent.futures import ThreadPoolExecutor
 from langgraph.graph import StateGraph, END
@@ -12,6 +13,8 @@ from langgraph.graph import StateGraph, END
 from .core import Settings, Evidence, ResearchResult, estimate_tokens
 from .rag import VectorMemory
 from .tools import free_web_search, get_market_snapshot, run_async
+
+logger = logging.getLogger("aria.agent")
 
 
 # Helper to intercept developer profile queries
@@ -442,7 +445,7 @@ def track_node_latency(node_name: str):
                 self._latencies = {}
             self._latencies[f"latency_{node_name}"] = round(elapsed, 3)
             
-            print(f"[Metrics] LangGraph Node '{node_name}' took {elapsed:.3f}s")
+            logger.info(f"[Metrics] LangGraph Node '{node_name}' took {elapsed:.3f}s")
             
             log_dir = Path("C:/Users/Hp/OneDrive/Desktop/project/.aria_sessions")
             log_dir.mkdir(parents=True, exist_ok=True)
@@ -452,7 +455,7 @@ def track_node_latency(node_name: str):
                 with open(metrics_file, "a", encoding="utf-8") as f:
                     f.write(f"{timestamp} - Node: {node_name} - Latency: {elapsed:.3f}s - Iteration: {state.get('iteration', 0)}\n")
             except Exception as e:
-                print(f"[Warning] Failed to log latency: {e}")
+                logger.warning(f"Failed to log latency: {e}")
                 
             if isinstance(result, dict):
                 if "events" in result:
@@ -549,13 +552,17 @@ class ResearchAgent:
     @track_node_latency("plan")
     def node_plan(self, state: AgentState) -> dict:
         question = state["question"]
+        logger.info(f"[Stage: plan] Running planner for question: '{question[:60]}...'")
         plan = state.get("plan")
         if plan and len(plan) > 0:
+            logger.info(f"[Stage: plan] Using customized research plan: {plan}")
             return {"plan": plan, "events": ["Planner: using customized research plan"]}
         if state.get("local_only"):
             fallback_queries = generate_diverse_fallback_queries(question)
+            logger.info(f"[Stage: plan] Offline mode. Generated fallback: {fallback_queries[:1]}")
             return {"plan": fallback_queries[:1], "events": ["Planner: offline mode, generated local fallback query"]}
         plan = self._plan(question, history=state.get("history"))
+        logger.info(f"[Stage: plan] Generated search queries: {plan}")
         return {"plan": plan, "events": ["Planner: generated search queries"]}
 
     async def _async_search(
@@ -740,6 +747,7 @@ class ResearchAgent:
         question = state["question"]
         plan = state["plan"]
         iteration = state["iteration"]
+        logger.info(f"[Stage: search] Running retriever (iteration {iteration}) with plan: {plan}")
         use_web = state["use_web"]
         use_local = state.get("use_local", True)
         use_finance = state["use_finance"]
@@ -847,14 +855,18 @@ class ResearchAgent:
         if not is_global_summary:
             new_evidence = re_rank_evidence(question, new_evidence)
 
+        logger.info(f"[Stage: search] Retriever completed (iteration {iteration}). Found {len(new_evidence)} evidence items.")
         return {"evidence": new_evidence, "events": new_events}
 
     @track_node_latency("draft")
     def node_draft(self, state: AgentState) -> dict:
         question = state["question"]
-        evidence = dedupe_evidence(state["evidence"])
-        evidence = cross_encoder_rerank_evidence(question, evidence)
         iteration = state["iteration"]
+        logger.info(f"[Stage: draft] Running synthesizer (iteration {iteration}) with {len(state.get('evidence', []))} raw evidence items.")
+        evidence = dedupe_evidence(state["evidence"])
+        logger.info(f"[Stage: draft] Deduped evidence count: {len(evidence)}")
+        evidence = cross_encoder_rerank_evidence(question, evidence)
+        logger.info(f"[Stage: draft] Reranked evidence count: {len(evidence)}")
         history = state.get("history")
         
         # Pydantic model for brief validation
@@ -898,6 +910,7 @@ class ResearchAgent:
         except Exception as exc:
             # First draft failed validation. Retry once with error message appended to prompt
             exc_msg = str(exc)
+            logger.warning(f"[Stage: draft] Synthesizer validation failed: {exc_msg}. Retrying brief generation...")
             retry_instruction = f"\n\n[ERROR] Previous draft output failed validation:\n{exc_msg}\nPlease regenerate the brief, ensuring you resolve the validation error by citing sources correctly (e.g. [1]) and using only valid source indices from [1] to [{len(evidence)}]."
             
             # Call _draft again with retry instruction appended to question!
@@ -911,11 +924,12 @@ class ResearchAgent:
                 ResearchBriefValidation(answer=answer)
             except Exception as final_exc:
                 safe_exc = str(final_exc).encode("ascii", errors="replace").decode("ascii")
-                print(f"[Warning] LLM draft retry failed validation again: {safe_exc}")
+                logger.warning(f"[Stage: draft] LLM draft retry failed validation again: {safe_exc}")
                 validation_warning = True
                 
         from aria.reports import bold_key_terms
         answer = bold_key_terms(answer)
+        logger.info("[Stage: draft] Synthesizer finished brief generation successfully.")
         return {
             "answer": answer,
             "validation_warning": validation_warning,
@@ -926,11 +940,13 @@ class ResearchAgent:
     def node_verify(self, state: AgentState) -> dict:
         question = state["question"]
         answer = state["answer"]
+        iteration = state["iteration"]
+        logger.info(f"[Stage: verify] Running Auditor node (iteration {iteration}) to verify the generated brief.")
         evidence = dedupe_evidence(state["evidence"])
         evidence = cross_encoder_rerank_evidence(question, evidence)
-        iteration = state["iteration"]
         
         verification = self._verify(question, answer, evidence, local_only=state.get("local_only", False))
+        logger.info(f"[Stage: verify] Auditor verification finished. Result starts with: '{verification[:120]}...'")
         return {"verification": verification, "events": ["Auditor: verified draft against retrieved evidence"], "iteration": iteration + 1}
 
     def _plan(self, question: str, history: list[dict] | None = None) -> list[str]:
@@ -1265,12 +1281,17 @@ def deduplicate_by_similarity(evidence: list[Evidence]) -> list[Evidence]:
         return float(dot / (norm_u * norm_v))
 
     embeddings = None
-    try:
-        from chromadb.utils import embedding_functions
-        default_ef = embedding_functions.DefaultEmbeddingFunction()
-        embeddings = default_ef(summaries)
-    except Exception as e:
-        print(f"[Warning] Failed to generate Chroma embeddings for deduplication: {e}")
+    if os.getenv("DISABLE_HEAVY_MODELS", "false").lower() != "true":
+        try:
+            logger.info("Generating Chroma embeddings for deduplication...")
+            from chromadb.utils import embedding_functions
+            default_ef = embedding_functions.DefaultEmbeddingFunction()
+            embeddings = default_ef(summaries)
+            logger.info("Chroma embeddings generated successfully.")
+        except Exception as e:
+            logger.warning(f"Failed to generate Chroma embeddings for deduplication: {e}")
+    else:
+        logger.info("DISABLE_HEAVY_MODELS is enabled; skipping Chroma embeddings for deduplication.")
 
     use_embeddings = embeddings is not None and len(embeddings) == len(evidence)
     
@@ -1399,7 +1420,7 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
             filtered = [evidence[0]]
         return enforce_source_diversity(filtered, max_per_source=2)
     except Exception as e:
-        print(f"[Warning] CrossEncoder inference failed: {e}. Falling back to token overlap.")
+        logger.warning(f"CrossEncoder inference failed: {e}. Falling back to token overlap.")
         ranked = re_rank_evidence(query, evidence)
         filtered = [item for item in ranked if item.score >= 0.35]
         if not filtered and ranked:
@@ -1413,9 +1434,18 @@ _RERANKER_MODEL = None
 def get_reranker_model():
     global _RERANKER_MODEL
     if _RERANKER_MODEL is None:
-        from sentence_transformers import CrossEncoder
-        # Use cross-encoder/ms-marco-MiniLM-L-2-v2: lightweight, fast, and low memory footprint (~60MB)
-        _RERANKER_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-2-v2")
+        if os.getenv("DISABLE_HEAVY_MODELS", "false").lower() == "true":
+            logger.info("DISABLE_HEAVY_MODELS is enabled; skipping CrossEncoder model initialization.")
+            return None
+        try:
+            logger.info("Loading sentence-transformers CrossEncoder (cross-encoder/ms-marco-MiniLM-L-2-v2)...")
+            from sentence_transformers import CrossEncoder
+            # Use cross-encoder/ms-marco-MiniLM-L-2-v2: lightweight, fast, and low memory footprint (~60MB)
+            _RERANKER_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-2-v2")
+            logger.info("CrossEncoder model loaded successfully.")
+        except Exception as e:
+            logger.warning(f"Failed to load sentence-transformers CrossEncoder: {e}. Falling back to token overlap.")
+            _RERANKER_MODEL = None
     return _RERANKER_MODEL
 
 
@@ -1425,15 +1455,20 @@ def re_rank_evidence(query: str, evidence: list[Evidence]) -> list[Evidence]:
         return evidence
 
     has_sentence_transformers = False
-    try:
-        from sentence_transformers import CrossEncoder
-        has_sentence_transformers = True
-    except ImportError:
-        pass
+    if os.getenv("DISABLE_HEAVY_MODELS", "false").lower() != "true":
+        try:
+            from sentence_transformers import CrossEncoder
+            has_sentence_transformers = True
+        except ImportError:
+            pass
+    else:
+        logger.info("DISABLE_HEAVY_MODELS is enabled; skipping CrossEncoder import/loading.")
 
     if has_sentence_transformers:
         try:
             model = get_reranker_model()
+            if model is None:
+                raise RuntimeError("CrossEncoder model is disabled.")
             pairs = [(query, item.summary or "") for item in evidence]
             scores = model.predict(pairs)
             
@@ -1454,7 +1489,7 @@ def re_rank_evidence(query: str, evidence: list[Evidence]) -> list[Evidence]:
                 filtered = ranked_evidence[:1]
             return filtered
         except Exception as e:
-            print(f"[Warning] Cross-encoder re-ranking failed: {e}. Falling back to token overlap.")
+            logger.warning(f"Cross-encoder re-ranking failed: {e}. Falling back to token overlap.")
 
     # Heuristic token overlap fallback
     stop_words = {

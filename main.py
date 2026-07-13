@@ -25,6 +25,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import logging
+
+load_dotenv()
+
+# Configure structured-like console logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("aria.api")
 
 from aria.agent import ResearchAgent, generate_research_diff
 from aria.core import Settings, validate_pdf_upload, estimate_tokens
@@ -346,51 +357,55 @@ async def run_research(
     
     # Enforce that the user ID used is the authenticated current_user
     request.user_id = current_user
-    
-    agent = get_agent(openrouter_api_key=x_openrouter_key)
-    
-    previous_history = []
-    previous_evidence = []
-    if request.session_id:
-        from aria.sessions import find_session_path, load_session
-        try:
-            path = find_session_path(request.session_id, user_id=request.user_id)
-            if path:
-                prev_result = load_session(path)
-                previous_history = list(getattr(prev_result, "history", [])) + [
-                    {"question": prev_result.question, "answer": prev_result.answer}
-                ]
-                previous_evidence = prev_result.evidence
-        except Exception as e:
-            print(f"[Warning] Failed to load previous session: {e}")
-            
-    initial_state = {
-        "question": request.question,
-        "plan": request.custom_plan if request.custom_plan else [],
-        "evidence": previous_evidence,
-        "answer": "",
-        "verification": "No verification run.",
-        "events": [],
-        "iteration": 0,
-        "use_web": request.use_web,
-        "use_local": request.use_local,
-        "use_finance": request.use_finance,
-        "max_iterations": request.max_iterations,
-        "field_focus": request.field_focus,
-        "history": previous_history,
-        "validation_warning": False,
-        "local_only": request.local_only
-    }
 
     async def sse_generator():
         try:
             # Yield init
             yield f"event: init\ndata: {json.dumps({'message': 'Initializing ARIA Research Workspace...'})}\n\n"
             
+            logger.info(f"Starting research loop for question: '{request.question}' (User: {request.user_id})")
+            
+            # Initialize agent inside the generator to catch any startup errors
+            agent = get_agent(openrouter_api_key=x_openrouter_key)
+            
+            previous_history = []
+            previous_evidence = []
+            if request.session_id:
+                from aria.sessions import find_session_path, load_session
+                try:
+                    path = find_session_path(request.session_id, user_id=request.user_id)
+                    if path:
+                        prev_result = load_session(path)
+                        previous_history = list(getattr(prev_result, "history", [])) + [
+                            {"question": prev_result.question, "answer": prev_result.answer}
+                        ]
+                        previous_evidence = prev_result.evidence
+                except Exception as e:
+                    logger.warning(f"Failed to load previous session: {e}", exc_info=True)
+                    
+            initial_state = {
+                "question": request.question,
+                "plan": request.custom_plan if request.custom_plan else [],
+                "evidence": previous_evidence,
+                "answer": "",
+                "verification": "No verification run.",
+                "events": [],
+                "iteration": 0,
+                "use_web": request.use_web,
+                "use_local": request.use_local,
+                "use_finance": request.use_finance,
+                "max_iterations": request.max_iterations,
+                "field_focus": request.field_focus,
+                "history": previous_history,
+                "validation_warning": False,
+                "local_only": request.local_only
+            }
+            
             # Check query cache
             from aria.cache import check_cache, store_cache
             cached_result = check_cache(request.question)
             if cached_result:
+                logger.info("Query cache hit. Returning cached results.")
                 yield f"event: stage_complete\ndata: {json.dumps({'stage': 'cache_hit', 'elapsed': 0.0, 'events': ['Retrieved results from query cache (embedding similarity hit).']})}\n\n"
                 session = save_session(cached_result, user_id=request.user_id)
                 yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(cached_result)})}\n\n"
@@ -404,12 +419,13 @@ async def run_research(
             
             def run_graph():
                 try:
+                    logger.info("LangGraph thread started execution.")
                     for output in agent.graph.stream(initial_state):
                         q.put(("output", output))
                     q.put(("done", None))
+                    logger.info("LangGraph thread execution completed successfully.")
                 except Exception as exc:
-                    import traceback
-                    traceback.print_exc()
+                    logger.exception("Error in LangGraph execution thread:")
                     q.put(("error", exc))
                     
             t = Thread(target=run_graph, daemon=True)
@@ -424,7 +440,8 @@ async def run_research(
                     await asyncio.sleep(0.2)
                     # Check if thread is still alive
                     if not t.is_alive() and q.empty():
-                        raise RuntimeError("ARIA research engine thread terminated unexpectedly.")
+                        logger.error("ARIA research engine thread terminated unexpectedly.")
+                        raise RuntimeError("ARIA research engine thread terminated unexpectedly. This might be due to an Out-of-Memory (OOM) kill or process crash.")
                     # Keep-alive ping to prevent proxy/load balancer timeouts
                     if time.perf_counter() - last_ping_time > 15:
                         yield ": ping\n\n"
@@ -434,11 +451,13 @@ async def run_research(
                 if status == "done":
                     break
                 elif status == "error":
+                    logger.error(f"Error received from research engine thread: {val}")
                     raise val
                 elif status == "output":
                     for node_name, state_update in val.items():
                         elapsed = time.perf_counter() - node_started_at
                         final_state = {**final_state, **state_update}
+                        logger.info(f"Pipeline stage completed: {node_name} in {elapsed:.2f} seconds.")
                         yield f"event: stage_complete\ndata: {json.dumps({'stage': node_name, 'elapsed': round(elapsed, 2), 'events': state_update.get('events', [])})}\n\n"
                         node_started_at = time.perf_counter()
                         # Reset ping timer when we output a stage
@@ -448,6 +467,7 @@ async def run_research(
             from aria.agent import dedupe_evidence
             from aria.core import ResearchResult
             
+            logger.info("Post-processing final state and generating ResearchResult.")
             result = ResearchResult(
                 question=final_state["question"],
                 plan=final_state["plan"],
@@ -468,11 +488,11 @@ async def run_research(
             # Store in cache
             store_cache(request.question, result)
             
+            logger.info("Research loop completed successfully. Sending final result.")
             yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(result)})}\n\n"
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.exception("Exception occurred in sse_generator:")
             yield f"event: error\ndata: {json.dumps({'error': redact_secrets(str(e))})}\n\n"
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
