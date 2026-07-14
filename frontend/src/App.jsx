@@ -463,7 +463,7 @@ function App() {
 
 
   // Run the full agentic research loop (SSE Stream)
-  const runResearch = async () => {
+  const runResearch = async (isRetry = false) => {
     if (!question.trim()) return;
 
     const startTime = Date.now();
@@ -471,8 +471,76 @@ function App() {
     setIsResearching(true);
     setResult(null);
     setError(null);
-    setCurrentStage("plan");
-    setResearchLogs(["Initializing ARIA Research Workspace..."]);
+
+    // 1. Wake up server if not a retry
+    if (!isRetry) {
+      setCurrentStage("wakeup");
+      setResearchLogs([
+        "Contacting server...",
+        "[System] > Waking up the server, this can take up to a minute on first use..."
+      ]);
+
+      const wakeUpStartTime = Date.now();
+      let awake = false;
+      let attempts = 0;
+
+      while (!awake) {
+        attempts++;
+        const elapsed = (Date.now() - wakeUpStartTime) / 1000;
+        if (elapsed > 90) {
+          setError("Waking up the server timed out after 90 seconds. The hosting provider (Render) may be experiencing downtime or cold-start holds. Please try again.");
+          setIsResearching(false);
+          setCurrentStage("idle");
+          return;
+        }
+
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout per ping attempt
+
+          const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
+          const headers = {};
+          if (userApiKey) {
+            headers["X-OpenRouter-Key"] = userApiKey;
+          }
+
+          setResearchLogs(prev => [
+            ...prev,
+            `[System] > Sending wake-up ping (Attempt ${attempts}, ${elapsed.toFixed(0)}s elapsed)...`
+          ]);
+
+          const response = await fetch(`${API_BASE}/api/memory/count`, {
+            headers,
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          // Render returns 502/503/504 while the server is booting up.
+          // Any other status code (even 200, 401, 500) indicates that the FastAPI application is alive and responding.
+          if (response.status !== 502 && response.status !== 503 && response.status !== 504) {
+            awake = true;
+            setResearchLogs(prev => [...prev, "[System] > Server is awake and responsive! Initializing research stream..."]);
+          } else {
+            console.warn(`Wake-up ping received server-boot status: ${response.status}. Retrying in 3s...`);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+        } catch (err) {
+          console.warn("Wake-up ping error (retrying in 3s):", err);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+    }
+
+    if (isRetry) {
+      setResearchLogs(prev => [
+        ...prev,
+        "[System] > Connection lost during initial contact. Automatically retrying submission now that server is waking up...",
+        "Initializing ARIA Research Workspace (Attempt 2)..."
+      ]);
+    } else {
+      setCurrentStage("plan");
+      setResearchLogs(prev => [...prev, "Initializing ARIA Research Workspace..."]);
+    }
 
     try {
       const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
@@ -573,6 +641,14 @@ function App() {
 
       if (!hasResult && !hasError) {
         const elapsed = (Date.now() - startTime) / 1000;
+
+        // Auto-retry if it disconnected early during "idle" or "plan" stages and it's our first attempt
+        if (!isRetry && (currentStage === "idle" || currentStage === "plan")) {
+          console.warn(`Connection lost early in stage '${currentStage}'. Retrying research run automatically...`);
+          runResearch(true);
+          return;
+        }
+
         let diagnosticMsg = "Research stream disconnected before brief generation could complete. ";
         if (currentStage === "idle" && elapsed > 45) {
           diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). The server failed to respond in time. This is almost certainly due to a cold-start delay on Render's Free Plan, which takes 50-70 seconds to spin up the container after inactivity. Please try resubmitting your query now that the server is awake.`;
@@ -1258,7 +1334,9 @@ function App() {
                   <div className="flex justify-between items-center border-b border-aria-border pb-3 mb-4 shrink-0">
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-aria-accent animate-ping"></span>
-                      <span className="text-[10px] text-aria-accent font-semibold uppercase tracking-wider">Researching Live...</span>
+                      <span className="text-[10px] text-aria-accent font-semibold uppercase tracking-wider">
+                        {currentStage === "wakeup" ? "Waking up Server..." : "Researching Live..."}
+                      </span>
                     </div>
                   </div>
 

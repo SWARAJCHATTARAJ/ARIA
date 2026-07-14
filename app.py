@@ -68,7 +68,7 @@ def configured_backend_url() -> str:
                         return f"http://{host_ip}:{BACKEND_PORT}"
                     else:
                         # On a public Streamlit host, default to the deployed public backend URL
-                        return "https://aria-2-f3kq.onrender.com"
+                        return "https://aria.swarajchattaraj.tech"
     except Exception:
         pass
 

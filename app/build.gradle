@@ -22,7 +22,7 @@ plugins {
 
 def twaManifest = [
     applicationId: 'com.swarajchattaraj.aria',
-    hostName: 'aria-2-f3kq.onrender.com', // The domain being opened in the TWA.
+    hostName: 'aria.swarajchattaraj.tech', // The domain being opened in the TWA.
     launchUrl: '/', // The start path for the TWA. Must be relative to the domain.
     name: 'ARIA Research Console', // The application name.
     launcherName: 'ARIA', // The name shown on the Android Launcher.
@@ -57,8 +57,8 @@ android {
         applicationId "com.swarajchattaraj.aria"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 3
-        versionName "1.0.0"
+        versionCode 4
+        versionName "1.0.1"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name

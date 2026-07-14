@@ -77,7 +77,7 @@ def redact_secrets(text: str) -> str:
     return text
 
 # Configure CORS origins securely (can be configured via environment variable)
-allowed_origins_str = os.getenv("ARIA_ALLOWED_ORIGINS", "https://aria-2-f3kq.onrender.com,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000,http://localhost:8501,http://127.0.0.1:8501")
+allowed_origins_str = os.getenv("ARIA_ALLOWED_ORIGINS", "https://aria.swarajchattaraj.tech,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000,http://localhost:8501,http://127.0.0.1:8501")
 origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
 
 app.add_middleware(
