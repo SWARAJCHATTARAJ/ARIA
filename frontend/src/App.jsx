@@ -1737,9 +1737,9 @@ function App() {
 
               {/* Document download buttons bar */}
               <div className="p-3 border-t border-aria-border bg-aria-bg/50 flex flex-col gap-2">
-                <div className="flex gap-2 items-center justify-between">
+                <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
                   {selectedSessionId && (
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 justify-between sm:justify-start shrink-0">
                       <span className="text-[10px] text-aria-muted font-semibold uppercase tracking-wider">Recurring:</span>
                       <select
                         value={selectedSessionRecurringInterval || ""}
@@ -1755,27 +1755,27 @@ function App() {
                       </select>
                     </div>
                   )}
-                  <div className="flex gap-2 justify-end ml-auto">
+                  <div className="flex flex-wrap gap-1.5 justify-start sm:justify-end w-full sm:w-auto">
                     {selectedSessionId ? (
                     <>
                       <button
                         onClick={() => downloadReport("pdf")}
-                        className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                       >
-                        <Download size={11} /> Download PDF
+                        <Download size={11} /> PDF
                       </button>
                       <button
                         onClick={() => downloadReport("md")}
-                        className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                       >
-                        <Download size={11} /> Download MD
+                        <Download size={11} /> MD
                       </button>
                       <button
                         onClick={() => downloadReport("trace")}
-                        className="px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                         title="Download research reasoning trace / audit log"
                       >
-                        <Download size={11} /> Download Trace
+                        <Download size={11} /> Trace
                       </button>
                     </>
                   ) : (
@@ -1783,23 +1783,23 @@ function App() {
                       <button
                         type="button"
                         disabled
-                        className="px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
                       >
-                        <Download size={11} /> Download PDF
+                        <Download size={11} /> PDF
                       </button>
                       <button
                         type="button"
                         disabled
-                        className="px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
                       >
-                        <Download size={11} /> Download MD
+                        <Download size={11} /> MD
                       </button>
                       <button
                         type="button"
                         disabled
-                        className="px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
                       >
-                        <Download size={11} /> Download Trace
+                        <Download size={11} /> Trace
                       </button>
                     </>
                   )}
