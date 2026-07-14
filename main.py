@@ -19,6 +19,22 @@ try:
 except ImportError:
     pass
 
+# ONNX Runtime memory optimization patch for low-RAM hosts (Render Free Tier 512MB)
+try:
+    import onnxruntime as ort
+    original_init = ort.InferenceSession.__init__
+    def patched_init(self, *args, **kwargs):
+        sess_options = kwargs.get("sess_options") or ort.SessionOptions()
+        sess_options.intra_op_num_threads = 1
+        sess_options.inter_op_num_threads = 1
+        sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        sess_options.enable_cpu_mem_arena = False
+        kwargs["sess_options"] = sess_options
+        original_init(self, *args, **kwargs)
+    ort.InferenceSession.__init__ = patched_init
+except ImportError:
+    pass
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends, status, Request
 from fastapi.responses import Response, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
