@@ -1,7 +1,7 @@
 import os
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 # Isolate unit tests from external Supabase database
-os.environ.pop("DATABASE_URL", None)
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 import unittest
 from aria.core import Settings, MAX_UPLOAD_BYTES, validate_pdf_upload
 from aria.rag import split_text, VectorMemory
@@ -41,6 +41,7 @@ class SplitTextTests(unittest.TestCase):
 
 class SearchModesTestCase(unittest.TestCase):
     def setUp(self):
+        self.old_api_key = os.environ.pop("OPENROUTER_API_KEY", None)
         os.environ["ARIA_COLLECTION"] = "aria_test_selective_search"
         self.settings = Settings.from_env()
         self.memory = VectorMemory(self.settings)
@@ -55,6 +56,8 @@ class SearchModesTestCase(unittest.TestCase):
 
     def tearDown(self):
         self.memory.reset()
+        if self.old_api_key is not None:
+            os.environ["OPENROUTER_API_KEY"] = self.old_api_key
 
     def test_local_only_mode(self):
         result = self.agent.run(

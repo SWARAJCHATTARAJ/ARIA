@@ -76,7 +76,7 @@ async def get_assetlinks():
                 "namespace": "android_app",
                 "package_name": "com.swarajchattaraj.aria",
                 "sha256_cert_fingerprints": [
-                    "20:A0:87:84:C8:8F:7A:69:99:86:C5:2A:BC:0A:0B:5B:2B:C6:B6:6C:52:5C:12:E8:B9:D7:02:CD:2C:57:2C:28"
+                    "7D:B9:D5:63:A2:7E:7A:F1:3A:83:F8:FD:68:2B:D6:D5:5E:9B:90:AC:3D:B8:F2:C5:23:AB:9F:41:8E:13:CD:62"
                 ]
             }
         }
@@ -613,7 +613,7 @@ async def ingest_text(request: IngestTextRequest, current_user: str = Depends(ge
         raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.get("/api/memory/count")
-async def get_memory_count():
+async def get_memory_count(current_user: str = Depends(get_current_user)):
     """Get the total number of indexed chunks."""
     try:
         memory = get_memory()
