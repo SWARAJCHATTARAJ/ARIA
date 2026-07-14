@@ -76,7 +76,7 @@ async def get_assetlinks():
                 "namespace": "android_app",
                 "package_name": "com.swarajchattaraj.aria",
                 "sha256_cert_fingerprints": [
-                    "7D:B9:D5:63:A2:7E:7A:F1:3A:83:F8:FD:68:2B:D6:D5:5E:9B:90:AC:3D:B8:F2:C5:23:AB:9F:41:8E:13:CD:62"
+                    "6B:5D:B0:B1:E9:5C:20:E6:EA:25:A1:47:4A:D6:94:E1:A8:CF:13:F5:E5:D4:D0:C0:86:6C:C5:67:DC:62:00:59"
                 ]
             }
         }

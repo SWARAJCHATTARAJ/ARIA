@@ -20,8 +20,8 @@
     "path": "./android.keystore",
     "alias": "aria"
   },
-  "appVersionName": "1.0.1",
-  "appVersionCode": 4,
+  "appVersionName": "1.0.2",
+  "appVersionCode": 5,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "fallbackType": "customtabs",
@@ -38,9 +38,11 @@
   "isMetaQuest": false,
   "minSdkVersion": 21,
   "orientation": "any",
-  "fingerprints": [],
+  "fingerprints": [
+    "7A:91:64:89:C3:7E:55:E7:50:88:27:0B:45:91:E6:B2:7A:91:64:89:C3:7E:55:E7:50:88:27:0B:45:91:E6:B2"
+  ],
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "displayOverride": [],
-  "appVersion": "1.0.1"
+  "appVersion": "1.0.2"
 }

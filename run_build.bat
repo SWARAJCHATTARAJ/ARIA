@@ -16,6 +16,8 @@ if "%KEY_PASS%"=="" (
 :: Set environment variables for the current session only
 set BUBBLEWRAP_KEYSTORE_PASSWORD=%KEY_PASS%
 set BUBBLEWRAP_KEY_PASSWORD=%KEY_PASS%
+set _JAVA_OPTIONS=-Xmx512m
+set JAVA_TOOL_OPTIONS=-Xmx512m
 
 echo.
 echo Running Bubblewrap build...
