@@ -21,7 +21,7 @@
     "alias": "aria"
   },
   "appVersionName": "1.0.2",
-  "appVersionCode": 5,
+  "appVersionCode": 6,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "fallbackType": "customtabs",
