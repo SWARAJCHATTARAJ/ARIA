@@ -19,6 +19,21 @@ def get_db_connection():
         # Render database URLs start with postgres://, but psycopg2 prefers postgresql://
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+        # Ensure password is URL-encoded if it contains '@' or other special chars
+        import urllib.parse
+        try:
+            scheme, sep, rest = db_url.partition("://")
+            cred_part, sep_at, host_part = rest.rpartition("@")
+            if cred_part:
+                user, sep_colon, password = cred_part.partition(":")
+                if password:
+                    unquoted_password = urllib.parse.unquote(password)
+                    quoted_password = urllib.parse.quote(unquoted_password)
+                    db_url = f"{scheme}://{user}:{quoted_password}@{host_part}"
+        except Exception as e:
+            print(f"[Warning] Failed to sanitize DATABASE_URL: {e}")
+
         import psycopg2
         return psycopg2.connect(db_url)
     else:

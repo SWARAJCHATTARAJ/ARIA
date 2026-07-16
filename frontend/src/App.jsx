@@ -70,11 +70,28 @@ function App() {
           fetchSessions();
         }, 100);
       } else {
-        const data = await response.json().catch(() => ({ detail: "Login failed" }));
-        setLoginError(data.detail || "Incorrect username or password.");
+        let errorMsg = "Login failed. Incorrect username or password.";
+        try {
+          const data = await response.json();
+          if (data && data.detail) {
+            errorMsg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+          }
+        } catch (e) {
+          try {
+            const text = await response.text();
+            if (text) {
+              errorMsg = `Server error (${response.status}): ${text.substring(0, 100)}`;
+            } else {
+              errorMsg = `Server error (${response.status})`;
+            }
+          } catch (_) {
+            errorMsg = `Server error (${response.status})`;
+          }
+        }
+        setLoginError(errorMsg);
       }
     } catch (err) {
-      setLoginError("Could not connect to the authentication server.");
+      setLoginError(`Could not connect to the authentication server: ${err.message || err}`);
     } finally {
       setIsLoggingIn(false);
     }
@@ -96,11 +113,28 @@ function App() {
         setLoginSuccess("Account created successfully! Please log in using your credentials.");
         setLoginPassword("");
       } else {
-        const data = await response.json().catch(() => ({ detail: "Registration failed" }));
-        setLoginError(data.detail || "Registration failed. Username may be taken.");
+        let errorMsg = "Registration failed. Username may be taken.";
+        try {
+          const data = await response.json();
+          if (data && data.detail) {
+            errorMsg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+          }
+        } catch (e) {
+          try {
+            const text = await response.text();
+            if (text) {
+              errorMsg = `Server error (${response.status}): ${text.substring(0, 100)}`;
+            } else {
+              errorMsg = `Server error (${response.status})`;
+            }
+          } catch (_) {
+            errorMsg = `Server error (${response.status})`;
+          }
+        }
+        setLoginError(errorMsg);
       }
     } catch (err) {
-      setLoginError("Could not connect to the registration server.");
+      setLoginError(`Could not connect to the registration server: ${err.message || err}`);
     } finally {
       setIsLoggingIn(false);
     }
