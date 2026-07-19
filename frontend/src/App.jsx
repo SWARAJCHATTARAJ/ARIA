@@ -1193,16 +1193,34 @@ function App() {
               </svg>
             </button>
             <span className="text-xs font-semibold tracking-wide text-aria-text uppercase truncate">Research Workspace</span>
-            {deferredPrompt && (
+            {deferredPrompt ? (
               <button
                 onClick={handleInstallClick}
                 className="flex items-center gap-1 px-2.5 py-0.5 bg-aria-accent/10 border border-aria-accent/30 hover:bg-aria-accent hover:text-white text-aria-accent text-[9px] font-bold rounded-full transition-all shrink-0 animate-pulse hover:animate-none cursor-pointer"
-                title="Install ARIA to your device"
+                title="Install ARIA as a Progressive Web App (PWA)"
               >
                 <Monitor size={9} />
-                <span>Install</span>
+                <span>Install PWA</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowSettings(true)}
+                className="flex items-center gap-1 px-2.5 py-0.5 bg-aria-accent/10 border border-aria-accent/30 hover:bg-aria-accent hover:text-white text-aria-accent text-[9px] font-bold rounded-full transition-all shrink-0 cursor-pointer"
+                title="View PWA installation guidelines"
+              >
+                <Monitor size={9} />
+                <span>Install PWA</span>
               </button>
             )}
+            <a
+              href="/aria-desktop-app.zip"
+              download="aria-desktop-app.zip"
+              className="flex items-center gap-1 px-2.5 py-0.5 bg-aria-accent/10 border border-aria-accent/30 hover:bg-aria-accent hover:text-white text-aria-accent text-[9px] font-bold rounded-full transition-all shrink-0 cursor-pointer"
+              title="Download Windows desktop launcher (.zip)"
+            >
+              <Monitor size={9} />
+              <span>Windows App</span>
+            </a>
             <a
               href="/downloads/aria.apk"
               download="ARIA.apk"
@@ -1347,7 +1365,7 @@ function App() {
 
               {/* Blank state */}
               {!result && !isResearching && (
-                <div className="h-full flex flex-col items-center justify-center text-center space-y-6 py-20">
+                <div className="h-full flex flex-col items-center justify-center text-center space-y-6 py-12 px-4">
                   <div className="w-10 h-10 rounded-lg bg-aria-surface border border-aria-border flex items-center justify-center text-aria-muted">
                     <Search size={18} />
                   </div>
@@ -1356,6 +1374,55 @@ function App() {
                     <p className="text-xs text-aria-muted leading-relaxed max-w-sm">
                       Provide a research task or objective. ARIA will decompose it, query sources, synthesize findings, and check for accuracy.
                     </p>
+                  </div>
+
+                  {/* Downloads & Apps Grid */}
+                  <div className="pt-6 border-t border-aria-border/50 w-full max-w-sm space-y-3">
+                    <span className="text-[9px] font-bold text-aria-muted uppercase tracking-wider block">Download ARIA Clients</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {/* PWA Button */}
+                      {deferredPrompt ? (
+                        <button
+                          onClick={handleInstallClick}
+                          className="flex items-center justify-center gap-1.5 px-2.5 py-2 bg-aria-accent/10 hover:bg-aria-accent hover:text-black border border-aria-accent/30 text-aria-accent text-[10px] font-bold rounded-xl transition-all cursor-pointer shadow-sm shadow-aria-accent/5 animate-pulse hover:animate-none"
+                          title="Install ARIA as a Progressive Web App"
+                        >
+                          <Monitor size={11} />
+                          <span>PWA App</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setShowSettings(true)}
+                          className="flex items-center justify-center gap-1.5 px-2.5 py-2 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text text-[10px] font-bold rounded-xl transition-all cursor-pointer"
+                          title="View PWA Mobile & macOS installation instructions"
+                        >
+                          <Monitor size={11} className="text-aria-muted" />
+                          <span>PWA App</span>
+                        </button>
+                      )}
+
+                      {/* Windows Button */}
+                      <a
+                        href="/aria-desktop-app.zip"
+                        download="aria-desktop-app.zip"
+                        className="flex items-center justify-center gap-1.5 px-2.5 py-2 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text text-[10px] font-bold rounded-xl transition-all cursor-pointer"
+                        title="Download borderless Windows desktop app launcher"
+                      >
+                        <Monitor size={11} className="text-[#00E5FF]" />
+                        <span>Windows App</span>
+                      </a>
+
+                      {/* Android APK Button */}
+                      <a
+                        href="/downloads/aria.apk"
+                        download="ARIA.apk"
+                        className="flex items-center justify-center gap-1.5 px-2.5 py-2 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text text-[10px] font-bold rounded-xl transition-all cursor-pointer"
+                        title="Download Android app (.apk)"
+                      >
+                        <Smartphone size={11} className="text-[#00E5FF]" />
+                        <span>Android App</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
               )}
