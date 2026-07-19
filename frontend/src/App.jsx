@@ -4,13 +4,80 @@ import {
   ExternalLink, ShieldCheck, Download, 
   CheckCircle, AlertCircle, Plus, X, RefreshCw,
   LogOut,
-  Sun, Moon, Menu, Monitor, Smartphone, LayoutGrid
+  Sun, Moon, Menu, Monitor, Smartphone, LayoutGrid,
+  Calendar, Database, Copy, Check
 } from 'lucide-react';
 
 
 
 const API_BASE = window.location.port === "5173" ? "http://127.0.0.1:8000" : window.location.origin;
 const OWNER_USER_ID = "swaraj_admin";
+
+const formatTimestamp = (ts) => {
+  if (!ts) return "";
+  try {
+    const date = new Date(ts);
+    if (isNaN(date.getTime())) return ts;
+    return date.toLocaleString(undefined, { 
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+  } catch (e) {
+    return ts;
+  }
+};
+
+const renderTextWithMarkdown = (text, evidence, onCitationClick) => {
+  if (!text) return null;
+  const regex = /(\[\d+\]|\*\*.*?\*\*)/g;
+  const parts = text.split(regex);
+  return parts.map((part, idx) => {
+    if (!part) return null;
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={idx} className="font-bold text-aria-text">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    const match = part.match(/^\[(\d+)\]$/);
+    if (match) {
+      const num = parseInt(match[1]);
+      const evidenceItem = evidence?.[num - 1];
+      const conf = evidenceItem?.confidence ?? 1.0;
+      let badgeColor = "bg-emerald-500 shadow-[0_0_4px_#10B981]";
+      let badgeTitle = "High confidence";
+      if (conf < 0.5) {
+        badgeColor = "bg-rose-500 shadow-[0_0_4px_#F43F5E]";
+        badgeTitle = "Low confidence";
+      } else if (conf < 0.9) {
+        badgeColor = "bg-amber-500 shadow-[0_0_4px_#F59E0B]";
+        badgeTitle = "Medium confidence";
+      }
+      return (
+        <span key={idx} className="inline-flex items-center gap-1.5 mx-1 relative group">
+          <button 
+            onClick={() => onCitationClick(num)}
+            className="px-1.5 py-0.5 bg-aria-accent/15 hover:bg-aria-accent/30 text-aria-accent rounded text-[10px] font-bold border border-aria-accent/25 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.2)] hover:scale-105"
+          >
+            [{num}]
+          </button>
+          <span 
+            className={`w-1.5 h-1.5 rounded-full ${badgeColor} inline-block cursor-help transition-transform hover:scale-125`}
+            title={`${badgeTitle} (${conf.toFixed(2)})`}
+          />
+          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 w-56 p-2 bg-aria-surface border border-aria-border text-aria-text rounded-md shadow-2xl text-[10px] leading-relaxed whitespace-normal break-words transition-opacity duration-200">
+            <span className="font-bold text-[9px] text-aria-accent block uppercase mb-0.5">
+              {evidenceItem?.source_type || "web"}
+            </span>
+            {evidenceItem?.title || "Untitled Source"}
+          </span>
+        </span>
+      );
+    }
+    return part;
+  });
+};
 
 
 
@@ -187,6 +254,7 @@ function App() {
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [selectedSessionRecurringInterval, setSelectedSessionRecurringInterval] = useState(null);
   const [memoryStatus, setMemoryStatus] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   
 
@@ -655,7 +723,10 @@ function App() {
               } else if (eventType === "result") {
                 hasResult = true;
                 setCurrentStage("complete");
-                setResult(parsed.result);
+                setResult({
+                  ...parsed.result,
+                  created_at: parsed.created_at || new Date().toISOString()
+                });
                 setSelectedSessionId(parsed.session_id);
                 fetchSessions();
                 fetchMemoryCount();
@@ -714,7 +785,7 @@ function App() {
       const response = await authorizedFetch(`${API_BASE}/api/sessions/${sessionId}?user_id=${encodeURIComponent(userId)}`);
       if (response.ok) {
         const data = await response.json();
-        setResult(data.result);
+        setResult({ ...data.result, created_at: data.created_at });
         setQuestion(data.result.question);
         setCustomPlan(data.result.plan);
         setSelectedSessionId(sessionId);
@@ -858,6 +929,18 @@ function App() {
     } catch (err) {
       setError(err.message || `Failed to download ${format.toUpperCase()} report.`);
     }
+  };
+
+  const copyToClipboard = () => {
+    if (!result || !result.answer) return;
+    navigator.clipboard.writeText(result.answer)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch((err) => {
+        console.error("Failed to copy text:", err);
+      });
   };
 
 
@@ -1468,72 +1551,150 @@ function App() {
               {/* Research synthesized markdown report */}
               {result && !isResearching && (
                 <div className="space-y-6">
-                  {/* Objective details */}
-                  <div className="pb-4 border-b border-aria-border flex justify-between items-start">
-                    <div>
-                      <span className="text-[9px] font-bold text-aria-muted uppercase tracking-wider block mb-1">Research Question</span>
-                      <h2 className="text-sm font-semibold text-aria-text leading-relaxed">{result.question}</h2>
+                  {/* Enhanced Header Row above brief content */}
+                  <div className="p-4 bg-aria-surface/60 border border-aria-border rounded-xl space-y-3 shadow-sm">
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="space-y-1 min-w-0">
+                        <span className="text-[9px] font-bold text-aria-accent uppercase tracking-wider block">Original Query</span>
+                        <h2 className="text-xs md:text-sm font-semibold text-aria-text leading-relaxed break-words">{result.question}</h2>
+                      </div>
+                      {result.cached && (
+                        <span className="shrink-0 text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider mt-1">
+                          Cached
+                        </span>
+                      )}
                     </div>
-                    {result.cached && (
-                      <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider mt-1">
-                        Cached
-                      </span>
-                    )}
+                    
+                    <div className="flex flex-wrap items-center gap-3 pt-2.5 border-t border-aria-border/40 text-[10px] text-aria-muted">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar size={12} className="text-aria-accent" />
+                        <span>Generated: {formatTimestamp(result.created_at)}</span>
+                      </div>
+                      <span className="text-aria-border/60 hidden sm:inline">•</span>
+                      <div className="flex items-center gap-1.5">
+                        <Database size={12} className="text-aria-accent" />
+                        <span className="bg-aria-accent/10 text-aria-accent border border-aria-accent/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider text-[9px]">
+                          {result.evidence ? result.evidence.length : 0} sources
+                        </span>
+                      </div>
+                    </div>
                   </div>
-
-
 
                   {/* Synthesized Brief Content */}
                   <div className="space-y-5">
-                    <span className="text-[9px] font-bold text-aria-muted uppercase tracking-wider block">Synthesized Executive Brief</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-aria-border/40">
+                      <span className="text-[9px] font-bold text-aria-muted uppercase tracking-wider block">Synthesized Executive Brief</span>
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        {/* Copy Button */}
+                        <button
+                          onClick={copyToClipboard}
+                          className="px-2 py-1 bg-aria-accent/10 hover:bg-aria-accent/25 text-aria-accent rounded border border-aria-accent/25 transition-all flex items-center gap-1.5 text-[10px] font-semibold"
+                          title="Copy brief to clipboard"
+                        >
+                          {copied ? (
+                            <>
+                              <Check size={11} className="text-emerald-400" />
+                              <span className="text-emerald-400">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={11} />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                        
+                        {/* Export PDF Button */}
+                        <button
+                          onClick={() => downloadReport("pdf")}
+                          className="px-2 py-1 bg-aria-accent/10 hover:bg-aria-accent/25 text-aria-accent rounded border border-aria-accent/25 transition-all flex items-center gap-1.5 text-[10px] font-semibold"
+                          title="Export brief to PDF"
+                        >
+                          <Download size={11} />
+                          <span>Export PDF</span>
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="text-aria-muted text-xs leading-relaxed space-y-4 max-w-none prose dark:prose-invert">
                       {result.answer.split('\n\n').map((para, pIdx) => {
-                        if (para.startsWith('### ')) {
-                          return <h3 key={pIdx} className="text-xs font-semibold text-aria-text pt-2 uppercase tracking-wide">{para.replace('### ', '')}</h3>;
-                        }
-                        if (para.startsWith('## ')) {
-                          return <h2 key={pIdx} className="text-sm font-bold text-aria-accent pt-3">{para.replace('## ', '')}</h2>;
+                        const trimmedPara = para.trim();
+                        if (!trimmedPara) return null;
+
+                        // 1. Heading level 3
+                        if (trimmedPara.startsWith('### ')) {
+                          return (
+                            <h3 key={pIdx} className="text-xs font-semibold text-aria-text pt-2 uppercase tracking-wide">
+                              {trimmedPara.replace('### ', '')}
+                            </h3>
+                          );
                         }
 
-                        
+                        // 2. Heading level 2
+                        if (trimmedPara.startsWith('## ')) {
+                          return (
+                            <h2 key={pIdx} className="text-sm font-bold text-aria-accent pt-3">
+                              {trimmedPara.replace('## ', '')}
+                            </h2>
+                          );
+                        }
 
-                        const parts = para.split(/(\[\d+\])/g);
+                        // 3. Section header like: - **Origin and Development**
+                        const sectionMatch = trimmedPara.match(/^-\s*\*\*(.*?)\*\*$/);
+                        if (sectionMatch) {
+                          const sectionText = sectionMatch[1];
+                          return (
+                            <div key={pIdx} className="pt-4 mt-6 border-t border-aria-border/40 first:border-t-0 first:mt-0 first:pt-0">
+                              <h3 className="text-sm font-bold text-aria-accent tracking-wide mb-3 flex items-center gap-2">
+                                <span className="w-1 h-3.5 bg-aria-accent rounded-full inline-block animate-pulse" />
+                                {sectionText}
+                              </h3>
+                            </div>
+                          );
+                        }
+
+                        // 4. Main title like: **Research Brief: Python**
+                        const titleMatch = trimmedPara.match(/^\*\*(.*?)\*\*$/);
+                        if (titleMatch) {
+                          const titleText = titleMatch[1];
+                          return (
+                            <h1 key={pIdx} className="text-base font-bold text-aria-text pb-2 border-b border-aria-border/40 mb-4 mt-2">
+                              {titleText}
+                            </h1>
+                          );
+                        }
+
+                        // 5. Bullet list item like: - some text
+                        if (trimmedPara.startsWith('- ')) {
+                          return (
+                            <div key={pIdx} className="pl-4 relative py-0.5 my-1 text-aria-muted text-xs leading-relaxed">
+                              <span className="absolute left-0 top-2 w-1.5 h-1.5 bg-aria-accent/50 rounded-full" />
+                              {renderTextWithMarkdown(trimmedPara.substring(2), result.evidence, (num) => {
+                                setActiveRightTab("citations");
+                                setExpandedCitationId(num - 1);
+                                setTimeout(() => {
+                                  const el = document.getElementById(`citation-card-${num - 1}`);
+                                  if (el) {
+                                    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                  }
+                                }, 100);
+                              })}
+                            </div>
+                          );
+                        }
+
+                        // 6. Default paragraph
                         return (
-                          <p key={pIdx}>
-                            {parts.map((part, ptIdx) => {
-                              const match = part.match(/^\[(\d+)\]$/);
-                              if (match) {
-                                const num = parseInt(match[1]);
-                                const evidenceItem = result.evidence?.[num - 1];
-                                const conf = evidenceItem?.confidence ?? 1.0;
-                                let badgeColor = "bg-emerald-500 shadow-[0_0_4px_#10B981]";
-                                let badgeTitle = "High confidence";
-                                if (conf < 0.5) {
-                                  badgeColor = "bg-rose-500 shadow-[0_0_4px_#F43F5E]";
-                                  badgeTitle = "Low confidence";
-                                } else if (conf < 0.9) {
-                                  badgeColor = "bg-amber-500 shadow-[0_0_4px_#F59E0B]";
-                                  badgeTitle = "Medium confidence";
+                          <p key={pIdx} className="text-aria-muted text-xs leading-relaxed my-2">
+                            {renderTextWithMarkdown(trimmedPara, result.evidence, (num) => {
+                              setActiveRightTab("citations");
+                              setExpandedCitationId(num - 1);
+                              setTimeout(() => {
+                                const el = document.getElementById(`citation-card-${num - 1}`);
+                                if (el) {
+                                  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                                 }
-                                return (
-                                  <span key={ptIdx} className="inline-flex items-center gap-0.5 mx-0.5">
-                                    <button 
-                                      onClick={() => {
-                                        setActiveRightTab("citations");
-                                        setExpandedCitationId(num - 1);
-                                      }}
-                                      className="px-1 bg-aria-accent/15 hover:bg-aria-accent/30 text-aria-accent rounded text-[10px] font-bold border border-aria-accent/25 transition-colors"
-                                    >
-                                      [{num}]
-                                    </button>
-                                    <span 
-                                      className={`w-1.5 h-1.5 rounded-full ${badgeColor} inline-block cursor-help`}
-                                      title={`${badgeTitle} (${conf.toFixed(2)})`}
-                                    />
-                                  </span>
-                                );
-                              }
-                              return part;
+                              }, 100);
                             })}
                           </p>
                         );
@@ -1611,8 +1772,9 @@ function App() {
                         return (
                           <div 
                             key={idx} 
+                            id={`citation-card-${idx}`}
                             className={`border rounded-lg transition-all bg-aria-surface ${
-                              isExpanded ? "border-aria-accent bg-aria-accent/5" : "border-aria-border"
+                              isExpanded ? "border-aria-accent bg-aria-accent/5 ring-1 ring-aria-accent/20" : "border-aria-border"
                             }`}
                           >
                             <button

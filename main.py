@@ -545,7 +545,7 @@ async def run_research(
             store_cache(request.question, result)
             
             logger.info("Research loop completed successfully. Sending final result.")
-            yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(result)})}\n\n"
+            yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'created_at': session.get('created_at', ''), 'result': result_to_dict(result)})}\n\n"
             
         except Exception as e:
             logger.exception("Exception occurred in sse_generator:")
