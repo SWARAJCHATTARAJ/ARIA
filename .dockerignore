@@ -11,3 +11,8 @@ frontend/dist
 dist
 *.log
 *.pdf
+.env
+.pytest_cache
+.devcontainer
+tests/
+eval_aria.py

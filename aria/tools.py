@@ -5,11 +5,56 @@ import xml.etree.ElementTree as ET
 import re
 import html
 import urllib.parse
+import json
+import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 from .core import Evidence
 
 HEADERS = {"User-Agent": "ARIA-Research-Workspace/1.0"}
+logger = logging.getLogger("aria.tools")
+
+
+def _truncate_body(text: str | bytes | None, limit: int = 800) -> str:
+    if text is None:
+        return ""
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", errors="replace")
+    return " ".join(str(text).split())[:limit]
+
+
+def _log_zero_results(provider: str, query: str, status: int | None, body: str | bytes | None) -> None:
+    logger.warning(
+        "%s returned 0 parsed results for query=%r status=%s body_preview=%r",
+        provider,
+        query,
+        status,
+        _truncate_body(body),
+    )
+
+
+def _clean_public_search_query(query: str) -> str:
+    """Remove Lucene/wildcard punctuation that public search APIs reject."""
+    cleaned = re.sub(r"[\?\*\~\^\[\]\{\}\\]", " ", query or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or (query or "").strip()
+
+
+def _public_source_timeout(default: float = 6.0) -> float:
+    try:
+        return float(os.getenv("ARIA_PUBLIC_SOURCE_TIMEOUT", str(default)))
+    except ValueError:
+        return default
+
+
+async def _read_response_json_and_body(response) -> tuple[dict, str]:
+    """Read JSON while retaining a raw body preview; supports lightweight test mocks."""
+    if hasattr(response, "text"):
+        body = await response.text()
+        return json.loads(body), body
+    data = await response.json()
+    return data, json.dumps(data)
 
 
 def run_async(coro):
@@ -115,23 +160,35 @@ async def async_arxiv_search(session, query: str, max_results: int = 2) -> list[
 
 
 async def async_wikipedia_search(session, query: str, max_results: int = 2) -> list[Evidence]:
+    clean_query = _clean_public_search_query(query)
     params = {
         "action": "query",
         "format": "json",
         "generator": "search",
-        "gsrsearch": query,
+        "gsrsearch": clean_query,
         "gsrlimit": max_results,
         "prop": "extracts|info",
         "exintro": 1,
         "explaintext": 1,
         "inprop": "url",
     }
+    raw_body = ""
+    status = None
+    pages = {}
     try:
         async with session.get("https://en.wikipedia.org/w/api.php", params=params) as response:
+            status = response.status
+            data, raw_body = await _read_response_json_and_body(response)
             response.raise_for_status()
-            pages = (await response.json()).get("query", {}).get("pages", {})
-    except Exception:
-        return []
+            pages = data.get("query", {}).get("pages", {})
+    except Exception as exc:
+        logger.warning(
+            "wikipedia generator search failed for query=%r status=%s error=%s body_preview=%r",
+            query,
+            status,
+            exc,
+            _truncate_body(raw_body),
+        )
 
     evidence = []
     for page in pages.values():
@@ -148,15 +205,71 @@ async def async_wikipedia_search(session, query: str, max_results: int = 2) -> l
                     retrieved_via="wikipedia_async",
                 )
             )
+
+    # Fallback to action=query&list=search if generator search yielded 0 results
+    if not evidence:
+        try:
+            fallback_params = {
+                "action": "query",
+                "format": "json",
+                "list": "search",
+                "srsearch": clean_query,
+                "srlimit": max_results,
+            }
+            async with session.get("https://en.wikipedia.org/w/api.php", params=fallback_params) as response:
+                status = response.status
+                data, raw_body = await _read_response_json_and_body(response)
+                response.raise_for_status()
+                search_results = data.get("query", {}).get("search", [])
+                for item in search_results:
+                    title = item.get("title", "")
+                    snippet = re.sub(r'<[^>]+>', '', item.get("snippet", "")).strip()
+                    pageid = item.get("pageid")
+                    url = f"https://en.wikipedia.org/?curid={pageid}" if pageid else None
+                    if title and snippet:
+                        evidence.append(
+                            Evidence(
+                                title=title,
+                                summary=html.unescape(snippet)[:1200],
+                                url=url,
+                                source_type="wikipedia",
+                                score=0.75,
+                                source_id=str(pageid) if pageid else title,
+                                retrieved_via="wikipedia_list_fallback",
+                            )
+                        )
+        except Exception as exc:
+            logger.warning(
+                "wikipedia list search fallback failed for query=%r status=%s error=%s",
+                query,
+                status,
+                exc,
+            )
+
+    if not evidence:
+        _log_zero_results("wikipedia", query, status, raw_body)
     return evidence
 
 
 async def async_openalex_search(session, query: str, max_results: int = 2) -> list[Evidence]:
+    clean_query = _clean_public_search_query(query)
+    raw_body = ""
+    status = None
     try:
-        async with session.get("https://api.openalex.org/works", params={"search": query, "per-page": max_results}) as response:
+        async with session.get("https://api.openalex.org/works", params={"search": clean_query, "per_page": max_results}) as response:
+            status = response.status
+            data, raw_body = await _read_response_json_and_body(response)
             response.raise_for_status()
-            works = (await response.json()).get("results", [])
-    except Exception:
+            works = data.get("results", [])
+    except Exception as exc:
+        logger.warning(
+            "openalex search failed for query=%r sanitized_query=%r status=%s error=%s body_preview=%r",
+            query,
+            clean_query,
+            status,
+            exc,
+            _truncate_body(raw_body),
+        )
         return []
 
     evidence = []
@@ -176,22 +289,35 @@ async def async_openalex_search(session, query: str, max_results: int = 2) -> li
                 retrieved_via="openalex_async",
             )
         )
+    if not evidence:
+        _log_zero_results("openalex", clean_query, status, raw_body)
     return evidence
 
 
 async def async_duckduckgo_instant_answer(session, query: str) -> list[Evidence]:
+    raw_body = ""
+    status = None
     try:
         async with session.get(
             "https://api.duckduckgo.com/",
             params={"q": query, "format": "json", "no_html": 1, "skip_disambig": 1},
         ) as response:
+            status = response.status
+            data, raw_body = await _read_response_json_and_body(response)
             response.raise_for_status()
-            data = await response.json()
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "duckduckgo instant answer failed for query=%r status=%s error=%s body_preview=%r",
+            query,
+            status,
+            exc,
+            _truncate_body(raw_body),
+        )
         return []
 
     abstract = data.get("AbstractText")
     if not abstract:
+        _log_zero_results("duckduckgo_instant", query, status, raw_body)
         return []
     return [
         Evidence(
@@ -210,6 +336,8 @@ async def async_duckduckgo_search(session, query: str, max_results: int = 3) -> 
     """Queries DuckDuckGo HTML Search to retrieve general web snippets and links."""
     import aiohttp
     url = "https://html.duckduckgo.com/html/"
+    status = None
+    html_content = ""
     try:
         # Construct header to look like a realistic web browser request
         headers = {
@@ -220,65 +348,108 @@ async def async_duckduckgo_search(session, query: str, max_results: int = 3) -> 
             "Referer": "https://html.duckduckgo.com/",
         }
         data = {"q": query}
-        async with session.post(url, data=data, headers=headers, timeout=aiohttp.ClientTimeout(total=4)) as response:
+        async with session.post(url, data=data, headers=headers, timeout=aiohttp.ClientTimeout(total=_public_source_timeout())) as response:
+            status = response.status
             if response.status != 200:
                 # Try GET fallback
-                async with session.get(url, params=data, headers=headers, timeout=aiohttp.ClientTimeout(total=4)) as response2:
+                async with session.get(url, params=data, headers=headers, timeout=aiohttp.ClientTimeout(total=_public_source_timeout())) as response2:
+                    status = response2.status
                     if response2.status != 200:
+                        logger.warning(
+                            "duckduckgo html search failed for query=%r status=%s",
+                            query,
+                            response2.status,
+                        )
                         return []
                     html_content = await response2.text()
             else:
                 html_content = await response.text()
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "duckduckgo html search primary request failed for query=%r status=%s error=%s body_preview=%r",
+            query,
+            status,
+            exc,
+            _truncate_body(html_content),
+        )
         try:
             # Simple GET fallback using session defaults
-            async with session.get(url, params={"q": query}, timeout=aiohttp.ClientTimeout(total=3)) as response:
+            async with session.get(url, params={"q": query}, timeout=aiohttp.ClientTimeout(total=_public_source_timeout())) as response:
+                status = response.status
                 if response.status != 200:
+                    logger.warning(
+                        "duckduckgo html fallback failed for query=%r status=%s",
+                        query,
+                        response.status,
+                    )
                     return []
                 html_content = await response.text()
-        except Exception:
+        except Exception as fallback_exc:
+            logger.warning(
+                "duckduckgo html fallback exception for query=%r status=%s error=%s",
+                query,
+                status,
+                fallback_exc,
+            )
             return []
 
-    parts = re.split(r'<div class="[^"]*result__body[^"]*"[^>]*>', html_content)
+    parts = re.split(r'<div class="[^"]*result(?:__body)?[^"]*"[^>]*>', html_content)
     bodies = parts[1:]
     evidence: list[Evidence] = []
     
     for body in bodies:
-        title_match = re.search(r'<h2 class="result__title">.*?<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', body, re.DOTALL)
-        snippet_match = re.search(r'<a class="result__snippet"[^>]*>(.*?)</a>', body, re.DOTALL)
-        
+        url_found = None
+        url_match = re.search(r'href="([^"]+)"', body)
+        if url_match:
+            url_found = url_match.group(1)
+            
+        if not url_found:
+            continue
+            
+        # Try extracting title from result__a or fallback to title link inside result__title
+        title_match = re.search(r'<a[^>]+class="[^"]*result__a[^"]*"[^>]*>(.*?)</a>', body, re.DOTALL)
         if title_match:
-            url_found = title_match.group(1)
-            title_text = re.sub(r'<[^>]+>', '', title_match.group(2)).strip()
-            title_text = html.unescape(title_text)
+            title_text = title_match.group(1)
+        else:
+            title_match_alt = re.search(r'<h2 class="result__title">.*?<a[^>]*>(.*?)</a>', body, re.DOTALL)
+            title_text = title_match_alt.group(1) if title_match_alt else ""
             
-            snippet_text = ""
-            if snippet_match:
-                snippet_text = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip()
-                snippet_text = html.unescape(snippet_text)
+        title_text = re.sub(r'<[^>]+>', '', title_text).strip()
+        title_text = html.unescape(title_text)
+        
+        # Try extracting snippet from result__snippet
+        snippet_match = re.search(r'<[^>]+class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</[^>]+>', body, re.DOTALL)
+        if not snippet_match:
+            snippet_match = re.search(r'class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</', body, re.DOTALL)
             
-            if not snippet_text:
-                continue
-                
-            if "/l/?kh=" in url_found or "uddg=" in url_found:
-                url_match = re.search(r'uddg=([^&]+)', url_found)
-                if url_match:
-                    url_found = urllib.parse.unquote(url_match.group(1))
+        snippet_text = snippet_match.group(1) if snippet_match else ""
+        snippet_text = re.sub(r'<[^>]+>', '', snippet_text).strip()
+        snippet_text = html.unescape(snippet_text)
+        
+        if not snippet_text:
+            snippet_text = "No preview available for this search result."
             
-            evidence.append(
-                Evidence(
-                    title=title_text or "DuckDuckGo web source",
-                    summary=snippet_text[:1200],
-                    url=url_found,
-                    source_type="web",
-                    score=0.75,
-                    source_id=url_found,
-                    retrieved_via="duckduckgo_html_async",
-                )
+        if "/l/?kh=" in url_found or "uddg=" in url_found:
+            url_match_param = re.search(r'uddg=([^&]+)', url_found)
+            if url_match_param:
+                url_found = urllib.parse.unquote(url_match_param.group(1))
+        
+        evidence.append(
+            Evidence(
+                title=title_text or "DuckDuckGo web source",
+                summary=snippet_text[:1200],
+                url=url_found,
+                source_type="web",
+                score=0.75,
+                source_id=url_found,
+                retrieved_via="duckduckgo_html_async",
             )
-            if len(evidence) >= max_results:
-                break
-                
+        )
+        if len(evidence) >= max_results:
+            break
+            
+    if not evidence:
+        _log_zero_results("duckduckgo_html", query, status, html_content)
     return evidence
 
 
@@ -336,14 +507,31 @@ def inverted_abstract(index: dict[str, list[int]] | None) -> str:
 
 async def async_doaj_search(session, query: str, max_results: int = 2) -> list[Evidence]:
     """Queries Directory of Open Access Journals (DOAJ) to retrieve open-access academic articles."""
+    raw_body = ""
+    status = None
     try:
         import aiohttp
-        url = f"https://doaj.org/api/v2/search/articles/{urllib.parse.quote(query)}"
-        async with session.get(url, params={"pageSize": max_results}, timeout=aiohttp.ClientTimeout(total=4)) as response:
+        clean_query = _clean_public_search_query(query)
+        url = f"https://doaj.org/api/v4/search/articles/{urllib.parse.quote(clean_query)}"
+        async with session.get(url, params={"pageSize": max_results}, timeout=aiohttp.ClientTimeout(total=_public_source_timeout())) as response:
+            status = response.status
+            data, raw_body = await _read_response_json_and_body(response)
             if response.status != 200:
+                logger.warning(
+                    "doaj search failed for query=%r status=%s body_preview=%r",
+                    query,
+                    response.status,
+                    _truncate_body(raw_body),
+                )
                 return []
-            data = await response.json()
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "doaj search exception for query=%r status=%s error=%s body_preview=%r",
+            query,
+            status,
+            exc,
+            _truncate_body(raw_body),
+        )
         return []
 
     evidence = []
@@ -368,6 +556,8 @@ async def async_doaj_search(session, query: str, max_results: int = 2) -> list[E
                 retrieved_via="doaj_async",
             )
         )
+    if not evidence:
+        _log_zero_results("doaj", query, status, raw_body)
     return evidence
 
 
@@ -382,7 +572,7 @@ async def async_pubmed_search(session, query: str, max_results: int = 2) -> list
             "retmode": "json",
             "retmax": max_results
         }
-        async with session.get(search_url, params=params, timeout=aiohttp.ClientTimeout(total=4)) as response:
+        async with session.get(search_url, params=params, timeout=aiohttp.ClientTimeout(total=_public_source_timeout())) as response:
             if response.status != 200:
                 return []
             search_data = await response.json()
@@ -398,7 +588,7 @@ async def async_pubmed_search(session, query: str, max_results: int = 2) -> list
             "id": ids_str,
             "retmode": "json"
         }
-        async with session.get(summary_url, params=params_sum, timeout=aiohttp.ClientTimeout(total=4)) as sum_response:
+        async with session.get(summary_url, params=params_sum, timeout=aiohttp.ClientTimeout(total=_public_source_timeout())) as sum_response:
             if sum_response.status != 200:
                 return []
             summary_data = await sum_response.json()

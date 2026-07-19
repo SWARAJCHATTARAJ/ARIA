@@ -92,6 +92,7 @@ class AgentState(TypedDict):
     question: str
     plan: list[str]
     evidence: Annotated[list[Evidence], operator.add]
+    citation_evidence: list[Evidence]
     answer: str
     verification: str
     events: Annotated[list[str], operator.add]
@@ -532,6 +533,7 @@ class ResearchAgent:
             "question": question,
             "plan": [],
             "evidence": [],
+            "citation_evidence": [],
             "answer": "",
             "verification": "No verification run.",
             "events": [],
@@ -547,7 +549,7 @@ class ResearchAgent:
         final_state = self.graph.invoke(initial_state)
         
         final_evidence = dedupe_evidence(final_state["evidence"])
-        final_evidence = cross_encoder_rerank_evidence(question, final_evidence)
+        final_evidence = final_state.get("citation_evidence") or cross_encoder_rerank_evidence(question, final_evidence)
         
         metrics = build_run_metrics(final_state)
         metrics.update(self._latencies)
@@ -656,7 +658,9 @@ class ResearchAgent:
                         uncached_queries.append(q)
             
             if uncached_queries:
-                timeout = aiohttp.ClientTimeout(total=5)
+                session_timeout = float(os.getenv("ARIA_RETRIEVAL_SESSION_TIMEOUT", "10"))
+                provider_timeout = float(os.getenv("ARIA_PROVIDER_TIMEOUT", "6"))
+                timeout = aiohttp.ClientTimeout(total=session_timeout)
                 async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
                     tasks = []
                     task_metadata = []
@@ -669,7 +673,7 @@ class ResearchAgent:
                             wiki_limit = 1
                         elif field_focus == "general":
                             wiki_limit = 3
-                        tasks.append(asyncio.wait_for(async_wikipedia_search(session, q, wiki_limit), 3.5))
+                        tasks.append(asyncio.wait_for(async_wikipedia_search(session, q, wiki_limit), provider_timeout))
                         task_metadata.append((q, "wikipedia"))
 
                         # OpenAlex (cross-disciplinary baseline)
@@ -678,7 +682,7 @@ class ResearchAgent:
                             openalex_limit = 3
                         elif field_focus in {"general", "medical"}:
                             openalex_limit = 1
-                        tasks.append(asyncio.wait_for(async_openalex_search(session, q, openalex_limit), 3.5))
+                        tasks.append(asyncio.wait_for(async_openalex_search(session, q, openalex_limit), provider_timeout))
                         task_metadata.append((q, "openalex"))
 
                         # Arxiv (STEM/CS/Physics)
@@ -688,12 +692,12 @@ class ResearchAgent:
                         elif field_focus in {"medical", "humanities", "general"}:
                             arxiv_limit = 0
                         if arxiv_limit > 0:
-                            tasks.append(asyncio.wait_for(async_arxiv_search(session, q, arxiv_limit), 3.5))
+                            tasks.append(asyncio.wait_for(async_arxiv_search(session, q, arxiv_limit), provider_timeout))
                             task_metadata.append((q, "arxiv"))
 
                         # DuckDuckGo Instant Answer (Definitions)
                         if field_focus in {"general", "all"}:
-                            tasks.append(asyncio.wait_for(async_duckduckgo_instant_answer(session, q), 3.5))
+                            tasks.append(asyncio.wait_for(async_duckduckgo_instant_answer(session, q), provider_timeout))
                             task_metadata.append((q, "duckduckgo"))
 
                         # DuckDuckGo HTML Web Search (General Web)
@@ -703,7 +707,7 @@ class ResearchAgent:
                         elif field_focus in {"medical", "stem", "humanities"}:
                             ddg_limit = 1
                         if ddg_limit > 0:
-                            tasks.append(asyncio.wait_for(async_duckduckgo_search(session, q, ddg_limit), 3.5))
+                            tasks.append(asyncio.wait_for(async_duckduckgo_search(session, q, ddg_limit), provider_timeout))
                             task_metadata.append((q, "duckduckgo_web"))
 
                         # DOAJ (All Open-Access Journals, humanities/general science)
@@ -715,7 +719,7 @@ class ResearchAgent:
                         elif field_focus == "general":
                             doaj_limit = 0
                         if doaj_limit > 0:
-                            tasks.append(asyncio.wait_for(async_doaj_search(session, q, doaj_limit), 3.5))
+                            tasks.append(asyncio.wait_for(async_doaj_search(session, q, doaj_limit), provider_timeout))
                             task_metadata.append((q, "doaj"))
 
                         # PubMed (Biomedical & Medical)
@@ -725,13 +729,30 @@ class ResearchAgent:
                         elif field_focus in {"stem", "humanities", "general"}:
                             pubmed_limit = 0
                         if pubmed_limit > 0:
-                            tasks.append(asyncio.wait_for(async_pubmed_search(session, q, pubmed_limit), 3.5))
+                            tasks.append(asyncio.wait_for(async_pubmed_search(session, q, pubmed_limit), provider_timeout))
                             task_metadata.append((q, "pubmed"))
 
                     results = await asyncio.gather(*tasks, return_exceptions=True)
 
                     for res, (q, provider) in zip(results, task_metadata):
-                        if isinstance(res, Exception) or not res:
+                        if isinstance(res, Exception):
+                            logger.warning(
+                                "Retriever source failed: provider=%s query=%r error_type=%s error=%s",
+                                provider,
+                                q,
+                                type(res).__name__,
+                                res,
+                                exc_info=res,
+                            )
+                            events.append(f"Retriever: {provider} failed for '{q}': {type(res).__name__}: {res}")
+                            continue
+                        if not res:
+                            logger.warning(
+                                "Retriever source returned 0 results: provider=%s query=%r",
+                                provider,
+                                q,
+                            )
+                            events.append(f"Retriever: {provider} returned 0 results for '{q}'")
                             continue
                         for ev in res:
                             ev.query = q
@@ -945,6 +966,7 @@ class ResearchAgent:
         logger.info("[Stage: draft] Synthesizer finished brief generation successfully.")
         return {
             "answer": answer,
+            "citation_evidence": evidence,
             "validation_warning": validation_warning,
             "events": [f"Synthesis: generated research brief (pass {iteration + 1})"]
         }
@@ -955,8 +977,9 @@ class ResearchAgent:
         answer = state["answer"]
         iteration = state["iteration"]
         logger.info(f"[Stage: verify] Running Auditor node (iteration {iteration}) to verify the generated brief.")
-        evidence = dedupe_evidence(state["evidence"])
-        evidence = cross_encoder_rerank_evidence(question, evidence)
+        evidence = state.get("citation_evidence") or dedupe_evidence(state["evidence"])
+        if not state.get("citation_evidence"):
+            evidence = cross_encoder_rerank_evidence(question, evidence)
         
         verification = self._verify(question, answer, evidence, local_only=state.get("local_only", False))
         logger.info(f"[Stage: verify] Auditor verification finished. Result starts with: '{verification[:120]}...'")
@@ -1117,6 +1140,24 @@ class ResearchAgent:
                 "NEW_QUERIES:\n"
                 f"{question} official sources evidence\n"
             )
+
+        if local_only or not (self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key):
+            topic_issues = audit_evidence_topic_overlap(question, evidence)
+            if topic_issues:
+                for issue in topic_issues:
+                    self._log_verification_failure(
+                        question=question,
+                        claim="Evidence Set (Topic Overlap Audit)",
+                        evidence_id="N/A",
+                        mismatch_reason=issue,
+                        confidence=0.25
+                    )
+                return (
+                    "STATUS: NEEDS_MORE_RESEARCH\n"
+                    f"REASON: Fallback topic-overlap audit failed: {'; '.join(topic_issues)}\n"
+                    "NEW_QUERIES:\n"
+                    f"{question} primary source overview\n"
+                )
             
         if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
             system = (
@@ -1155,12 +1196,20 @@ class ResearchAgent:
         )
 
 
-def format_evidence(evidence: list[Evidence], limit: int = 20) -> str:
+def format_evidence(evidence: list[Evidence], limit: int = 20, max_summary_chars: int | None = None) -> str:
     lines = []
+    if max_summary_chars is None:
+        try:
+            max_summary_chars = int(os.getenv("ARIA_EVIDENCE_SNIPPET_CHARS", "800"))
+        except ValueError:
+            max_summary_chars = 800
     for index, item in enumerate(evidence[:limit], start=1):
         source = f" ({item.url})" if item.url else ""
         tier = getattr(item, "trust_tier", "web")
-        lines.append(f"[{index}] {item.title}{source} [Trust Tier: {tier}]\n{item.summary}")
+        summary = item.summary or ""
+        if max_summary_chars > 0 and len(summary) > max_summary_chars:
+            summary = summary[:max_summary_chars].rsplit(" ", 1)[0].rstrip() + " ..."
+        lines.append(f"[{index}] {item.title}{source} [Trust Tier: {tier}]\n{summary}")
     return "\n\n".join(lines)
 
 
@@ -1201,6 +1250,47 @@ def audit_answer_grounding(answer: str, evidence: list[Evidence]) -> list[str]:
         issues.append("draft includes URLs that were not retrieved as evidence")
 
     return issues
+
+
+def audit_evidence_topic_overlap(question: str, evidence: list[Evidence]) -> list[str]:
+    """Lightweight fallback-mode guard against well-cited but off-topic evidence."""
+    if not question or not evidence:
+        return []
+
+    stop_words = {
+        "what", "when", "where", "which", "who", "why", "how", "are", "is",
+        "was", "were", "the", "and", "for", "from", "with", "into", "about",
+        "main", "major", "key", "does", "did", "that", "this", "these", "those",
+        "models", "model", "system", "systems", "use", "used", "using",
+    }
+    query_terms = {
+        term for term in re.findall(r"\b[a-zA-Z][a-zA-Z0-9\-]{2,}\b", question.lower())
+        if term not in stop_words
+    }
+    if not query_terms:
+        return []
+
+    relevant_sources = 0
+    weak_titles: list[str] = []
+    for item in evidence:
+        title_terms = set(re.findall(r"\b[a-zA-Z][a-zA-Z0-9\-]{2,}\b", (item.title or "").lower()))
+        summary_terms = set(re.findall(r"\b[a-zA-Z][a-zA-Z0-9\-]{2,}\b", (item.summary or "").lower()))
+        title_overlap = query_terms & title_terms
+        summary_overlap = query_terms & summary_terms
+
+        if title_overlap or len(summary_overlap) >= max(1, min(2, len(query_terms))):
+            relevant_sources += 1
+        else:
+            weak_titles.append(item.title or "Untitled evidence")
+
+    required_relevant = max(1, (len(evidence) + 1) // 2)
+    if relevant_sources < required_relevant:
+        preview = "; ".join(weak_titles[:3])
+        return [
+            "retrieved evidence appears weakly related to the question "
+            f"({relevant_sources}/{len(evidence)} sources have title/topic overlap; examples: {preview})"
+        ]
+    return []
 
 
 def extract_tickers(text: str) -> list[str]:

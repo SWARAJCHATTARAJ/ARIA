@@ -433,6 +433,7 @@ async def run_research(
                 "question": request.question,
                 "plan": request.custom_plan if request.custom_plan else [],
                 "evidence": previous_evidence,
+                "citation_evidence": [],
                 "answer": "",
                 "verification": "No verification run.",
                 "events": [],
@@ -504,7 +505,12 @@ async def run_research(
                 elif status == "output":
                     for node_name, state_update in val.items():
                         elapsed = time.perf_counter() - node_started_at
-                        final_state = {**final_state, **state_update}
+                        # Accumulate state_update into final_state properly, replicating the graph's reducers
+                        for k, v in state_update.items():
+                            if k in ("evidence", "events") and k in final_state:
+                                final_state[k] = final_state[k] + v
+                            else:
+                                final_state[k] = v
                         mem = get_memory_usage_mb()
                         logger.info(f"Pipeline stage completed: {node_name} in {elapsed:.2f} seconds. Memory: {mem:.2f} MB")
                         yield f"event: stage_complete\ndata: {json.dumps({'stage': node_name, 'elapsed': round(elapsed, 2), 'memory_mb': round(mem, 2), 'events': state_update.get('events', [])})}\n\n"
@@ -512,16 +518,18 @@ async def run_research(
                         last_ping_time = time.perf_counter()
             
             # Post-process final state
-            from aria.agent import dedupe_evidence
+            from aria.agent import cross_encoder_rerank_evidence, dedupe_evidence
             from aria.core import ResearchResult
             
             logger.info("Post-processing final state and generating ResearchResult.")
+            final_evidence = dedupe_evidence(final_state["evidence"])
+            final_evidence = final_state.get("citation_evidence") or cross_encoder_rerank_evidence(final_state["question"], final_evidence)
             result = ResearchResult(
                 question=final_state["question"],
                 plan=final_state["plan"],
                 answer=final_state["answer"],
                 verification=final_state["verification"],
-                evidence=dedupe_evidence(final_state["evidence"]),
+                evidence=final_evidence,
                 events=final_state["events"],
                 history=final_state.get("history", []),
                 validation_warning=final_state.get("validation_warning", False)

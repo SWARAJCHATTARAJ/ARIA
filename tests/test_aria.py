@@ -1,7 +1,11 @@
 import os
+import dotenv
+dotenv.load_dotenv = lambda *args, **kwargs: None
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
-# Isolate unit tests from external Supabase database
+# Isolate unit tests from external Supabase database and OpenRouter API keys
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["DISABLE_HEAVY_MODELS"] = "true"
+os.environ.pop("OPENROUTER_API_KEY", None)
 import unittest
 from aria.core import Settings, MAX_UPLOAD_BYTES, validate_pdf_upload
 from aria.rag import split_text, VectorMemory
