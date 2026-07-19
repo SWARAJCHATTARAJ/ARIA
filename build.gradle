@@ -35,11 +35,8 @@ allprojects {
         google()
         mavenCentral()
     }
-    // Redirect build directory outside OneDrive to prevent sync locking
-    buildDir = "C:/Users/Hp/gradle-builds/${rootProject.name}/${project.name}"
 }
 
 task clean(type: Delete) {
     delete rootProject.buildDir
-    allprojects.each { delete it.buildDir }
 }
