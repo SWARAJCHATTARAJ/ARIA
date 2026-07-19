@@ -114,6 +114,12 @@ def store_cache(question: str, result: ResearchResult) -> None:
     if not question or not result:
         return
 
+    # Never cache a result unless the verifier passed it
+    verification = result.verification or ""
+    if "PASSED" not in verification.upper():
+        print(f"[Info] Skipping query caching because verification status is not PASSED: {verification.splitlines()[0] if verification else 'None'}")
+        return
+
     try:
         # Calculate question embedding and cast to Python float list
         emb_fn = get_embedding_fn()

@@ -168,7 +168,6 @@ async def async_wikipedia_search(session, query: str, max_results: int = 2) -> l
         "gsrsearch": clean_query,
         "gsrlimit": max_results,
         "prop": "extracts|info",
-        "exintro": 1,
         "explaintext": 1,
         "inprop": "url",
     }
@@ -197,7 +196,7 @@ async def async_wikipedia_search(session, query: str, max_results: int = 2) -> l
             evidence.append(
                 Evidence(
                     title=page.get("title", "Wikipedia source"),
-                    summary=extract[:1200],
+                    summary=extract[:2500],
                     url=page.get("fullurl"),
                     source_type="wikipedia",
                     score=0.80,
@@ -276,8 +275,8 @@ async def async_openalex_search(session, query: str, max_results: int = 2) -> li
     for work in works:
         title = work.get("title") or "OpenAlex research source"
         abstract = inverted_abstract(work.get("abstract_inverted_index"))
-        if not abstract:
-            abstract = f"Cited by {work.get('cited_by_count', 0)} works."
+        if not abstract or len(abstract.strip()) < 10:
+            continue
         evidence.append(
             Evidence(
                 title=title,
@@ -426,8 +425,8 @@ async def async_duckduckgo_search(session, query: str, max_results: int = 3) -> 
         snippet_text = re.sub(r'<[^>]+>', '', snippet_text).strip()
         snippet_text = html.unescape(snippet_text)
         
-        if not snippet_text:
-            snippet_text = "No preview available for this search result."
+        if not snippet_text or snippet_text.strip() == "No preview available for this search result.":
+            continue
             
         if "/l/?kh=" in url_found or "uddg=" in url_found:
             url_match_param = re.search(r'uddg=([^&]+)', url_found)
@@ -538,8 +537,10 @@ async def async_doaj_search(session, query: str, max_results: int = 2) -> list[E
     for result in data.get("results", []):
         bibjson = result.get("bibjson", {})
         title = bibjson.get("title") or "DOAJ academic paper"
-        abstract = bibjson.get("abstract") or ""
-        
+        abstract = (bibjson.get("abstract") or "").strip()
+        if not abstract or "no abstract available" in abstract.lower() or len(abstract) < 10:
+            continue
+            
         url_link = None
         links = bibjson.get("link", [])
         if links:
@@ -548,7 +549,7 @@ async def async_doaj_search(session, query: str, max_results: int = 2) -> list[E
         evidence.append(
             Evidence(
                 title=title,
-                summary=abstract[:1200] if abstract else "Abstract not available.",
+                summary=abstract[:1200],
                 url=url_link,
                 source_type="research",
                 score=0.80,
@@ -562,9 +563,10 @@ async def async_doaj_search(session, query: str, max_results: int = 2) -> list[E
 
 
 async def async_pubmed_search(session, query: str, max_results: int = 2) -> list[Evidence]:
-    """Queries NCBI PubMed to retrieve biomedical and life sciences literature."""
+    """Queries NCBI PubMed to retrieve biomedical and life sciences literature with full abstracts."""
     try:
         import aiohttp
+        import xml.etree.ElementTree as ET
         search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         params = {
             "db": "pubmed",
@@ -582,41 +584,68 @@ async def async_pubmed_search(session, query: str, max_results: int = 2) -> list
             return []
             
         ids_str = ",".join(id_list)
-        summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-        params_sum = {
+        fetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+        fetch_params = {
             "db": "pubmed",
             "id": ids_str,
-            "retmode": "json"
+            "retmode": "xml"
         }
-        async with session.get(summary_url, params=params_sum, timeout=aiohttp.ClientTimeout(total=_public_source_timeout())) as sum_response:
-            if sum_response.status != 200:
+        
+        async with session.get(fetch_url, params=fetch_params, timeout=aiohttp.ClientTimeout(total=_public_source_timeout())) as fetch_response:
+            if fetch_response.status != 200:
                 return []
-            summary_data = await sum_response.json()
-            results = summary_data.get("result", {})
+            content = await fetch_response.read()
             
+        root = ET.fromstring(content)
         evidence = []
-        for uid in id_list:
-            paper_info = results.get(uid, {})
-            title = paper_info.get("title") or "PubMed article"
-            source = paper_info.get("source") or "NCBI PubMed"
-            pubdate = paper_info.get("pubdate") or ""
+        for article in root.findall(".//PubmedArticle"):
+            pmid_el = article.find(".//PMID")
+            pmid = pmid_el.text if pmid_el is not None else ""
+            if not pmid:
+                continue
+                
+            title_el = article.find(".//ArticleTitle")
+            title = "".join(title_el.itertext()).strip() if title_el is not None else "PubMed article"
             
-            summary_text = f"Journal: {source}. Publication Date: {pubdate}."
-            authors = [a.get("name") for a in paper_info.get("authors", []) if a.get("name")]
-            if authors:
-                summary_text += f" Authors: {', '.join(authors)}."
+            # Extract journal source
+            journal_el = article.find(".//Journal/Title")
+            source = journal_el.text.strip() if journal_el is not None else "NCBI PubMed"
+            
+            # Extract publication date
+            pubdate_el = article.find(".//JournalIssue/PubDate/Year")
+            pubdate = pubdate_el.text.strip() if pubdate_el is not None else ""
+            if not pubdate:
+                medline_date = article.find(".//JournalIssue/PubDate/MedlineDate")
+                pubdate = medline_date.text.strip() if medline_date is not None else ""
+            
+            # Extract abstract
+            abstract_text_list = []
+            for abstract_el in article.findall(".//AbstractText"):
+                text = "".join(abstract_el.itertext()).strip()
+                if text:
+                    label = abstract_el.get("Label")
+                    if label:
+                        abstract_text_list.append(f"{label}: {text}")
+                    else:
+                        abstract_text_list.append(text)
+            abstract = " ".join(abstract_text_list).strip()
+            
+            # Skip articles that do not have an abstract
+            if not abstract or "no abstract available" in abstract.lower():
+                continue
                 
             evidence.append(
                 Evidence(
                     title=title,
-                    summary=summary_text[:1200],
-                    url=f"https://pubmed.ncbi.nlm.nih.gov/{uid}/",
+                    summary=abstract[:1200],
+                    url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
                     source_type="research",
                     score=0.85,
-                    source_id=f"PMID:{uid}",
+                    source_id=f"PMID:{pmid}",
                     retrieved_via="pubmed_async",
                 )
             )
         return evidence
-    except Exception:
+    except Exception as e:
+        logger.warning(f"PubMed search failed: {e}")
         return []

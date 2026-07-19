@@ -53,6 +53,7 @@ Thumbs.db
 build/
 android.keystore
 keystore.properties
+local.properties
 # app-release-signed.apk
 app-release-unsigned-aligned.apk
 app-release-signed.apk.idsig

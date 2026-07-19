@@ -20,7 +20,7 @@ buildscript {
 
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.9.1'
@@ -33,10 +33,13 @@ buildscript {
 allprojects {
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
+    // Redirect build directory outside OneDrive to prevent sync locking
+    buildDir = "C:/Users/Hp/gradle-builds/${rootProject.name}/${project.name}"
 }
 
 task clean(type: Delete) {
     delete rootProject.buildDir
+    allprojects.each { delete it.buildDir }
 }

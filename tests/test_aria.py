@@ -412,33 +412,47 @@ class LLMClientTests(unittest.TestCase):
         from aria.tools import async_pubmed_search
         
         class MockResponse:
-            def __init__(self, status, json_data):
+            def __init__(self, status, json_data, text_data=b""):
                 self.status = status
                 self.json_data = json_data
+                self.text_data = text_data
             async def json(self):
                 return self.json_data
+            async def read(self):
+                return self.text_data
             async def __aenter__(self):
                 return self
             async def __aexit__(self, exc_type, exc, tb):
                 pass
-
+ 
         class MockSession:
             def get(self, url, params=None, timeout=None):
                 if "esearch" in url:
                     return MockResponse(200, {"esearchresult": {"idlist": ["123456"]}})
                 else:
-                    mock_summary = {
-                        "result": {
-                            "123456": {
-                                "title": "Mock PubMed Title",
-                                "source": "Mock Journal",
-                                "pubdate": "2026",
-                                "authors": [{"name": "Author One"}]
-                            }
-                        }
-                    }
-                    return MockResponse(200, mock_summary)
-
+                    mock_xml = b"""<PubmedArticleSet>
+                        <PubmedArticle>
+                            <MedlineCitation>
+                                <PMID>123456</PMID>
+                                <Article>
+                                    <ArticleTitle>Mock PubMed Title</ArticleTitle>
+                                    <Journal>
+                                        <Title>Mock Journal</Title>
+                                        <JournalIssue>
+                                            <PubDate>
+                                                <Year>2026</Year>
+                                            </PubDate>
+                                        </JournalIssue>
+                                    </Journal>
+                                    <Abstract>
+                                        <AbstractText>Mock Journal abstract text containing Author One.</AbstractText>
+                                    </Abstract>
+                                </Article>
+                            </MedlineCitation>
+                        </PubmedArticle>
+                    </PubmedArticleSet>"""
+                    return MockResponse(200, {}, text_data=mock_xml)
+ 
         session = MockSession()
         loop = asyncio.new_event_loop()
         try:

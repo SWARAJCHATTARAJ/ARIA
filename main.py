@@ -149,7 +149,7 @@ class ResearchRequest(BaseModel):
     use_local: bool = True
     use_web: bool = True
     use_finance: bool = False
-    max_iterations: int = 1
+    max_iterations: int = 2
     custom_plan: list[str] | None = None
     field_focus: str = "all"
     user_id: str | None = None
@@ -424,10 +424,10 @@ async def run_research(
                 except Exception as e:
                     logger.warning(f"Failed to load previous session: {e}", exc_info=True)
             
-            # Limit max_iterations to 2 on free hosting plans to prevent timeouts
-            max_iters = min(request.max_iterations, 2)
-            if request.max_iterations > 2:
-                logger.warning(f"Requested max_iterations {request.max_iterations} capped at 2 to fit within proxy timeouts.")
+            # Limit max_iterations to 3 on free hosting plans to prevent timeouts
+            max_iters = min(request.max_iterations, 3)
+            if request.max_iterations > 3:
+                logger.warning(f"Requested max_iterations {request.max_iterations} capped at 3 to fit within proxy timeouts.")
                     
             initial_state = {
                 "question": request.question,

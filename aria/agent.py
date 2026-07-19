@@ -526,7 +526,7 @@ class ResearchAgent:
         use_web: bool = True,
         use_local: bool = True,
         use_finance: bool = False,
-        max_iterations: int = 1,
+        max_iterations: int = 2,
         field_focus: str = "all",
     ) -> ResearchResult:
         initial_state = {
@@ -1162,9 +1162,13 @@ class ResearchAgent:
         if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
             system = (
                 "You are ARIA's Grounding & Verification Analyst. Your job is to verify if the draft "
-                "research analysis is fully grounded in the retrieved evidence and completely addresses the user's query.\n"
-                "Review the draft report and the evidence carefully. Break down the draft report into individual claims. "
-                "For each claim, assign a confidence score between 0.0 and 1.0 based on how directly the cited evidence supports it "
+                "research brief is fully grounded in the retrieved evidence and completely addresses the user's query.\n"
+                "Review the draft report and the evidence carefully. Break down the draft report into individual claims.\n"
+                "CRITICAL DIRECTIVES:\n"
+                "1. STRICT CONTENT GROUNDING: Judge grounding SOLELY and STRICTLY against the actual summary text of the evidence items. "
+                "NEVER assume or infer that information exists in a source based on its title, source type, or URL. For example, if a source is titled 'Glossary of AI' but its summary text does not explain what AI is, you must treat it as NOT containing a definition of AI.\n"
+                "2. NO EVIDENCE FALLBACK VERIFICATION: If the draft report is a fallback statement indicating that 'no sufficient evidence was found to answer the query', verify whether the retrieved evidence summaries actually contain the factual details needed to answer the question. If the evidence summaries lack the necessary information, then the draft fallback statement is fully correct and grounded. In this case, you MUST set the STATUS to PASSED and assign a confidence of 1.0 to the fallback claim.\n"
+                "3. CONFIDENCE SCORING: For each claim, assign a confidence score between 0.0 and 1.0 based on how directly the cited summary text supports it "
                 "(1.0 = explicitly stated in evidence, 0.5 = partially supported or extrapolated, 0.0 = unsupported or hallucinated).\n"
                 "If the draft contains ANY ungrounded statements or assumptions, or fails to cite sources, you MUST set the STATUS to NEEDS_MORE_RESEARCH.\n"
                 "Output your findings EXACTLY in this format:\n"
@@ -1504,8 +1508,10 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
     model = get_cross_encoder()
     if model is None:
         ranked = re_rank_evidence(query, evidence)
-        filtered = [item for item in ranked if item.score >= 0.35]
-        if not filtered and ranked:
+        filtered = [item for item in ranked if item.score >= 0.20]
+        if len(filtered) < 3 and len(ranked) >= 3:
+            filtered = ranked[:3]
+        elif not filtered and ranked:
             filtered = [ranked[0]]
         return enforce_source_diversity(filtered, max_per_source=2)
         
@@ -1517,16 +1523,20 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
         for item, score in zip(evidence, normalized):
             item.score = round(float(score), 2)
         evidence.sort(key=lambda x: x.score, reverse=True)
-        # Filter results that are only loosely/tangentially related (threshold 0.3)
-        filtered = [item for item in evidence if item.score >= 0.3]
-        if not filtered and evidence:
+        # Filter results that are only loosely/tangentially related (threshold 0.25)
+        filtered = [item for item in evidence if item.score >= 0.25]
+        if len(filtered) < 3 and len(evidence) >= 3:
+            filtered = evidence[:3]
+        elif not filtered and evidence:
             filtered = [evidence[0]]
         return enforce_source_diversity(filtered, max_per_source=2)
     except Exception as e:
         logger.warning(f"CrossEncoder inference failed: {e}. Falling back to token overlap.")
         ranked = re_rank_evidence(query, evidence)
-        filtered = [item for item in ranked if item.score >= 0.35]
-        if not filtered and ranked:
+        filtered = [item for item in ranked if item.score >= 0.20]
+        if len(filtered) < 3 and len(ranked) >= 3:
+            filtered = ranked[:3]
+        elif not filtered and ranked:
             filtered = [ranked[0]]
         return enforce_source_diversity(filtered, max_per_source=2)
 
