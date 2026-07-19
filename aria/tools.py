@@ -255,9 +255,18 @@ async def async_openalex_search(session, query: str, max_results: int = 2) -> li
     raw_body = ""
     status = None
     try:
-        async with session.get("https://api.openalex.org/works", params={"search": clean_query, "per_page": max_results}) as response:
+        api_key = os.getenv("OPENALEX_API_KEY")
+        params = {"search": clean_query, "per_page": max_results}
+        if api_key:
+            params["api_key"] = api_key
+        async with session.get("https://api.openalex.org/works", params=params) as response:
             status = response.status
             data, raw_body = await _read_response_json_and_body(response)
+            
+            # Check for budget error
+            if status in (403, 402, 429) or (isinstance(raw_body, str) and "budget" in raw_body.lower()):
+                logger.error("OpenAlex API credit/budget exhausted. Please configure a valid OPENALEX_API_KEY in your .env or check your account limits at openalex.org.")
+                
             response.raise_for_status()
             works = data.get("results", [])
     except Exception as exc:

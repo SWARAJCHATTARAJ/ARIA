@@ -201,6 +201,7 @@ class LLMClient:
         return self._fallback(user, evidence)
 
     def _openrouter(self, system: str, user: str) -> str:
+        import time
         payload = {
             "model": self.settings.model,
             "messages": [
@@ -209,38 +210,47 @@ class LLMClient:
             ],
             "temperature": 0.2,
         }
-        try:
-            response = self.session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.openrouter_api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:8501",
-                    "X-Title": "ARIA Research Workspace",
-                },
-                json=payload,
-                timeout=60, # Increased timeout to 60s for complex reasoning/pipeline steps
-            )
-            if response.status_code == 429:
-                raise RuntimeError("OpenRouter API rate limit exceeded (HTTP 429). Please wait a moment before retrying, or check your OpenRouter account billing/limits.")
-            elif response.status_code == 401:
-                raise RuntimeError("OpenRouter API unauthorized (HTTP 401). Please check that your API key is correct and valid in your settings.")
-            elif response.status_code == 400:
-                detail = "Bad Request"
-                try:
-                    detail = response.json().get("error", {}).get("message", "Bad Request")
-                except Exception:
-                    pass
-                raise RuntimeError(f"OpenRouter API Bad Request (HTTP 400): {detail}")
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-        except requests.Timeout as e:
-            raise TimeoutError("OpenRouter API request timed out after 60 seconds. The model is taking too long to generate a response.") from e
-        except requests.RequestException as e:
-            raise RuntimeError(f"OpenRouter API connection failed: {e}") from e
-        except (KeyError, IndexError) as e:
-            raise RuntimeError(f"Failed to parse OpenRouter response JSON: {e}") from e
+        max_retries = 3
+        backoff_factor = 2
+        for attempt in range(max_retries + 1):
+            try:
+                response = self.session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.openrouter_api_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:8501",
+                        "X-Title": "ARIA Research Workspace",
+                    },
+                    json=payload,
+                    timeout=60,
+                )
+                if response.status_code == 429:
+                    if attempt < max_retries:
+                        sleep_time = backoff_factor ** (attempt + 1)
+                        logger.warning(f"OpenRouter API rate limit hit (429). Retrying in {sleep_time} seconds (attempt {attempt + 1}/{max_retries})...")
+                        time.sleep(sleep_time)
+                        continue
+                    else:
+                        raise RuntimeError("AI service is temporarily busy, please try again in a moment")
+                elif response.status_code == 401:
+                    raise RuntimeError("OpenRouter API unauthorized (HTTP 401). Please check that your API key is correct and valid in your settings.")
+                elif response.status_code == 400:
+                    detail = "Bad Request"
+                    try:
+                        detail = response.json().get("error", {}).get("message", "Bad Request")
+                    except Exception:
+                        pass
+                    raise RuntimeError(f"OpenRouter API Bad Request (HTTP 400): {detail}")
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+            except requests.Timeout as e:
+                raise TimeoutError("OpenRouter API request timed out after 60 seconds. The model is taking too long to generate a response.") from e
+            except requests.RequestException as e:
+                raise RuntimeError(f"OpenRouter API connection failed: {e}") from e
+            except (KeyError, IndexError) as e:
+                raise RuntimeError(f"Failed to parse OpenRouter response JSON: {e}") from e
 
     def _fallback(self, user: str, evidence: list[Evidence] | None = None) -> str:
         # Check if this is a developer query or if the developer evidence is present
@@ -897,10 +907,18 @@ class ResearchAgent:
         question = state["question"]
         iteration = state["iteration"]
         logger.info(f"[Stage: draft] Running synthesizer (iteration {iteration}) with {len(state.get('evidence', []))} raw evidence items.")
+        is_heavy_disabled = os.getenv("DISABLE_HEAVY_MODELS", "false").lower() == "true"
         evidence = dedupe_evidence(state["evidence"])
-        logger.info(f"[Stage: draft] Deduped evidence count: {len(evidence)}")
+        if is_heavy_disabled:
+            logger.info(f"[Stage: draft] Deduped evidence count: {len(evidence)} (via Jaccard similarity fallback)")
+        else:
+            logger.info(f"[Stage: draft] Deduped evidence count: {len(evidence)}")
+            
         evidence = cross_encoder_rerank_evidence(question, evidence)
-        logger.info(f"[Stage: draft] Reranked evidence count: {len(evidence)}")
+        if is_heavy_disabled:
+            logger.info(f"[Stage: draft] Reranked evidence count: {len(evidence)} (via heuristic token-overlap fallback)")
+        else:
+            logger.info(f"[Stage: draft] Reranked evidence count: {len(evidence)} (via CrossEncoder)")
         history = state.get("history")
         
         # Pydantic model for brief validation
@@ -1187,6 +1205,41 @@ class ResearchAgent:
             )
             llm_verification = self.llm.complete(system, user, task="verify", evidence=evidence, local_only=local_only)
             if llm_verification:
+                # Post-check verification output for the self-contradictory pattern
+                if "STATUS: PASSED" in llm_verification.upper():
+                    lines = llm_verification.splitlines()
+                    parsing = False
+                    for line in lines:
+                        if line.strip().startswith("CLAIMS_CONFIDENCE:"):
+                            parsing = True
+                            continue
+                        if parsing:
+                            if line.strip().startswith("- Claim:"):
+                                parts = line.strip().split("|")
+                                claim = ""
+                                source = ""
+                                for part in parts:
+                                    part = part.strip()
+                                    if part.startswith("- Claim:"):
+                                        claim = part.replace("- Claim:", "").strip()
+                                    elif part.startswith("Cited Source:"):
+                                        source = part.replace("Cited Source:", "").strip()
+                                
+                                is_claim_no_ev = "no sufficient evidence" in claim.lower() or "no evidence found" in claim.lower() or "no evidence was found" in claim.lower()
+                                source_digits = re.findall(r"\d+", source)
+                                if is_claim_no_ev and source_digits:
+                                    logger.warning("Rejecting self-contradictory LLM verification: claim says 'no evidence' but cites sources.")
+                                    llm_verification = (
+                                        "STATUS: NEEDS_MORE_RESEARCH\n"
+                                        "REASON: Self-contradictory verification: claim asserts no evidence was found but cites sources.\n"
+                                        "NEW_QUERIES:\n"
+                                        f"{question} more detail\n"
+                                    )
+                                    break
+                            else:
+                                if line.strip() and not line.strip().startswith("-"):
+                                    parsing = False
+                
                 self._parse_and_log_claims_confidence(question, llm_verification, evidence)
                 return llm_verification
             
@@ -1232,8 +1285,14 @@ def audit_answer_grounding(answer: str, evidence: list[Evidence]) -> list[str]:
     if not clean_answer:
         return ["draft answer is empty"]
 
-    if "no sufficient evidence found to answer the query" in clean_answer.lower():
-        return []
+    is_no_evidence = "no sufficient evidence" in clean_answer.lower() or "no evidence found" in clean_answer.lower() or "no evidence was found" in clean_answer.lower()
+    citations = extract_citation_numbers(clean_answer)
+    if is_no_evidence:
+        if citations:
+            issues.append("draft claims no sufficient evidence was found but includes inline citations")
+            return issues
+        else:
+            return []
 
     citations = extract_citation_numbers(clean_answer)
     if not citations:
