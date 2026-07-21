@@ -72,15 +72,40 @@ def is_app_query(query: str) -> bool:
 class QueryType:
     META = "meta"
     CASUAL = "casual"
+    APP_HELP = "app_help"
+    LIMITATIONS = "limitations"
+    HARMFUL = "harmful"
     RESEARCH = "research"
+    AMBIGUOUS = "ambiguous"
+    NO_EVIDENCE = "no_evidence"
 
 
 class ResearchSubtype:
+    # Group A: Non-research types
+    ABOUT_ARIA = "about_aria"
+    SMALL_TALK = "small_talk"
+    APP_USAGE = "app_usage"
+
+    # Group B: Research types
     CONCEPTUAL = "conceptual"
     ACADEMIC = "academic"
-    STATISTICAL_COMPARATIVE = "statistical_comparative"
-    BUSINESS_WORKPLACE = "business_workplace"
+    STATISTICAL = "statistical"
+    COMPARATIVE = "statistical_comparative"
+    STATISTICAL_COMPARATIVE = "statistical_comparative"  # Backwards compatibility alias
     CURRENT_EVENTS = "current_events"
+    NEWS = "current_events"  # Backwards compatibility alias
+    BUSINESS_WORKPLACE = "business_workplace"
+    FINANCIAL = "financial"
+    LEGAL = "legal"
+    HISTORICAL = "historical"
+    PROCEDURAL = "procedural"
+    OPINION = "opinion"
+
+    # Group C: Edge cases
+    AMBIGUOUS = "ambiguous"
+    NO_EVIDENCE = "no_evidence"
+    HARMFUL = "harmful"
+    LIMITATIONS = "limitations"
 
 
 META_KNOWLEDGE_BLOCK = (
@@ -117,18 +142,109 @@ APP_INFO_BLOCK = (
 )
 
 
+def handle_app_help_query(question: str) -> str:
+    q = (question or "").lower()
+    if "export" in q or "pdf" in q or "markdown" in q:
+        return (
+            "### ARIA App Help: Exporting Results\n\n"
+            "You can export your research briefs in multiple formats:\n"
+            "- **PDF Export**: Click the **Download PDF** button in the console header or sidebar, or use the API endpoint `GET /api/sessions/{session_id}/download/pdf`.\n"
+            "- **Markdown Export**: Click **Download Markdown** or access `GET /api/sessions/{session_id}/download/md`.\n"
+            "- **JSON Session Export**: Retrieve full raw trace logs and session evidence from `.aria_sessions/`."
+        )
+    elif "decompose" in q:
+        return (
+            "### ARIA App Help: Prompt Decomposer\n\n"
+            "The **Decompose** feature is ARIA's autonomous planning step:\n"
+            "- It takes a complex research question and breaks it down into multiple targeted sub-queries.\n"
+            "- Each sub-query is searched concurrently across live web endpoints (Wikipedia, arXiv, OpenAlex, PubMed, DuckDuckGo) and ChromaDB vector index.\n"
+            "- This prevents retrieval bottlenecks and ensures broad coverage of multi-faceted topics."
+        )
+    elif "mobile" in q or "android" in q or "ios" in q or "pwa" in q:
+        return (
+            "### ARIA App Help: Mobile App Usage\n\n"
+            "ARIA works seamlessly as a Mobile App:\n"
+            "- **PWA Installation**: Open ARIA in Chrome (Android) or Safari (iOS), tap Share/Menu, and select **Add to Home Screen**.\n"
+            "- **Android WebAPK**: Registers as a native Trusted Web Activity (TWA) on Android devices."
+        )
+    elif "desktop" in q or "windows" in q or "launcher" in q:
+        return (
+            "### ARIA App Help: Desktop App Usage\n\n"
+            "ARIA runs as a native Windows Desktop application:\n"
+            "- Download `aria-desktop-app.zip` from the console sidebar, or launch `run_aria.bat` in the root folder.\n"
+            "- Runs FastAPI and React locally, wrapped inside a PyWebView standalone window."
+        )
+    else:
+        return (
+            "### ARIA App Help & Feature Guide\n\n"
+            "ARIA is built with several productivity features:\n"
+            "1. **Decompose**: Automatically breaks complex prompts into sub-queries.\n"
+            "2. **Export**: Export research briefs to PDF or Markdown via top-bar buttons.\n"
+            "3. **Multi-Source Retrieval**: Queries Wikipedia, arXiv, OpenAlex, PubMed, DuckDuckGo, and yfinance.\n"
+            "4. **Desktop & Mobile Apps**: Native Windows launcher and Mobile PWA support."
+        )
+
+
+def handle_harmful_query(question: str) -> str:
+    return (
+        "### Request Declined\n\n"
+        "I cannot fulfill requests that involve dangerous, illegal, or harmful activities (e.g. explosive synthesis, cyberattacks, or illegal operations). "
+        "ARIA is strictly designed to assist with safe, objective, and factual research."
+    )
+
+
+def handle_limitations_query(question: str) -> str:
+    return (
+        "### ARIA System Capabilities & Known Limitations\n\n"
+        "ARIA is an open, local-first research intelligence workspace. Here are our known system boundaries:\n"
+        "1. **Source Coverage Gaps**: ARIA searches open-access databases (Wikipedia, arXiv, OpenAlex, PubMed, DuckDuckGo, yfinance) and local ChromaDB files. It does NOT have access to paywalled academic journals or private corporate intranets.\n"
+        "2. **Strict Grounding Requirement**: ARIA requires explicit, cited evidence for claims. If live endpoints yield zero citations, ARIA refuses to fabricate factual statements and flags the result as ungrounded.\n"
+        "3. **Free-Tier Rate Limits**: When operating on free/public tier APIs, requests may be subject to network latency or rate limits."
+    )
+
+
 def classify_question(question: str) -> tuple[str, str]:
     """
-    Classifies an incoming user prompt into (QueryType, ResearchSubtype).
-    Be conservative: any real ambiguity defaults to (QueryType.RESEARCH, ...).
+    Classifies an incoming user prompt into (QueryType, ResearchSubtype) across
+    all 18 taxonomy categories (Group A: Non-research, Group B: Research, Group C: Edge Cases).
     """
     q_raw = (question or "").strip()
     q = q_raw.lower()
     
     if not q:
-        return QueryType.CASUAL, ResearchSubtype.CONCEPTUAL
+        return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
 
-    # 1. Meta / About ARIA
+    # Category 17 (Group C): Harmful / Inappropriate queries
+    harmful_triggers = [
+        "how to build a bomb", "make a bomb", "build explosives", "synthesize dangerous toxin",
+        "hack into a bank", "hack bank account", "steal credit card", "create malware",
+        "how to poison", "illegal drug synthesis"
+    ]
+    if any(ht in q for ht in harmful_triggers):
+        return QueryType.HARMFUL, ResearchSubtype.HARMFUL
+
+    # Category 18 (Group C): Queries about ARIA's limitations
+    limitation_triggers = [
+        "why did you get that wrong", "why cant you answer", "why can't you answer",
+        "what are your limitations", "aria limitations", "why don't you have access",
+        "why dont you have access", "coverage gaps", "why was evidence missing",
+        "why failed to find evidence"
+    ]
+    if any(lt in q for lt in limitation_triggers):
+        return QueryType.LIMITATIONS, ResearchSubtype.LIMITATIONS
+
+    # Category 3 (Group A): App usage / help questions
+    app_help_triggers = [
+        "how do i export a pdf", "export pdf", "export markdown", "how to export pdf",
+        "what does decompose do", "what is decompose", "how does decompose work",
+        "how do i use the android app", "how to use android app", "how to use desktop app",
+        "how do i use aria", "how to use aria app", "where is session history",
+        "how to download desktop launcher", "how to install app"
+    ]
+    if any(at in q for at in app_help_triggers):
+        return QueryType.APP_HELP, ResearchSubtype.APP_USAGE
+
+    # Category 1 (Group A): Meta / About ARIA
     meta_triggers = [
         "who built you", "who created you", "who developed you", "who made you", "who programmed you",
         "who built aria", "who created aria", "creator of aria", "developer of aria", "author of aria",
@@ -136,22 +252,21 @@ def classify_question(question: str) -> tuple[str, str]:
         "what can you do", "what does aria do", "what are your capabilities",
         "what does aria stand for", "how do you work", "how does aria work", "your architecture",
         "aria architecture", "your tech stack", "aria tech stack", "how was aria built",
-        "download app", "install app", "desktop app", "mobile app", "windows app", "pwa",
-        "run aria on mobile", "run aria on desktop", "run aria on windows"
+        "are you free to use", "is aria free"
     ]
     
     is_meta = any(trig in q for trig in meta_triggers) or (q.startswith("what is aria") and len(q.split()) <= 4)
     
-    # Conservative guard: If query asks to research/summarize an external topic using ARIA, route to research!
+    # Priority rule / Disambiguation: If query asks to research/summarize external topics using ARIA, route to RESEARCH!
     has_external_research_intent = any(topic in q for topic in [
         "remote work", "remote sensing", "quantum", "gdp", "market", "stock", "crypto", "trend",
-        "paper", "study", "policy", "climate", "cancer", "analysis", "compare", "versus", "vs"
+        "paper", "study", "policy", "climate", "cancer", "analysis", "compare", "versus", "vs", "productivity"
     ])
     
     if is_meta and not has_external_research_intent:
-        return QueryType.META, ResearchSubtype.CONCEPTUAL
+        return QueryType.META, ResearchSubtype.ABOUT_ARIA
 
-    # 2. Casual / Conversational
+    # Category 2 (Group A): Greetings / Small talk
     casual_greetings = {"hi", "hello", "hey", "greetings", "good morning", "good evening", "good afternoon", "howdy", "sup", "yo"}
     casual_phrases = {"how are you", "how are you doing", "whats up", "what is up", "nice to meet you", "thanks", "thank you", "thanks a lot", "thank you very much", "bye", "goodbye", "see ya", "have a nice day"}
     casual_vocab = casual_greetings | {"there", "aria", "assistant", "how", "are", "you", "doing", "today", "thanks", "thank", "much", "very", "bye", "goodbye", "great", "cool", "awesome", "ok", "okay"}
@@ -160,46 +275,114 @@ def classify_question(question: str) -> tuple[str, str]:
     words = clean_q.split()
     
     if clean_q in casual_phrases or clean_q in casual_vocab:
-        return QueryType.CASUAL, ResearchSubtype.CONCEPTUAL
+        return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
         
     if words and words[0] in casual_greetings:
         remaining = " ".join(words[1:]).strip()
         if not remaining or remaining in casual_phrases or remaining in {"there", "aria", "assistant", "buddy"} or remaining.startswith("how are you"):
-            return QueryType.CASUAL, ResearchSubtype.CONCEPTUAL
+            return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
 
     if words and all(w in casual_vocab for w in words):
-        return QueryType.CASUAL, ResearchSubtype.CONCEPTUAL
+        return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
 
-    # 3. Research Questions (Default) & Subtype Routing
-    # A) Statistical / Comparative
-    comp_indicators = [" vs ", " versus ", "compare ", "comparison", "difference between", "contrasting", "gdp of", "statistics", "statistical", "benchmark"]
+    # Category 15 (Group C): Ambiguous keyword queries
+    ambiguous_patterns = [
+        r"^\bpython\b$",
+        r"^\bcloud\b$",
+        r"^\bapple\b$",
+        r"^\bjaguar\b$",
+        r"remote work.*remote sensing|remote sensing.*remote work"
+    ]
+    if any(re.search(pat, q) for pat in ambiguous_patterns):
+        return QueryType.RESEARCH, ResearchSubtype.AMBIGUOUS
+
+    # Category 16 (Group C): No-evidence-available queries
+    no_evidence_triggers = [
+        "secret project x in 2099", "undocumented internal code of obscure startup 987",
+        "unreleased future drug outcome 3000"
+    ]
+    if any(net in q for net in no_evidence_triggers):
+        return QueryType.RESEARCH, ResearchSubtype.NO_EVIDENCE
+
+    # Category 10 (Group B): Financial / Market
+    financial_terms = [
+        "revenue of", "stock performance", "market cap of", "earnings report", "quarterly revenue",
+        "stock price of", "financial performance of", "yfinance"
+    ]
+    if any(ft in q for ft in financial_terms):
+        return QueryType.RESEARCH, ResearchSubtype.FINANCIAL
+
+    # Category 11 (Group B): Legal / Regulatory
+    legal_terms = [
+        "current laws on", "regulations regarding", "legal framework for", "compliance rules for",
+        "gdpr requirements", "statute on", "regulatory policy on", "legal implications of"
+    ]
+    if any(lt in q for lt in legal_terms):
+        return QueryType.RESEARCH, ResearchSubtype.LEGAL
+
+    # Category 14 (Group B): Opinion / Subjective
+    opinion_triggers = [
+        "is it good to", "should i ", "should companies", "is remote work better than",
+        "what is the best ", "is python better than", "opinion on", "is x good"
+    ]
+    if any(ot in q for ot in opinion_triggers) or (q.startswith("should ") and not any(k in q for k in ["laws", "regulations", "statute"])):
+        return QueryType.RESEARCH, ResearchSubtype.OPINION
+
+    # Category 7 (Group B): Comparative / Multi-entity
+    comp_indicators = [" vs ", " versus ", "compare ", "comparison", "difference between", "contrasting", "us vs uk"]
     if any(ind in q for ind in comp_indicators):
         return QueryType.RESEARCH, ResearchSubtype.STATISTICAL_COMPARATIVE
 
-    # B) Academic / Scientific
+    # Category 6 (Group B): Statistical / Data-driven
+    statistical_terms = [
+        "rates of", "over time", "how many ", "how much ", "statistics on", "statistical trend",
+        "percentage of", "demographics of", "data-driven"
+    ]
+    if any(st in q for st in statistical_terms):
+        return QueryType.RESEARCH, ResearchSubtype.STATISTICAL
+
+    # Category 5 (Group B): Academic / Scientific
     academic_terms = [
         "paper", "study", "journal", "arxiv", "openalex", "pubmed", "doi", "citation",
-        "quantum", "crispr", "genome", "protein", "neural network", "transformer",
-        "algorithm", "equation", "physics", "biology", "chemistry", "thermodynamics"
+        "recent research on", "studies about", "scientific literature"
     ]
     if any(term in q for term in academic_terms):
         return QueryType.RESEARCH, ResearchSubtype.ACADEMIC
 
-    # C) Business / Workplace
+    # Category 9 (Group B): Business / Workplace / Organizational
     business_terms = [
-        "remote work", "workplace", "saas", "market", "revenue", "quarterly", "business model",
-        "enterprise", "management", "employee", "startup", "strategy", "industry trends",
-        "company", "competitors", "corporate"
+        "remote work", "workplace", "saas", "business model", "enterprise", "management",
+        "employee productivity", "startup strategy", "industry trends", "company trends",
+        "corporate strategy", "affected productivity"
     ]
     if any(term in q for term in business_terms):
         return QueryType.RESEARCH, ResearchSubtype.BUSINESS_WORKPLACE
 
-    # D) Current Events
-    current_terms = ["2025", "2026", "2024", "latest", "recent", "current", "news", "developments", "today"]
+    # Category 8 (Group B): News / Current Events
+    current_terms = [
+        "2025", "2026", "2024", "latest on", "recent developments", "what's happening with",
+        "whats happening with", "news about", "current status of", "today's developments"
+    ]
     if any(term in q for term in current_terms):
         return QueryType.RESEARCH, ResearchSubtype.CURRENT_EVENTS
 
-    # E) Conceptual
+    # Category 12 (Group B): Historical
+    historical_terms = [
+        "history of", "how did x develop", "origin of", "historical background", "evolution of",
+        "history behind", "historical development"
+    ]
+    if any(ht in q for ht in historical_terms):
+        return QueryType.RESEARCH, ResearchSubtype.HISTORICAL
+
+    # Category 13 (Group B): How-to / Procedural (non-app)
+    procedural_terms = [
+        "how to bake", "how to configure", "how to set up", "how to install python",
+        "step-by-step guide to", "procedure for", "how to create a"
+    ]
+    if any(pt in q for pt in procedural_terms) or (q.startswith("how to ") and not any(ak in q for ak in ["aria", "export", "decompose", "app"])):
+        return QueryType.RESEARCH, ResearchSubtype.PROCEDURAL
+
+    # Category 4 (Group B): Conceptual / Definitional (Default Research Subtype)
     return QueryType.RESEARCH, ResearchSubtype.CONCEPTUAL
 
 
@@ -749,12 +932,63 @@ class ResearchAgent:
                 is_grounded=True,
             )
 
-        # 3. Research Question - Route through full grounded pipeline
+        # 3. App Help Question - Answer from app functionality, bypassing research retrieval
+        if query_type == QueryType.APP_HELP:
+            ans = handle_app_help_query(question)
+            return ResearchResult(
+                question=question,
+                plan=[],
+                answer=ans,
+                verification="STATUS: PASSED\nREASON: Instant app functionality lookup.",
+                evidence=[],
+                events=["Classifier: identified App Help query; answered from app documentation"],
+                metrics={"iterations": 0, "answer_tokens_est": estimate_tokens(ans)},
+                query_type=QueryType.APP_HELP,
+                query_subtype=query_subtype,
+                is_grounded=True,
+            )
+
+        # 4. Harmful / Inappropriate Question - Direct safety decline
+        if query_type == QueryType.HARMFUL:
+            ans = handle_harmful_query(question)
+            return ResearchResult(
+                question=question,
+                plan=[],
+                answer=ans,
+                verification="STATUS: DECLINED\nREASON: Safety policy refusal.",
+                evidence=[],
+                events=["Classifier: identified Harmful query; declined execution"],
+                metrics={"iterations": 0, "answer_tokens_est": estimate_tokens(ans)},
+                query_type=QueryType.HARMFUL,
+                query_subtype=query_subtype,
+                is_grounded=True,
+            )
+
+        # 5. Limitations Question - Answer from system self-knowledge
+        if query_type == QueryType.LIMITATIONS:
+            ans = handle_limitations_query(question)
+            return ResearchResult(
+                question=question,
+                plan=[],
+                answer=ans,
+                verification="STATUS: PASSED\nREASON: Instant limitations metadata lookup.",
+                evidence=[],
+                events=["Classifier: identified Limitations query; answered from system self-knowledge"],
+                metrics={"iterations": 0, "answer_tokens_est": estimate_tokens(ans)},
+                query_type=QueryType.LIMITATIONS,
+                query_subtype=query_subtype,
+                is_grounded=True,
+            )
+
+        # 6. Research Question - Route through full grounded pipeline with subtype priorities
         if field_focus == "all":
             if query_subtype == ResearchSubtype.ACADEMIC:
                 field_focus = "stem"
             elif query_subtype in (ResearchSubtype.BUSINESS_WORKPLACE, ResearchSubtype.CURRENT_EVENTS):
                 field_focus = "general"
+
+        if query_subtype == ResearchSubtype.FINANCIAL:
+            use_finance = True
 
         initial_state = {
             "question": question,

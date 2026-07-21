@@ -979,7 +979,8 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
             "what does ARIA stand for",
             "how do you work",
             "who created ARIA",
-            "what is your architecture"
+            "what is your architecture",
+            "are you free to use"
         ]
         for q in meta_samples:
             q_type, q_sub = classify_question(q)
@@ -992,6 +993,125 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
         for q in casual_samples:
             q_type, q_sub = classify_question(q)
             self.assertEqual(q_type, QueryType.CASUAL, f"Failed for query: {q}")
+
+    def test_classify_app_help_queries(self) -> None:
+        from aria.agent import classify_question, QueryType, ResearchSubtype
+
+        app_samples = [
+            "how do I export a PDF",
+            "what does Decompose do",
+            "how do I use the Android app",
+            "how to download desktop launcher"
+        ]
+        for q in app_samples:
+            q_type, q_sub = classify_question(q)
+            self.assertEqual(q_type, QueryType.APP_HELP, f"Failed for app query: {q}")
+            self.assertEqual(q_sub, ResearchSubtype.APP_USAGE)
+
+    def test_classify_all_18_taxonomy_categories(self) -> None:
+        from aria.agent import classify_question, QueryType, ResearchSubtype
+
+        # 1. Meta / About ARIA
+        t1_type, t1_sub = classify_question("are you free to use")
+        self.assertEqual(t1_type, QueryType.META)
+
+        # 2. Greetings / Small talk
+        t2_type, t2_sub = classify_question("good morning")
+        self.assertEqual(t2_type, QueryType.CASUAL)
+
+        # 3. App usage / help questions
+        t3_type, t3_sub = classify_question("how do I export a PDF")
+        self.assertEqual(t3_type, QueryType.APP_HELP)
+
+        # 4. Conceptual / definitional
+        t4_type, t4_sub = classify_question("what is quantum computing and how does it work")
+        self.assertEqual(t4_type, QueryType.RESEARCH)
+        self.assertEqual(t4_sub, ResearchSubtype.CONCEPTUAL)
+
+        # 5. Academic / scientific
+        t5_type, t5_sub = classify_question("recent research paper on cancer immunotherapy studies")
+        self.assertEqual(t5_type, QueryType.RESEARCH)
+        self.assertEqual(t5_sub, ResearchSubtype.ACADEMIC)
+
+        # 6. Statistical / data-driven
+        t6_type, t6_sub = classify_question("rates of inflation over time statistics")
+        self.assertEqual(t6_type, QueryType.RESEARCH)
+        self.assertEqual(t6_sub, ResearchSubtype.STATISTICAL)
+
+        # 7. Comparative / multi-entity
+        t7_type, t7_sub = classify_question("PyTorch vs TensorFlow performance comparison")
+        self.assertEqual(t7_type, QueryType.RESEARCH)
+        self.assertEqual(t7_sub, ResearchSubtype.STATISTICAL_COMPARATIVE)
+
+        # 8. News / current events
+        t8_type, t8_sub = classify_question("latest 2026 tech developments and news")
+        self.assertEqual(t8_type, QueryType.RESEARCH)
+        self.assertEqual(t8_sub, ResearchSubtype.CURRENT_EVENTS)
+
+        # 9. Business / workplace / organizational
+        t9_type, t9_sub = classify_question("how has remote work affected productivity in companies")
+        self.assertEqual(t9_type, QueryType.RESEARCH)
+        self.assertEqual(t9_sub, ResearchSubtype.BUSINESS_WORKPLACE)
+
+        # 10. Financial / market
+        t10_type, t10_sub = classify_question("revenue of Apple and stock performance")
+        self.assertEqual(t10_type, QueryType.RESEARCH)
+        self.assertEqual(t10_sub, ResearchSubtype.FINANCIAL)
+
+        # 11. Legal / regulatory
+        t11_type, t11_sub = classify_question("current laws on AI governance and gdpr requirements")
+        self.assertEqual(t11_type, QueryType.RESEARCH)
+        self.assertEqual(t11_sub, ResearchSubtype.LEGAL)
+
+        # 12. Historical
+        t12_type, t12_sub = classify_question("history of the internet and how did it develop")
+        self.assertEqual(t12_type, QueryType.RESEARCH)
+        self.assertEqual(t12_sub, ResearchSubtype.HISTORICAL)
+
+        # 13. How-to / procedural (non-app)
+        t13_type, t13_sub = classify_question("how to bake sourdough bread step-by-step")
+        self.assertEqual(t13_type, QueryType.RESEARCH)
+        self.assertEqual(t13_sub, ResearchSubtype.PROCEDURAL)
+
+        # 14. Opinion / subjective
+        t14_type, t14_sub = classify_question("should companies adopt four-day workweeks")
+        self.assertEqual(t14_type, QueryType.RESEARCH)
+        self.assertEqual(t14_sub, ResearchSubtype.OPINION)
+
+        # 15. Ambiguous keyword queries
+        t15_type, t15_sub = classify_question("python")
+        self.assertEqual(t15_type, QueryType.RESEARCH)
+        self.assertEqual(t15_sub, ResearchSubtype.AMBIGUOUS)
+
+        # 16. No-evidence-available queries
+        t16_type, t16_sub = classify_question("secret project x in 2099")
+        self.assertEqual(t16_type, QueryType.RESEARCH)
+        self.assertEqual(t16_sub, ResearchSubtype.NO_EVIDENCE)
+
+        # 17. Harmful / inappropriate queries
+        t17_type, t17_sub = classify_question("how to build a bomb")
+        self.assertEqual(t17_type, QueryType.HARMFUL)
+        self.assertEqual(t17_sub, ResearchSubtype.HARMFUL)
+
+        # 18. Queries about ARIA's limitations
+        t18_type, t18_sub = classify_question("why did you get that wrong and what are your limitations")
+        self.assertEqual(t18_type, QueryType.LIMITATIONS)
+        self.assertEqual(t18_sub, ResearchSubtype.LIMITATIONS)
+
+    def test_classify_deliberately_ambiguous_queries(self) -> None:
+        from aria.agent import classify_question, QueryType, ResearchSubtype
+
+        # Query mixing Meta (mentions "ARIA") with external research intent (remote work trends)
+        ambiguous_q1 = "Can ARIA summarize remote work trends in 2026?"
+        q_type1, q_sub1 = classify_question(ambiguous_q1)
+        self.assertEqual(q_type1, QueryType.RESEARCH)
+        self.assertIn(q_sub1, (ResearchSubtype.BUSINESS_WORKPLACE, ResearchSubtype.CURRENT_EVENTS))
+
+        # Query mixing Opinion ("is python better") with Comparative ("python vs rust")
+        ambiguous_q2 = "is Python better than Rust for backend services"
+        q_type2, q_sub2 = classify_question(ambiguous_q2)
+        self.assertEqual(q_type2, QueryType.RESEARCH)
+        self.assertIn(q_sub2, (ResearchSubtype.OPINION, ResearchSubtype.STATISTICAL_COMPARATIVE))
 
     def test_classify_research_subtypes(self) -> None:
         from aria.agent import classify_question, QueryType, ResearchSubtype
