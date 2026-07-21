@@ -69,23 +69,164 @@ def is_app_query(query: str) -> bool:
     ]
     return any(k in q for k in keywords)
 
-APP_INFO_EVIDENCE = Evidence(
-    title="Official App Documentation: Mobile & Windows App Installation",
-    summary=(
-        "ARIA supports running as a standalone Windows Desktop application and a Mobile Progressive Web App (PWA):\n"
-        "1. Windows Desktop App: Download the standalone desktop launcher ('aria-desktop-app.zip') from "
-        "the sidebar in the ARIA console. The desktop app runs the FastAPI backend and React frontend locally, "
-        "wrapped in a native PyWebView desktop window wrapper controlled by 'desktop_app.py'.\n"
-        "2. Mobile App (Android & iOS): ARIA is fully responsive and optimized to run as a PWA. Open the ARIA "
-        "console URL in Google Chrome (Android) or Safari (iOS), open the browser menu/share settings, "
-        "and select 'Add to Home Screen'. Android registers it as a native WebAPK."
-    ),
-    source_type="system",
-    url="http://localhost:8000",
-    score=1.0,
-    source_id="app_downloads",
-    retrieved_via="system_database"
+class QueryType:
+    META = "meta"
+    CASUAL = "casual"
+    RESEARCH = "research"
+
+
+class ResearchSubtype:
+    CONCEPTUAL = "conceptual"
+    ACADEMIC = "academic"
+    STATISTICAL_COMPARATIVE = "statistical_comparative"
+    BUSINESS_WORKPLACE = "business_workplace"
+    CURRENT_EVENTS = "current_events"
+
+
+META_KNOWLEDGE_BLOCK = (
+    "### About ARIA (Autonomous Research Intelligence Analyst)\n\n"
+    "**ARIA** is an autonomous, local-first research intelligence workspace created and built by **Swaraj Chattaraj**.\n\n"
+    "#### 👤 Creator & Principal Developer\n"
+    "- **Developer & Principal Architect**: Swaraj Chattaraj\n"
+    "- **Specialization**: AI/LLM Engineering, Multi-Agent Systems, Information Retrieval (RAG), Full-Stack Systems\n"
+    "- **Contact & Links**: [GitHub Profile](https://github.com/SWARAJCHATTARAJ) | [ARIA Repository](https://github.com/SWARAJCHATTARAJ/ARIA) | Email: swarajchattaraj17402@gmail.com\n\n"
+    "#### 🚀 System Capabilities & Core Purpose\n"
+    "ARIA moves beyond basic single-turn RAG chat boxes by executing an autonomous research loop that:\n"
+    "1. **Deconstructs** research prompts into targeted sub-queries.\n"
+    "2. **Queries Live & Local Sources** concurrently (Wikipedia, arXiv, OpenAlex, PubMed, DuckDuckGo, and ChromaDB vector index).\n"
+    "3. **Synthesizes** structured briefs with inline bracketed citations `[1]`.\n"
+    "4. **Audits Claims** via a self-correction Auditor node that verifies groundedness against raw source text.\n\n"
+    "#### 🛠️ Architecture & Tech Stack\n"
+    "- **Orchestration**: LangGraph & LangChain Core state machines\n"
+    "- **Backend & API**: Python 3.9+, FastAPI, Uvicorn, asyncio/aiohttp\n"
+    "- **Storage**: ChromaDB (Vector Index) & Local JSON Session Persistence (`.aria_sessions/`)\n"
+    "- **UI Deployments**: React/Tailwind Console, Streamlit App, PyWebView Desktop Client, and Mobile PWA/TWA"
 )
+
+
+APP_INFO_BLOCK = (
+    "### ARIA App Download & Installation Guide\n\n"
+    "ARIA supports running as a standalone Windows Desktop application and a Mobile Progressive Web App (PWA):\n\n"
+    "#### 💻 Windows Desktop Application\n"
+    "- **Launcher Download**: Download the standalone desktop launcher (`aria-desktop-app.zip`) from the **App & Icon Downloads** section in the ARIA console sidebar.\n"
+    "- **Architecture**: Runs the FastAPI backend and React frontend locally, wrapped in a native PyWebView window via `desktop_app.py`.\n"
+    "- **Manual Launch**: Execute `run_aria.bat` in the root directory.\n\n"
+    "#### 📱 Mobile App (Android & iOS)\n"
+    "- **Progressive Web App (PWA)**: Open the ARIA web console URL in Chrome (Android) or Safari (iOS), tap the menu/share button, and select **Add to Home Screen**.\n"
+    "- **Android TWA**: Automatically registers and installs as a native WebAPK on Android."
+)
+
+
+def classify_question(question: str) -> tuple[str, str]:
+    """
+    Classifies an incoming user prompt into (QueryType, ResearchSubtype).
+    Be conservative: any real ambiguity defaults to (QueryType.RESEARCH, ...).
+    """
+    q_raw = (question or "").strip()
+    q = q_raw.lower()
+    
+    if not q:
+        return QueryType.CASUAL, ResearchSubtype.CONCEPTUAL
+
+    # 1. Meta / About ARIA
+    meta_triggers = [
+        "who built you", "who created you", "who developed you", "who made you", "who programmed you",
+        "who built aria", "who created aria", "creator of aria", "developer of aria", "author of aria",
+        "who is swaraj", "swaraj chattaraj",
+        "what can you do", "what does aria do", "what are your capabilities",
+        "what does aria stand for", "how do you work", "how does aria work", "your architecture",
+        "aria architecture", "your tech stack", "aria tech stack", "how was aria built",
+        "download app", "install app", "desktop app", "mobile app", "windows app", "pwa",
+        "run aria on mobile", "run aria on desktop", "run aria on windows"
+    ]
+    
+    is_meta = any(trig in q for trig in meta_triggers) or (q.startswith("what is aria") and len(q.split()) <= 4)
+    
+    # Conservative guard: If query asks to research/summarize an external topic using ARIA, route to research!
+    has_external_research_intent = any(topic in q for topic in [
+        "remote work", "remote sensing", "quantum", "gdp", "market", "stock", "crypto", "trend",
+        "paper", "study", "policy", "climate", "cancer", "analysis", "compare", "versus", "vs"
+    ])
+    
+    if is_meta and not has_external_research_intent:
+        return QueryType.META, ResearchSubtype.CONCEPTUAL
+
+    # 2. Casual / Conversational
+    casual_greetings = {"hi", "hello", "hey", "greetings", "good morning", "good evening", "good afternoon", "howdy", "sup", "yo"}
+    casual_phrases = {"how are you", "how are you doing", "whats up", "what is up", "nice to meet you", "thanks", "thank you", "thanks a lot", "thank you very much", "bye", "goodbye", "see ya", "have a nice day"}
+    casual_vocab = casual_greetings | {"there", "aria", "assistant", "how", "are", "you", "doing", "today", "thanks", "thank", "much", "very", "bye", "goodbye", "great", "cool", "awesome", "ok", "okay"}
+
+    clean_q = re.sub(r"[^\w\s]", "", q).strip()
+    words = clean_q.split()
+    
+    if clean_q in casual_phrases or clean_q in casual_vocab:
+        return QueryType.CASUAL, ResearchSubtype.CONCEPTUAL
+        
+    if words and words[0] in casual_greetings:
+        remaining = " ".join(words[1:]).strip()
+        if not remaining or remaining in casual_phrases or remaining in {"there", "aria", "assistant", "buddy"} or remaining.startswith("how are you"):
+            return QueryType.CASUAL, ResearchSubtype.CONCEPTUAL
+
+    if words and all(w in casual_vocab for w in words):
+        return QueryType.CASUAL, ResearchSubtype.CONCEPTUAL
+
+    # 3. Research Questions (Default) & Subtype Routing
+    # A) Statistical / Comparative
+    comp_indicators = [" vs ", " versus ", "compare ", "comparison", "difference between", "contrasting", "gdp of", "statistics", "statistical", "benchmark"]
+    if any(ind in q for ind in comp_indicators):
+        return QueryType.RESEARCH, ResearchSubtype.STATISTICAL_COMPARATIVE
+
+    # B) Academic / Scientific
+    academic_terms = [
+        "paper", "study", "journal", "arxiv", "openalex", "pubmed", "doi", "citation",
+        "quantum", "crispr", "genome", "protein", "neural network", "transformer",
+        "algorithm", "equation", "physics", "biology", "chemistry", "thermodynamics"
+    ]
+    if any(term in q for term in academic_terms):
+        return QueryType.RESEARCH, ResearchSubtype.ACADEMIC
+
+    # C) Business / Workplace
+    business_terms = [
+        "remote work", "workplace", "saas", "market", "revenue", "quarterly", "business model",
+        "enterprise", "management", "employee", "startup", "strategy", "industry trends",
+        "company", "competitors", "corporate"
+    ]
+    if any(term in q for term in business_terms):
+        return QueryType.RESEARCH, ResearchSubtype.BUSINESS_WORKPLACE
+
+    # D) Current Events
+    current_terms = ["2025", "2026", "2024", "latest", "recent", "current", "news", "developments", "today"]
+    if any(term in q for term in current_terms):
+        return QueryType.RESEARCH, ResearchSubtype.CURRENT_EVENTS
+
+    # E) Conceptual
+    return QueryType.RESEARCH, ResearchSubtype.CONCEPTUAL
+
+
+def handle_casual_query(question: str, llm: LLMClient) -> str:
+    system = (
+        "You are ARIA, a friendly and intelligent assistant. "
+        "Answer the user's greeting or casual comment directly, politely, and briefly in 1-2 sentences. "
+        "Do NOT format as a research brief, do NOT add section headers, bullet lists, or citation markers."
+    )
+    user = f"User message: {question}"
+    if llm and llm.openrouter_api_key and llm.settings.llm_provider == "openrouter":
+        try:
+            reply = llm.complete(system, user, task="casual")
+            if reply and not reply.startswith("### Executive Brief"):
+                return reply.strip()
+        except Exception:
+            pass
+            
+    q_lower = (question or "").lower()
+    if any(w in q_lower for w in ["hi", "hello", "hey"]):
+        return "Hello! How can I assist you with your research or questions today?"
+    elif any(w in q_lower for w in ["thanks", "thank"]):
+        return "You're very welcome! Let me know if you have any more questions."
+    elif "how are you" in q_lower:
+        return "I'm doing great and ready to assist you! What research topic would you like to explore today?"
+    else:
+        return "Hello! I'm ARIA, ready to help answer your questions or perform research whenever you need."
 
 
 class AgentState(TypedDict):
@@ -530,6 +671,24 @@ class ResearchAgent:
         
         self.graph = workflow.compile()
 
+    def _generate_ungrounded_fallback(self, question: str) -> str:
+        system = (
+            "You are ARIA. Answer the user's question using your general pre-trained knowledge base.\n"
+            "CRITICAL INSTRUCTIONS:\n"
+            "- Do NOT include inline citation numbers like [1], [2].\n"
+            "- Do NOT format as a verified evidence report.\n"
+            "- State the key information clearly, concisely, and objectively."
+        )
+        user = f"Question: {question}"
+        if self.llm and self.llm.openrouter_api_key and self.settings.llm_provider == "openrouter":
+            try:
+                res = self.llm.complete(system, user, task="ungrounded_fallback")
+                if res:
+                    return res.strip()
+            except Exception:
+                pass
+        return f"Based on general knowledge: '{question}' touches on general concepts. Please verify specific details independently."
+
     def run(
         self,
         question: str,
@@ -538,7 +697,65 @@ class ResearchAgent:
         use_finance: bool = False,
         max_iterations: int = 2,
         field_focus: str = "all",
+        allow_ungrounded_fallback: bool = False,
     ) -> ResearchResult:
+        query_type, query_subtype = classify_question(question)
+        
+        # 1. Meta / About ARIA Question - Instant response from system knowledge block
+        if query_type == QueryType.META:
+            if is_app_query(question):
+                ans = APP_INFO_BLOCK
+            elif is_developer_query(question):
+                ans = (
+                    "### Executive Brief: ARIA Creator & Developer\n\n"
+                    "**ARIA (Autonomous Research Intelligence Analyst)** was created and built by **Swaraj Chattaraj**.\n\n"
+                    "#### Professional Profile: Swaraj Chattaraj\n"
+                    "- **Role**: Creator, Lead Developer, and Principal Architect of ARIA.\n"
+                    "- **Specialization**: AI Engineering, RAG Systems, Multi-Agent Orchestration, Full-Stack Applications.\n\n"
+                    "#### Contact & Links\n"
+                    "- **GitHub**: [github.com/SWARAJCHATTARAJ](https://github.com/SWARAJCHATTARAJ)\n"
+                    "- **Repository**: [github.com/SWARAJCHATTARAJ/ARIA](https://github.com/SWARAJCHATTARAJ/ARIA)\n"
+                    "- **Email**: swarajchattaraj17402@gmail.com"
+                )
+            else:
+                ans = META_KNOWLEDGE_BLOCK
+
+            return ResearchResult(
+                question=question,
+                plan=[],
+                answer=ans,
+                verification="STATUS: PASSED\nREASON: Instant system metadata lookup.",
+                evidence=[],
+                events=["Classifier: identified Meta query; answered instantly from fixed knowledge block"],
+                metrics={"iterations": 0, "answer_tokens_est": estimate_tokens(ans)},
+                query_type=QueryType.META,
+                query_subtype=query_subtype,
+                is_grounded=True,
+            )
+
+        # 2. Casual / Conversational Question - Direct brief response
+        if query_type == QueryType.CASUAL:
+            ans = handle_casual_query(question, self.llm)
+            return ResearchResult(
+                question=question,
+                plan=[],
+                answer=ans,
+                verification="STATUS: PASSED\nREASON: Direct conversational response without citation auditing.",
+                evidence=[],
+                events=["Classifier: identified Casual query; answered directly via lightweight call"],
+                metrics={"iterations": 0, "answer_tokens_est": estimate_tokens(ans)},
+                query_type=QueryType.CASUAL,
+                query_subtype=query_subtype,
+                is_grounded=True,
+            )
+
+        # 3. Research Question - Route through full grounded pipeline
+        if field_focus == "all":
+            if query_subtype == ResearchSubtype.ACADEMIC:
+                field_focus = "stem"
+            elif query_subtype in (ResearchSubtype.BUSINESS_WORKPLACE, ResearchSubtype.CURRENT_EVENTS):
+                field_focus = "general"
+
         initial_state = {
             "question": question,
             "plan": [],
@@ -546,7 +763,7 @@ class ResearchAgent:
             "citation_evidence": [],
             "answer": "",
             "verification": "No verification run.",
-            "events": [],
+            "events": [f"Classifier: identified Research query (subtype: {query_subtype})"],
             "iteration": 0,
             "use_web": use_web,
             "use_local": use_local,
@@ -560,18 +777,46 @@ class ResearchAgent:
         
         final_evidence = dedupe_evidence(final_state["evidence"])
         final_evidence = final_state.get("citation_evidence") or cross_encoder_rerank_evidence(question, final_evidence)
+
+        answer_text = final_state["answer"]
+        is_no_evidence = (
+            not final_evidence or
+            "no sufficient evidence" in answer_text.lower() or
+            "no usable evidence" in answer_text.lower()
+        )
         
+        is_grounded = True
+        if is_no_evidence:
+            if allow_ungrounded_fallback:
+                is_grounded = False
+                fallback_body = self._generate_ungrounded_fallback(question)
+                answer_text = (
+                    "> ⚠️ **Ungrounded Fallback Answer (Not Verified / No Citations)**\n"
+                    "> *No cited sources found in local memory or web endpoints. "
+                    "The response below is provided strictly from general knowledge and has NOT been verified against evidence.*\n\n"
+                    f"{fallback_body}"
+                )
+                final_state["verification"] = "STATUS: UNGROUNDED_FALLBACK\nREASON: Answer generated from general knowledge; unverified."
+                final_evidence = []
+            else:
+                answer_text = (
+                    "No cited sources found. Get a general-knowledge answer instead? (Not verified, not cited)."
+                )
+
         metrics = build_run_metrics(final_state)
         metrics.update(self._latencies)
         
         return ResearchResult(
             question=final_state["question"],
             plan=final_state["plan"],
-            answer=final_state["answer"],
+            answer=answer_text,
             verification=final_state["verification"],
             evidence=final_evidence,
             events=final_state["events"],
             metrics=metrics,
+            query_type=QueryType.RESEARCH,
+            query_subtype=query_subtype,
+            is_grounded=is_grounded,
         )
 
     @track_node_latency("plan")

@@ -84,6 +84,9 @@ class ResearchResult:
     validation_warning: bool = False
     recurring_interval: str | None = None
     last_run_at: str | None = None
+    query_type: str = "research"
+    query_subtype: str = "conceptual"
+    is_grounded: bool = True
 
 
 def validate_pdf_upload(name: str, size: int) -> None:

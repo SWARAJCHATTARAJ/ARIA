@@ -961,5 +961,105 @@ class GuestAccessTests(unittest.TestCase):
         self.assertEqual(user, "guest")
 
 
+class QueryClassificationAndRoutingTests(unittest.TestCase):
+    def setUp(self):
+        from aria.core import Settings
+        from aria.rag import VectorMemory
+        from aria.agent import ResearchAgent
+        self.settings = Settings.from_env()
+        self.memory = VectorMemory(self.settings)
+        self.agent = ResearchAgent(self.settings, self.memory)
+
+    def test_classify_meta_queries(self) -> None:
+        from aria.agent import classify_question, QueryType, ResearchSubtype
+        
+        meta_samples = [
+            "who built you",
+            "what can you do",
+            "what does ARIA stand for",
+            "how do you work",
+            "who created ARIA",
+            "what is your architecture"
+        ]
+        for q in meta_samples:
+            q_type, q_sub = classify_question(q)
+            self.assertEqual(q_type, QueryType.META, f"Failed for query: {q}")
+
+    def test_classify_casual_queries(self) -> None:
+        from aria.agent import classify_question, QueryType
+        
+        casual_samples = ["hi", "how are you", "thanks", "hello", "good morning", "thank you!"]
+        for q in casual_samples:
+            q_type, q_sub = classify_question(q)
+            self.assertEqual(q_type, QueryType.CASUAL, f"Failed for query: {q}")
+
+    def test_classify_research_subtypes(self) -> None:
+        from aria.agent import classify_question, QueryType, ResearchSubtype
+
+        # Academic
+        q_type, q_sub = classify_question("quantum error correction paper study")
+        self.assertEqual(q_type, QueryType.RESEARCH)
+        self.assertEqual(q_sub, ResearchSubtype.ACADEMIC)
+
+        # Statistical / Comparative
+        q_type, q_sub = classify_question("PyTorch vs TensorFlow performance")
+        self.assertEqual(q_type, QueryType.RESEARCH)
+        self.assertEqual(q_sub, ResearchSubtype.STATISTICAL_COMPARATIVE)
+
+        # Business / Workplace
+        q_type, q_sub = classify_question("remote work trends and workplace management")
+        self.assertEqual(q_type, QueryType.RESEARCH)
+        self.assertEqual(q_sub, ResearchSubtype.BUSINESS_WORKPLACE)
+
+        # Current Events
+        q_type, q_sub = classify_question("latest 2026 tech developments and news")
+        self.assertEqual(q_type, QueryType.RESEARCH)
+        self.assertEqual(q_sub, ResearchSubtype.CURRENT_EVENTS)
+
+    def test_classify_ambiguous_query_defaults_to_research(self) -> None:
+        from aria.agent import classify_question, QueryType, ResearchSubtype
+
+        # Deliberately ambiguous query mentioning "ARIA" but requesting external research
+        ambiguous_q = "Can ARIA summarize remote work trends in 2026?"
+        q_type, q_sub = classify_question(ambiguous_q)
+        
+        # Must conservatively classify as RESEARCH, not casual or meta!
+        self.assertEqual(q_type, QueryType.RESEARCH)
+        self.assertIn(q_sub, (ResearchSubtype.BUSINESS_WORKPLACE, ResearchSubtype.CURRENT_EVENTS))
+
+    def test_meta_routing_instant_response(self) -> None:
+        from aria.agent import QueryType
+        
+        result = self.agent.run("who built ARIA", use_web=False, use_local=False)
+        self.assertEqual(result.query_type, QueryType.META)
+        self.assertIn("Swaraj Chattaraj", result.answer)
+        self.assertEqual(len(result.evidence), 0)
+        self.assertTrue(result.is_grounded)
+
+    def test_casual_routing_direct_response(self) -> None:
+        from aria.agent import QueryType
+
+        result = self.agent.run("hi, how are you?", use_web=False, use_local=False)
+        self.assertEqual(result.query_type, QueryType.CASUAL)
+        self.assertNotIn("### Executive Brief", result.answer)
+        self.assertEqual(len(result.evidence), 0)
+
+    def test_no_evidence_fallback_handling(self) -> None:
+        from aria.agent import QueryType
+
+        # Without ungrounded fallback option enabled -> offers choice
+        res1 = self.agent.run("RandomNonExistentTopicXYZ12345", use_web=False, use_local=False, allow_ungrounded_fallback=False)
+        self.assertEqual(res1.query_type, QueryType.RESEARCH)
+        self.assertIn("No cited sources found", res1.answer)
+        self.assertTrue(res1.is_grounded)
+
+        # With ungrounded fallback option enabled -> returns ungrounded answer with banner
+        res2 = self.agent.run("RandomNonExistentTopicXYZ12345", use_web=False, use_local=False, allow_ungrounded_fallback=True)
+        self.assertEqual(res2.query_type, QueryType.RESEARCH)
+        self.assertIn("Ungrounded Fallback Answer", res2.answer)
+        self.assertFalse(res2.is_grounded)
+
+
 if __name__ == "__main__":
     unittest.main()
+
