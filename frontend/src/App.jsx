@@ -2612,6 +2612,17 @@ function App() {
                         </div>
                       ) : null}
 
+                      {/* Direct Android APK Download */}
+                      <a 
+                        href="/downloads/aria.apk" 
+                        download="ARIA.apk"
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-aria-accent/20 to-[#00b4d8]/20 hover:from-aria-accent/30 hover:to-[#00b4d8]/30 border border-aria-accent/40 text-aria-text rounded-xl font-semibold transition-all focus:outline-none cursor-pointer text-xs shadow-sm"
+                        title="Download signed Android app installer (.apk)"
+                      >
+                        <Smartphone size={13} className="text-[#00E5FF]" />
+                        Download Android App (.apk)
+                      </a>
+
                       {/* Windows Desktop Download */}
                       <a 
                         href="/aria-desktop-app.zip" 
@@ -2629,7 +2640,7 @@ function App() {
                           <Smartphone size={11} className="text-[#00E5FF]" />
                           Download/Install on Mobile (Android &amp; iOS):
                         </span>
-                        Open this site in Chrome (Android) or Safari (iOS), tap the browser's menu / share icon, and select <strong className="text-aria-text">Add to Home Screen</strong>. Android registers it automatically as a native WebAPK.
+                        Open this site in Chrome (Android) or Safari (iOS), tap the browser's menu / share icon, and select <strong className="text-aria-text">Add to Home Screen</strong>. Android registers it automatically as a native WebAPK. Or tap <strong>Download Android App (.apk)</strong> above for direct APK installation.
                       </div>
                     </div>
                   </div>
