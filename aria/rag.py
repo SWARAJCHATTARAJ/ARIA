@@ -180,14 +180,17 @@ class VectorMemory:
 
     def retrieve(self, query: str, n_results: int = 5) -> list[Evidence]:
         if is_db_mode():
+            from .retrieval_logger import log_retrieval_call
             total_count = self.count()
             if not total_count:
+                log_retrieval_call(query, [])
                 return []
 
             import chromadb.utils.embedding_functions as ef
             embedding_fn = ef.DefaultEmbeddingFunction()
             query_embeddings = embedding_fn([query])
             if not query_embeddings:
+                log_retrieval_call(query, [])
                 return []
             query_emb = query_embeddings[0]
             query_emb_str = f"[{','.join(map(str, query_emb))}]"
@@ -233,11 +236,15 @@ class VectorMemory:
                                 retrieved_via="local_vector_memory",
                             )
                         )
+                from .retrieval_logger import log_retrieval_call
+                log_retrieval_call(query, evidence)
                 return evidence
             finally:
                 conn.close()
         else:
+            from .retrieval_logger import log_retrieval_call
             if not self.collection.count():
+                log_retrieval_call(query, [])
                 return []
                 
             results = self.collection.query(
@@ -247,6 +254,7 @@ class VectorMemory:
             
             evidence: list[Evidence] = []
             if not results["documents"] or not results["documents"][0]:
+                log_retrieval_call(query, [])
                 return evidence
                 
             docs = results["documents"][0]
@@ -272,6 +280,7 @@ class VectorMemory:
                         retrieved_via="local_vector_memory",
                     )
                 )
+            log_retrieval_call(query, evidence)
             return evidence
 
     def retrieve_all(self, limit: int = 30) -> list[Evidence]:

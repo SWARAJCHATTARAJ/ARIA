@@ -1180,6 +1180,124 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
         self.assertFalse(res2.is_grounded)
 
 
+class StructuredRetrievalLoggingTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.log_path = Path(self.temp_dir.name) / "test_retrieval_logs.jsonl"
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_log_entry_written_on_accept_path(self):
+        import time
+        from aria.core import Evidence
+        from aria.retrieval_logger import log_retrieval_call, get_retrieval_logs
+
+        ev = [Evidence(title="Solar Energy Guide", summary="Solar cells generate electricity.", source_type="web", score=0.85)]
+        entry = log_retrieval_call(
+            query="What is solar energy?",
+            evidence=ev,
+            threshold=0.35,
+            log_path=self.log_path
+        )
+        self.assertEqual(entry["decision"], "accepted")
+        self.assertEqual(entry["top_chunk_similarity"], 0.85)
+        self.assertFalse(entry["fallback_triggered"])
+        self.assertEqual(entry["threshold_used"], 0.35)
+        self.assertEqual(entry["top_k_scores"], [0.85])
+        self.assertEqual(entry["top_chunk_source"], "Solar Energy Guide")
+
+        # Allow background thread executor to complete disk write
+        time.sleep(0.1)
+        logs = get_retrieval_logs(limit=10, log_path=self.log_path)
+        self.assertTrue(len(logs) > 0)
+        self.assertEqual(logs[0]["query"], "What is solar energy?")
+        self.assertEqual(logs[0]["decision"], "accepted")
+
+    def test_log_entry_written_on_reject_path(self):
+        import time
+        from aria.core import Evidence
+        from aria.retrieval_logger import log_retrieval_call, get_retrieval_logs
+
+        ev = [Evidence(title="Irrelevant Fragment", summary="Random snippet", source_type="web", score=0.15)]
+        entry = log_retrieval_call(
+            query="Quantum teleportation protocol",
+            evidence=ev,
+            threshold=0.35,
+            log_path=self.log_path
+        )
+        self.assertEqual(entry["decision"], "rejected_low_similarity")
+        self.assertEqual(entry["top_chunk_similarity"], 0.15)
+        self.assertTrue(entry["fallback_triggered"])
+
+        time.sleep(0.1)
+        logs = get_retrieval_logs(limit=10, log_path=self.log_path)
+        self.assertTrue(len(logs) > 0)
+        self.assertEqual(logs[0]["query"], "Quantum teleportation protocol")
+        self.assertEqual(logs[0]["decision"], "rejected_low_similarity")
+
+    def test_log_entry_written_on_entity_mismatch_path(self):
+        import time
+        from aria.core import Evidence
+        from aria.retrieval_logger import log_retrieval_call, get_retrieval_logs
+
+        ev = [Evidence(title="Hydroelectric Power", summary="Water turbines generate energy", source_type="web", score=0.75)]
+        entry = log_retrieval_call(
+            query="What is 'Secret Project Apex'?",
+            evidence=ev,
+            threshold=0.35,
+            log_path=self.log_path
+        )
+        self.assertEqual(entry["decision"], "rejected_entity_mismatch")
+        self.assertEqual(entry["entity_extracted"], "Secret Project Apex")
+        self.assertTrue(entry["fallback_triggered"])
+
+        time.sleep(0.1)
+        logs = get_retrieval_logs(limit=10, log_path=self.log_path)
+        self.assertTrue(len(logs) > 0)
+        self.assertEqual(logs[0]["decision"], "rejected_entity_mismatch")
+
+    def test_get_retrieval_stats(self):
+        import time
+        from aria.core import Evidence
+        from aria.retrieval_logger import log_retrieval_call, get_retrieval_stats
+
+        # Log 1 accepted and 2 rejected
+        log_retrieval_call("solar energy", [Evidence(title="Solar Energy Overview", summary="Data on solar energy", source_type="web", score=0.8)], threshold=0.35, log_path=self.log_path)
+        log_retrieval_call("deep space exploration", [Evidence(title="E2", summary="Data", source_type="web", score=0.1)], threshold=0.35, log_path=self.log_path)
+        log_retrieval_call("fusion reactors", [], threshold=0.35, log_path=self.log_path)
+
+        time.sleep(0.3)
+        stats = get_retrieval_stats(window_size=50, log_path=self.log_path)
+        self.assertEqual(stats["total_queries"], 3)
+        self.assertEqual(stats["rejections"], 2)
+        self.assertEqual(stats["accepted_count"], 1)
+        self.assertEqual(stats["rejection_summary"], "2/3 queries fell back due to low relevance")
+
+    def test_vector_memory_retrieve_emits_log_entry(self):
+        import time
+        from aria.core import Settings
+        from aria.rag import VectorMemory
+        from aria.retrieval_logger import get_retrieval_logs, LOG_FILE_PATH
+
+        settings = Settings.from_env()
+        memory = VectorMemory(settings)
+        memory.reset()
+        memory.ingest_text("CRISPR gene editing technology", source_name="crispr.txt", source_type="note")
+
+        results = memory.retrieve("CRISPR editing")
+        self.assertTrue(len(results) > 0)
+
+        time.sleep(0.1)
+        logs = get_retrieval_logs(limit=5)
+        self.assertTrue(len(logs) > 0)
+        self.assertIn("query", logs[0])
+        self.assertIn("top_chunk_similarity", logs[0])
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

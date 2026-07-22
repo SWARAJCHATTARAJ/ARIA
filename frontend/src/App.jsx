@@ -362,12 +362,24 @@ function App() {
   const [error, setError] = useState(null);
   const [expandedCitationId, setExpandedCitationId] = useState(null);
   const [activeRightTab, setActiveRightTab] = useState("citations"); // citations, logs, metrics
+  const [retrievalData, setRetrievalData] = useState({ logs: [], stats: {} });
 
-
+  const fetchRetrievalLogs = async () => {
+    try {
+      const response = await authorizedFetch(`${API_BASE}/api/retrieval/logs?limit=50`);
+      if (response.ok) {
+        const data = await response.json();
+        setRetrievalData({
+          logs: data.logs || [],
+          stats: data.stats || {}
+        });
+      }
+    } catch (err) {
+      console.error("Failed to fetch retrieval logs:", err);
+    }
+  };
 
   const consoleEndRef = useRef(null);
-
-
 
   const sourceCounts = (items = []) => {
     return items.reduce((acc, item) => {
@@ -376,8 +388,6 @@ function App() {
       return acc;
     }, {});
   };
-
-
 
   const citationStats = (currentResult) => {
     const answer = currentResult?.answer || "";
@@ -394,12 +404,11 @@ function App() {
     };
   };
 
-
-
   // Initialize and load default configs
   useEffect(() => {
     fetchSettings();
     fetchMemoryCount();
+    fetchRetrievalLogs();
   }, []);
 
 
@@ -730,6 +739,7 @@ function App() {
                 setSelectedSessionId(parsed.session_id);
                 fetchSessions();
                 fetchMemoryCount();
+                fetchRetrievalLogs();
               } else if (eventType === "error") {
                 hasError = true;
                 setError(parsed.error);
@@ -1844,12 +1854,134 @@ function App() {
 
                 {/* 2. ACTIVITY LOGS TAB */}
                 {activeRightTab === "logs" && (
-                  <div className="font-mono text-[10px] text-aria-muted space-y-1.5 bg-aria-bg/50 border border-aria-border p-3 rounded-lg max-h-[85svh] overflow-y-auto">
-                    {result.events.map((event, idx) => (
-                      <div key={idx} className={event.includes("Timeline:") ? "text-aria-accent" : ""}>
-                        &gt; {event}
+                  <div className="space-y-4">
+                    {/* Summary Stat at Top of References & Logs */}
+                    <div className="p-3.5 bg-aria-surface border border-aria-border rounded-xl space-y-2.5">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-semibold text-aria-text uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                          <Database size={13} className="text-aria-accent" />
+                          Retrieval Quality & Rejection Rate
+                        </span>
+                        <button 
+                          onClick={fetchRetrievalLogs} 
+                          className="p-1 hover:bg-aria-bg text-aria-muted hover:text-aria-accent rounded transition-colors"
+                          title="Refresh Retrieval Logs"
+                        >
+                          <RefreshCw size={12} />
+                        </button>
                       </div>
-                    ))}
+
+                      <div className="p-2.5 bg-aria-bg border border-aria-border rounded-lg flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] text-aria-muted block font-mono">Rejection Rate (Last 50 Queries)</span>
+                          <span className="text-xs font-semibold text-aria-text">
+                            {retrievalData.stats?.rejection_summary || "0/0 queries fell back due to low relevance"}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
+                            (retrievalData.stats?.rejection_rate || 0) > 0.3
+                              ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                              : (retrievalData.stats?.rejection_rate || 0) > 0.15
+                              ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                              : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                          }`}>
+                            {((retrievalData.stats?.rejection_rate || 0) * 100).toFixed(1)}% Rejections
+                          </span>
+                        </div>
+                      </div>
+
+                      {retrievalData.stats?.total_queries > 0 && (
+                        <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+                          <div className="p-1.5 bg-emerald-500/5 border border-emerald-500/20 rounded">
+                            <span className="text-aria-muted block">Accepted</span>
+                            <strong className="text-emerald-400 font-mono">{retrievalData.stats?.accepted_count || 0}</strong>
+                          </div>
+                          <div className="p-1.5 bg-amber-500/5 border border-amber-500/20 rounded">
+                            <span className="text-aria-muted block">Low Sim</span>
+                            <strong className="text-amber-400 font-mono">{retrievalData.stats?.rejected_low_sim_count || 0}</strong>
+                          </div>
+                          <div className="p-1.5 bg-rose-500/5 border border-rose-500/20 rounded">
+                            <span className="text-aria-muted block">Entity Mismatch</span>
+                            <strong className="text-rose-400 font-mono">{retrievalData.stats?.rejected_entity_mismatch_count || 0}</strong>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Structured Retrieval Log Entries */}
+                    <div className="p-3.5 bg-aria-surface border border-aria-border rounded-xl space-y-2.5">
+                      <h4 className="text-[10px] font-semibold text-aria-text uppercase tracking-wider">
+                        Structured Retrieval Logs ({retrievalData.logs?.length || 0})
+                      </h4>
+                      {(!retrievalData.logs || retrievalData.logs.length === 0) ? (
+                        <p className="text-xs text-aria-muted/60 italic p-2">No retrieval log entries recorded yet.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                          {retrievalData.logs.map((log, idx) => {
+                            const isAccepted = log.decision === "accepted";
+                            const isEntityMismatch = log.decision === "rejected_entity_mismatch";
+                            let statusBadge = (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                ACCEPTED
+                              </span>
+                            );
+                            if (isEntityMismatch) {
+                              statusBadge = (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                                  REJECTED (Entity Mismatch)
+                                </span>
+                              );
+                            } else if (!isAccepted) {
+                              statusBadge = (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                  REJECTED (Low Sim)
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <div key={idx} className="p-2.5 bg-aria-bg border border-aria-border rounded-lg text-xs space-y-1.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-semibold text-aria-text truncate text-[11px]">
+                                    "{log.query}"
+                                  </span>
+                                  {statusBadge}
+                                </div>
+                                <div className="flex items-center justify-between text-[10px] text-aria-muted font-mono">
+                                  <span>Score: <strong className={isAccepted ? "text-emerald-400" : "text-amber-400"}>{log.top_chunk_similarity?.toFixed(2)}</strong> (thresh: {log.threshold_used})</span>
+                                  {log.top_k_scores?.length > 1 && (
+                                    <span>Top-k: [{log.top_k_scores.slice(0, 3).join(", ")}]</span>
+                                  )}
+                                </div>
+                                {log.top_chunk_source && (
+                                  <div className="text-[10px] text-aria-muted truncate font-sans">
+                                    Source: {log.top_chunk_source}
+                                  </div>
+                                )}
+                                {!isAccepted && (
+                                  <div className="text-[10px] text-rose-300/90 font-mono bg-rose-950/20 p-1 rounded border border-rose-900/30">
+                                    Reason: {isEntityMismatch ? `Extracted entity '${log.entity_extracted}' missing in retrieved chunks` : `Similarity ${log.top_chunk_similarity} < threshold ${log.threshold_used}`}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Raw Activity Trace Events */}
+                    <div className="p-3.5 bg-aria-surface border border-aria-border rounded-xl space-y-2">
+                      <h4 className="text-[10px] font-semibold text-aria-text uppercase tracking-wider">Execution Trace Events</h4>
+                      <div className="font-mono text-[10px] text-aria-muted space-y-1 bg-aria-bg/50 border border-aria-border p-3 rounded-lg max-h-60 overflow-y-auto">
+                        {result?.events?.map((event, idx) => (
+                          <div key={idx} className={event.includes("Timeline:") ? "text-aria-accent" : ""}>
+                            &gt; {event}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 )}
 

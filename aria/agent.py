@@ -1259,8 +1259,10 @@ class ResearchAgent:
                                     "results": deepcopy(query_to_results[q])
                                 }
  
+            from .retrieval_logger import log_retrieval_call
             for q in queries:
                 q_evs = query_to_results[q]
+                log_retrieval_call(q, q_evs)
                 evidence.extend(q_evs[:5])
 
         return evidence, events

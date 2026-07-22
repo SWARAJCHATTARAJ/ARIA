@@ -642,6 +642,20 @@ async def clear_memory(user_id: str | None = None, current_user: str = Depends(g
     except Exception as e:
         raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
+@app.get("/api/retrieval/logs")
+async def get_retrieval_logs_endpoint(limit: int = 50, current_user: str = Depends(get_current_user_or_guest)):
+    """Retrieve recent structured retrieval log entries and aggregate statistics."""
+    try:
+        from aria.retrieval_logger import get_retrieval_logs, get_retrieval_stats
+        logs = get_retrieval_logs(limit=limit)
+        stats = get_retrieval_stats(window_size=limit)
+        return {
+            "logs": logs,
+            "stats": stats
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
+
 @app.get("/api/sessions")
 async def get_sessions(user_id: str | None = None, limit: int = 50, current_user: str = Depends(get_current_user)):
     """Retrieve list of saved research sessions isolated by user."""
