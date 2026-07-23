@@ -975,6 +975,7 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
         
         meta_samples = [
             "who built you",
+            "who created you?",
             "what can you do",
             "what does ARIA stand for",
             "how do you work",
@@ -985,6 +986,26 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
         for q in meta_samples:
             q_type, q_sub = classify_question(q)
             self.assertEqual(q_type, QueryType.META, f"Failed for query: {q}")
+
+    def test_classify_creator_phrase_requires_self_or_aria_subject(self) -> None:
+        from aria.agent import classify_question, is_developer_query, QueryType
+
+        meta_type, _ = classify_question("who created you?")
+        self.assertEqual(meta_type, QueryType.META)
+        self.assertTrue(is_developer_query("who created you?"))
+
+        research_samples = [
+            "who created you tube?",
+            "who created YouTube?",
+            "who created YouTube channels?",
+            "who created Python?",
+            "who created the internet?",
+            "who created you tube channel MrBeast?",
+        ]
+        for q in research_samples:
+            q_type, _ = classify_question(q)
+            self.assertEqual(q_type, QueryType.RESEARCH, f"Failed for query: {q}")
+            self.assertFalse(is_developer_query(q), f"Developer helper false positive for: {q}")
 
     def test_classify_casual_queries(self) -> None:
         from aria.agent import classify_question, QueryType

@@ -19,17 +19,58 @@ logger = logging.getLogger("aria.agent")
 
 # Helper to intercept developer profile queries
 def is_developer_query(query: str) -> bool:
-    q = query.lower()
-    keywords = [
-        "built aria", "build aria", "creator of aria", "created aria", 
-        "who made aria", "swaraj", "chattaraj", "who built this", 
-        "who developed aria", "developer of aria", "author of aria",
-        "who is swaraj", "swaraj's details",
-        "built you", "build you", "created you", "made you", "developed you",
-        "programmed you", "programed you", "your developer", "your creator",
-        "your author", "your maker", "built this system", "built this app"
-    ]
-    return any(k in q for k in keywords)
+    q = normalize_query_text(query)
+    if not q:
+        return False
+
+    exact_phrases = {
+        "who built you", "who build you", "who created you", "who made you",
+        "who developed you", "who programmed you", "who programed you",
+        "who built aria", "who build aria", "who created aria", "who made aria",
+        "who developed aria", "creator of aria", "developer of aria",
+        "author of aria", "who built this", "who built this system",
+        "who built this app", "who is swaraj", "swaraj details",
+        "swarajs details",
+    }
+    if q in exact_phrases:
+        return True
+
+    if re.fullmatch(r"(?:who\s+is\s+)?swaraj(?:\s+chattaraj)?", q):
+        return True
+    if re.search(r"\b(?:your|aria'?s)\s+(?:developer|creator|author|maker)\b", q):
+        return True
+
+    return False
+
+
+def normalize_query_text(query: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s']", " ", (query or "").lower())).strip()
+
+
+def is_meta_about_aria_query(question: str) -> bool:
+    q = normalize_query_text(question)
+    if not q:
+        return False
+
+    exact_phrases = {
+        "who built you", "who created you", "who developed you", "who made you",
+        "who programmed you", "who built aria", "who created aria",
+        "creator of aria", "developer of aria", "author of aria",
+        "who is swaraj", "swaraj chattaraj", "what can you do",
+        "what does aria do", "what are your capabilities",
+        "what does aria stand for", "how do you work", "how does aria work",
+        "your architecture", "aria architecture", "your tech stack",
+        "aria tech stack", "how was aria built", "are you free to use",
+        "is aria free",
+    }
+    if q in exact_phrases:
+        return True
+
+    return bool(
+        re.fullmatch(r"what is aria", q)
+        or re.fullmatch(r"what is your architecture", q)
+        or re.fullmatch(r"what is your tech stack", q)
+    )
 
 DEVELOPER_PROFILE_EVIDENCE = Evidence(
     title="Official Developer Documentation: Swaraj Chattaraj",
@@ -244,18 +285,10 @@ def classify_question(question: str) -> tuple[str, str]:
     if any(at in q for at in app_help_triggers):
         return QueryType.APP_HELP, ResearchSubtype.APP_USAGE
 
-    # Category 1 (Group A): Meta / About ARIA
-    meta_triggers = [
-        "who built you", "who created you", "who developed you", "who made you", "who programmed you",
-        "who built aria", "who created aria", "creator of aria", "developer of aria", "author of aria",
-        "who is swaraj", "swaraj chattaraj",
-        "what can you do", "what does aria do", "what are your capabilities",
-        "what does aria stand for", "how do you work", "how does aria work", "your architecture",
-        "aria architecture", "your tech stack", "aria tech stack", "how was aria built",
-        "are you free to use", "is aria free"
-    ]
-    
-    is_meta = any(trig in q for trig in meta_triggers) or (q.startswith("what is aria") and len(q.split()) <= 4)
+    # Category 1 (Group A): Meta / About ARIA.
+    # Match only complete self/ARIA phrases. Substring matching caused false
+    # positives such as "who created you tube?" being read as "who created you".
+    is_meta = is_meta_about_aria_query(q_raw)
     
     # Priority rule / Disambiguation: If query asks to research/summarize external topics using ARIA, route to RESEARCH!
     has_external_research_intent = any(topic in q for topic in [

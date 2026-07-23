@@ -212,6 +212,7 @@ function App() {
   // App core states
   const [question, setQuestion] = useState("");
   const [customPlan, setCustomPlan] = useState([]);
+  const [customPlanQuestion, setCustomPlanQuestion] = useState(null);
   const [isPlanning, setIsPlanning] = useState(false);
   const [isResearching, setIsResearching] = useState(false);
 
@@ -542,9 +543,12 @@ function App() {
 
   // Generate sub-query plan
   const generatePlan = async () => {
-    if (!question.trim()) return;
+    const planQuestion = question.trim();
+    if (!planQuestion) return;
     setIsPlanning(true);
     setError(null);
+    setCustomPlan([]);
+    setCustomPlanQuestion(null);
     try {
       const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
       const headers = { 
@@ -560,7 +564,8 @@ function App() {
       });
       if (response.ok) {
         const data = await response.json();
-        setCustomPlan(data.queries);
+        setCustomPlan(data.queries || []);
+        setCustomPlanQuestion(planQuestion);
       } else {
         throw new Error("Failed to generate research plan");
       }
@@ -575,13 +580,19 @@ function App() {
 
   // Run the full agentic research loop (SSE Stream)
   const runResearch = async (isRetry = false) => {
-    if (!question.trim()) return;
+    const trimmedQuestion = question.trim();
+    if (!trimmedQuestion) return;
 
     const startTime = Date.now();
+    const planForRun = customPlanQuestion === trimmedQuestion && customPlan.length > 0 ? customPlan : null;
 
     setIsResearching(true);
     setResult(null);
     setError(null);
+    if (!isRetry) {
+      setCustomPlan([]);
+      setCustomPlanQuestion(null);
+    }
 
     // 1. Wake up server if not a retry
     if (!isRetry) {
@@ -665,12 +676,12 @@ function App() {
         method: "POST",
         headers: headers,
         body: JSON.stringify({
-          question: question.trim(),
+          question: trimmedQuestion,
           use_local: useLocal,
           use_web: useWeb,
           use_finance: useFinance,
           max_iterations: maxIterations,
-          custom_plan: customPlan.length > 0 ? customPlan : null,
+          custom_plan: planForRun,
           field_focus: fieldFocus,
           user_id: userId,
           local_only: localOnly
@@ -736,6 +747,8 @@ function App() {
                   ...parsed.result,
                   created_at: parsed.created_at || new Date().toISOString()
                 });
+                setCustomPlan(parsed.result?.plan || []);
+                setCustomPlanQuestion(parsed.result?.question || trimmedQuestion);
                 setSelectedSessionId(parsed.session_id);
                 fetchSessions();
                 fetchMemoryCount();
@@ -797,7 +810,8 @@ function App() {
         const data = await response.json();
         setResult({ ...data.result, created_at: data.created_at });
         setQuestion(data.result.question);
-        setCustomPlan(data.result.plan);
+        setCustomPlan(data.result.plan || []);
+        setCustomPlanQuestion(data.result.question || null);
         setSelectedSessionId(sessionId);
         setSelectedSessionRecurringInterval(data.result.recurring_interval || null);
         setCurrentStage("complete");
@@ -894,6 +908,7 @@ function App() {
 
 
   const addPlanQuery = () => {
+    setCustomPlanQuestion(question.trim() || null);
     setCustomPlan([...customPlan, ""]);
   };
 
@@ -1174,6 +1189,7 @@ function App() {
               setResult(null);
               setQuestion("");
               setCustomPlan([]);
+              setCustomPlanQuestion(null);
               setSelectedSessionId(null);
               setCurrentStage("idle");
             }}
@@ -2145,7 +2161,7 @@ function App() {
             
 
             {/* Planned subqueries editor */}
-            {customPlan.length > 0 && (
+            {customPlan.length > 0 && customPlanQuestion === question.trim() && (
               <div className="p-4 bg-aria-surface border border-aria-border rounded-xl space-y-3 shadow-md">
                 <div className="flex justify-between items-center border-b border-aria-border pb-2">
                   <span className="text-[9px] font-bold text-aria-muted uppercase tracking-wider flex items-center gap-1">
@@ -2153,7 +2169,10 @@ function App() {
                     Decomposed Query Steps
                   </span>
                   <button 
-                    onClick={() => setCustomPlan([])}
+                    onClick={() => {
+                      setCustomPlan([]);
+                      setCustomPlanQuestion(null);
+                    }}
                     className="text-[9px] hover:text-aria-error font-semibold transition-colors"
                   >
                     Reset Plan
@@ -2204,7 +2223,14 @@ function App() {
                 type="text"
                 placeholder="Submit objective... (e.g. Compare AI chip supply chain risks)"
                 value={question}
-                onChange={(e) => setQuestion(e.target.value)}
+                onChange={(e) => {
+                  const nextQuestion = e.target.value;
+                  setQuestion(nextQuestion);
+                  if (customPlan.length > 0 && nextQuestion.trim() !== customPlanQuestion) {
+                    setCustomPlan([]);
+                    setCustomPlanQuestion(null);
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !isResearching) runResearch();
                 }}
