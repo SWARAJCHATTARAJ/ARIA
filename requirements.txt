@@ -493,4 +493,5 @@ yarl==1.24.2
 yfinance==1.5.1
     # via aria-research-assistant (pyproject.toml)
 zstandard==0.25.0
+openai
     # via langsmith
