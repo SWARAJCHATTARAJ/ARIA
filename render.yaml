@@ -1,6 +1,0 @@
-services:
-  - type: web
-    name: aria-research-assistant
-    env: docker
-    plan: free
-    autoDeploy: true

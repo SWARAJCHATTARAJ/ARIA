@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
+import { supabase } from './supabaseClient';
+import {
   Search, Play, Settings, History, Layers, ChevronDown, ChevronUp, 
   ExternalLink, ShieldCheck, Download, 
   CheckCircle, AlertCircle, Plus, X, RefreshCw,
@@ -93,6 +94,41 @@ function App() {
   const [loginError, setLoginError] = useState("");
   const [loginSuccess, setLoginSuccess] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setToken(session.access_token);
+        localStorage.setItem("aria_auth_token", session.access_token);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setToken(session.access_token);
+        localStorage.setItem("aria_auth_token", session.access_token);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    setIsLoggingIn(true);
+    setLoginError("");
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
+    } catch (err) {
+      setLoginError(err.message);
+      setIsLoggingIn(false);
+    }
+  };
 
   const authorizedFetch = async (url, options = {}) => {
     const headers = options.headers ? { ...options.headers } : {};
@@ -779,13 +815,13 @@ function App() {
 
         let diagnosticMsg = "Research stream disconnected before brief generation could complete. ";
         if (currentStage === "idle" && elapsed > 45) {
-          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). The server failed to respond in time. This is almost certainly due to a cold-start delay on Render's Free Plan, which takes 50-70 seconds to spin up the container after inactivity. Please try resubmitting your query now that the server is awake.`;
+          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). The server failed to respond in time. Please try resubmitting your query.`;
         } else if (currentStage === "plan" && elapsed > 25) {
-          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). This is highly likely a cold-start delay from Render spinning down the container. Waking the container took too long, causing the proxy to close the connection. Please try resubmitting your query now that the server is awake.`;
+          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). Waking the container took too long, causing the proxy to close the connection. Please try resubmitting your query.`;
         } else if (currentStage === "search") {
           diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s). The connection timed out during the search/retrieval stage. This usually happens if the live web search API calls or the vector memory lookup take longer than 60-90 seconds.`;
         } else if (currentStage === "draft" || currentStage === "verify") {
-          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s, Stage: ${currentStage}). The connection timed out during the generative synthesis or self-correction stages. This is typically caused by slow OpenRouter API responses or hosting provider (Render) idle limits.`;
+          diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s, Stage: ${currentStage}). The connection timed out during the generative synthesis or self-correction stages.`;
         } else {
           diagnosticMsg += `(Elapsed: ${elapsed.toFixed(0)}s, Last Stage: ${currentStage}). This could be due to a server-side timeout, rate limits, or out-of-memory crash. Check the backend logs.`;
         }
@@ -1051,6 +1087,23 @@ function App() {
               )}
             </button>
           </form>
+
+          {authMode === "login" && (
+            <>
+              <div className="flex items-center gap-4 my-2">
+                <div className="h-px bg-aria-border flex-1"></div>
+                <span className="text-xs text-aria-muted uppercase font-semibold">Or</span>
+                <div className="h-px bg-aria-border flex-1"></div>
+              </div>
+              <button
+                onClick={handleGoogleLogin}
+                disabled={isLoggingIn}
+                className="w-full py-2.5 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-bold rounded-lg transition-all flex items-center justify-center gap-2"
+              >
+                {isLoggingIn ? "Redirecting..." : "Sign in with Google"}
+              </button>
+            </>
+          )}
 
           <div className="text-center text-xs text-aria-muted mt-2 border-t border-aria-border pt-4">
             {authMode === "login" ? (

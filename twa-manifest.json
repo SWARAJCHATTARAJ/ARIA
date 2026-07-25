@@ -13,8 +13,8 @@
   "backgroundColor": "#0A0A0F",
   "enableNotifications": false,
   "startUrl": "/",
-  "iconUrl": "https://aria-2-f3kq.onrender.com/icon-512.png",
-  "maskableIconUrl": "https://aria-2-f3kq.onrender.com/icon-512-maskable.png",
+  "iconUrl": "https://aria.swarajchattaraj.tech/icon-512.png",
+  "maskableIconUrl": "https://aria.swarajchattaraj.tech/icon-512-maskable.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "./android.keystore",

@@ -538,10 +538,15 @@ class LLMClient:
                     "- Synthesis mode: Verified System Record"
                 )
 
-        if not local_only and self.settings.llm_provider == "openrouter" and self.openrouter_api_key:
-            response = self._openrouter(system, user)
-            if response:
-                return response
+        if not local_only:
+            if self.settings.llm_provider == "azure" and self.settings.azure_api_key and self.settings.azure_endpoint:
+                response = self._azure_openai(system, user)
+                if response:
+                    return response
+            elif self.settings.llm_provider == "openrouter" and self.openrouter_api_key:
+                response = self._openrouter(system, user)
+                if response:
+                    return response
         if task == "plan":
             return ""
         elif task == "verify":
@@ -608,6 +613,52 @@ class LLMClient:
                 raise RuntimeError(f"OpenRouter API connection failed: {e}") from e
             except (KeyError, IndexError) as e:
                 raise RuntimeError(f"Failed to parse OpenRouter response JSON: {e}") from e
+
+    def _azure_openai(self, system: str, user: str) -> str:
+        import time
+        try:
+            from openai import AzureOpenAI
+            import openai
+        except ImportError:
+            raise RuntimeError("openai Python package is not installed but Azure OpenAI is selected.")
+            
+        client = AzureOpenAI(
+            azure_endpoint=self.settings.azure_endpoint,
+            api_key=self.settings.azure_api_key,
+            api_version="2024-02-01",
+        )
+        deployment_name = self.settings.azure_deployment_name or self.settings.model
+        
+        max_retries = 3
+        backoff_factor = 2
+        for attempt in range(max_retries + 1):
+            try:
+                response = client.chat.completions.create(
+                    model=deployment_name,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    temperature=0.2,
+                    timeout=60,
+                )
+                return response.choices[0].message.content
+            except openai.RateLimitError as e:
+                if attempt < max_retries:
+                    sleep_time = backoff_factor ** (attempt + 1)
+                    logger.warning(f"Azure OpenAI API rate limit hit (429). Retrying in {sleep_time} seconds (attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(sleep_time)
+                    continue
+                else:
+                    raise RuntimeError("AI service is temporarily busy, please try again in a moment") from e
+            except openai.AuthenticationError as e:
+                raise RuntimeError("Azure OpenAI API unauthorized (HTTP 401). Please check that your API key is correct and valid in your settings.") from e
+            except openai.BadRequestError as e:
+                raise RuntimeError(f"Azure OpenAI API Bad Request (HTTP 400): {e}") from e
+            except openai.APITimeoutError as e:
+                raise TimeoutError("Azure OpenAI API request timed out after 60 seconds. The model is taking too long to generate a response.") from e
+            except openai.APIError as e:
+                raise RuntimeError(f"Azure OpenAI API connection failed: {e}") from e
 
     def _fallback(self, user: str, evidence: list[Evidence] | None = None) -> str:
         # Check if this is a developer query or if the developer evidence is present

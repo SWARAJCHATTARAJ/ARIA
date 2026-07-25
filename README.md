@@ -10,7 +10,8 @@ ARIA is a local-first research workspace that helps you answer complex questions
 
 Built by **Swaraj Chattaraj** as a hands-on exploration of what real-world, production-ready RAG looks like when you move past simple chat boxes.
 
-* [Live Streamlit App](https://emoaswda2wujafzekfe3pv.streamlit.app/)
+## Quick Links
+* [Live Production App](https://aria.swarajchattaraj.tech/)
 * [GitHub Repository](https://github.com/SWARAJCHATTARAJ/ARIA)
 
 ---
@@ -117,7 +118,7 @@ python -m venv .venv
 .venv\Scripts\activate
 
 # On macOS/Linux:
-source .venv/bin/activate
+source .venv\bin/activate
 
 pip install -r requirements.txt
 ```
@@ -133,11 +134,11 @@ ARIA_MODEL=google/gemma-2-9b-it:free
 *Note: If no LLM key is supplied, ARIA runs in a local-only extractive synthesis mode.*
 
 ### 4. Run the Application
-Start the Streamlit wrapper, which automatically checks for built frontend files and launches the FastAPI backend:
+Start the backend server directly:
 ```bash
-streamlit run app.py
+uvicorn app.main:app --reload
 ```
-Open **`http://localhost:8501/`** in your web browser.
+Open your browser to the local frontend port.
 
 ---
 
@@ -177,7 +178,7 @@ Building ARIA provided several practical takeaways regarding agentic system engi
 - **Workflows over Autonomy:** Open-ended agents easily veer off track. Constraining agent states inside a LangGraph state machine provides predictable state transitions while keeping retrieval flexible.
 - **Validator Boundaries:** Self-correcting loops can loop infinitely if the validation criteria are too strict or if the required data doesn't exist. Setting a hard `max_iterations` ceiling is essential for stability.
 - **Concurrent Retrieval:** Synchronous network fetching is a huge bottleneck for multi-source search. Switching to parallelized requests with `asyncio` cut search latencies from roughly 11 seconds to 4 seconds.
-- **Environment Hurdles:** Deploying SQLite/ChromaDB on managed Streamlit environments requires specific database configurations. ARIA uses a local `pysqlite3` import override fallback to ensure compatibility on systems running older SQLite versions.
+- **Resource Constraints:** The app is now hosted on a dedicated Azure VM, enabling the use of semantic reranking and robust embeddings, replacing the constrained free-tier environments.
 
 ---
 

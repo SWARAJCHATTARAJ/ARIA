@@ -15,14 +15,27 @@ class Settings:
     model: str
     collection_name: str
     memory_path: str
+    azure_endpoint: str | None = None
+    azure_api_key: str | None = None
+    azure_deployment_name: str | None = None
 
     @classmethod
     def from_env(cls) -> Settings:
-        provider = os.getenv("ARIA_LLM_PROVIDER", "free").strip().lower()
-        api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-        if provider != "openrouter" and api_key and not api_key.startswith("your_"):
+        provider = os.getenv("ARIA_LLM_PROVIDER", "azure").strip().lower()
+        openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip() or None
+        azure_api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip() or None
+        azure_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "").strip() or None
+
+        if provider != "openrouter" and openrouter_api_key and not openrouter_api_key.startswith("your_"):
             import logging
-            msg = f"[Warning] ARIA_LLM_PROVIDER is set to '{provider}', but an OPENROUTER_API_KEY is configured. The API key will not be used."
+            msg = f"[Warning] ARIA_LLM_PROVIDER is set to '{provider}', but an OPENROUTER_API_KEY is configured. The OpenRouter client will not be used."
+            logging.getLogger("aria.core").warning(msg)
+            print(msg)
+
+        if provider != "azure" and azure_api_key and not azure_api_key.startswith("your_"):
+            import logging
+            msg = f"[Warning] ARIA_LLM_PROVIDER is set to '{provider}', but an AZURE_OPENAI_API_KEY is configured. The Azure OpenAI client will not be used."
             logging.getLogger("aria.core").warning(msg)
             print(msg)
 
@@ -32,7 +45,7 @@ class Settings:
             val = os.getenv(key, "").strip()
             if val and not val.startswith("your_"):
                 import logging
-                msg = f"[Security Warning] LLM credential variable '{key}' is set. ARIA is configured to use OpenRouter ONLY. This credential will be ignored and should be removed to prevent leaks."
+                msg = f"[Security Warning] LLM credential variable '{key}' is set. ARIA is configured to use OpenRouter or Azure OpenAI ONLY. This credential will be ignored and should be removed to prevent leaks."
                 logging.getLogger("aria.core").warning(msg)
                 print(msg)
 
@@ -41,6 +54,9 @@ class Settings:
             model=os.getenv("ARIA_MODEL", "local-extractive"),
             collection_name=os.getenv("ARIA_COLLECTION", "aria_research_memory"),
             memory_path=os.getenv("ARIA_MEMORY_PATH", ".aria_chroma_db"),
+            azure_endpoint=azure_endpoint,
+            azure_api_key=azure_api_key,
+            azure_deployment_name=azure_deployment_name,
         )
 
 
