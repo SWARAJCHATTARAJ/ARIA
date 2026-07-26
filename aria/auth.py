@@ -203,46 +203,14 @@ def get_current_user(token: str | None = Depends(oauth2_scheme)) -> str:
             detail="JWT Secret is not configured on the server."
         )
     
-    # Attempt 1: Verify as ARIA local JWT
     try:
         payload = jwt.decode(token, jwt_secret, algorithms=[ALGORITHM])
         token_username: str = payload.get("sub")
         if token_username:
             return token_username
     except JWTError:
-        pass # Not a valid ARIA JWT, maybe it's a Supabase JWT
-
-    # Attempt 2: Verify as Supabase JWT
-    supabase_secret = os.getenv("SUPABASE_JWT_SECRET")
-    if supabase_secret:
-        try:
-            payload = jwt.decode(token, supabase_secret, algorithms=["HS256"], audience="authenticated")
-            # Supabase tokens usually have 'email' and 'sub' (uuid)
-            email = payload.get("email")
-            if not email:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid Supabase token claims (missing email)",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            
-            # Enforce allowed emails if configured
-            allowed_emails_env = os.getenv("ARIA_ALLOWED_GOOGLE_EMAILS")
-            if allowed_emails_env:
-                allowed_emails = [e.strip().lower() for e in allowed_emails_env.split(",")]
-                if email.lower() not in allowed_emails:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Email not allowed for Google Sign-In"
-                    )
-            
-            return email # Use email as the username for Supabase users
-        except JWTError:
-            pass # Validation against Supabase secret failed
-
-    # If both attempts fail
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

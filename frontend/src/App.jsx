@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
+import ChatBot from './ChatBot';
 import {
   Search, Play, Settings, History, Layers, ChevronDown, ChevronUp, 
   ExternalLink, ShieldCheck, Download, 
@@ -95,23 +96,56 @@ function App() {
   const [loginSuccess, setLoginSuccess] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  const exchangeSupabaseToken = async (supabaseToken) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/exchange`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access_token: supabaseToken })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        localStorage.setItem("aria_auth_token", data.access_token);
+        setToken(data.access_token);
+        
+        const lowerUser = data.user_id.trim().toLowerCase();
+        setUserId(lowerUser);
+        localStorage.setItem("aria_user_id", lowerUser);
+        
+        setTimeout(() => {
+          fetchSettings();
+          fetchMemoryCount();
+          fetchSessions();
+        }, 100);
+      } else {
+        const errorData = await response.json();
+        setLoginError(errorData.detail || "Not authorized.");
+        await supabase.auth.signOut();
+      }
+    } catch (err) {
+      setLoginError("Failed to verify authentication with server.");
+    }
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setToken(session.access_token);
-        localStorage.setItem("aria_auth_token", session.access_token);
+      if (session && !localStorage.getItem("aria_auth_token")) {
+        exchangeSupabaseToken(session.access_token);
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
-        setToken(session.access_token);
-        localStorage.setItem("aria_auth_token", session.access_token);
+        exchangeSupabaseToken(session.access_token);
+      } else {
+        // If signed out of supabase, don't necessarily wipe ARIA token, 
+        // because they might be using a local admin account.
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
 
   const handleGoogleLogin = async () => {
     setIsLoggingIn(true);
@@ -129,6 +163,24 @@ function App() {
       setIsLoggingIn(false);
     }
   };
+
+  const handleGithubLogin = async () => {
+    setIsLoggingIn(true);
+    setLoginError("");
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
+    } catch (err) {
+      setLoginError(err.message);
+      setIsLoggingIn(false);
+    }
+  };
+
 
   const authorizedFetch = async (url, options = {}) => {
     const headers = options.headers ? { ...options.headers } : {};
@@ -1095,13 +1147,22 @@ function App() {
                 <span className="text-xs text-aria-muted uppercase font-semibold">Or</span>
                 <div className="h-px bg-aria-border flex-1"></div>
               </div>
-              <button
-                onClick={handleGoogleLogin}
-                disabled={isLoggingIn}
-                className="w-full py-2.5 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-bold rounded-lg transition-all flex items-center justify-center gap-2"
-              >
-                {isLoggingIn ? "Redirecting..." : "Sign in with Google"}
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={handleGoogleLogin}
+                  disabled={isLoggingIn}
+                  className="w-full py-2.5 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-bold rounded-lg transition-all flex items-center justify-center gap-2"
+                >
+                  Continue with Google
+                </button>
+                <button
+                  onClick={handleGithubLogin}
+                  disabled={isLoggingIn}
+                  className="w-full py-2.5 bg-[#24292e] text-white hover:bg-[#2f363d] disabled:opacity-50 font-bold rounded-lg transition-all flex items-center justify-center gap-2"
+                >
+                  Continue with GitHub
+                </button>
+              </div>
             </>
           )}
 
@@ -2866,8 +2927,9 @@ function App() {
         </div>
       )}
 
-
-
+      {token && (
+        <ChatBot authorizedFetch={authorizedFetch} API_BASE={API_BASE} />
+      )}
     </div>
   );
 }

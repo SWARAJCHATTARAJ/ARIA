@@ -9,6 +9,7 @@ import requests
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from urllib.parse import urlparse
+from jose import jwt, JWTError
 
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
@@ -130,6 +131,9 @@ class RegisterRequest(BaseModel):
     username: str
     password: str
 
+class ExchangeRequest(BaseModel):
+    access_token: str
+
 class ResearchRequest(BaseModel):
     question: str
     use_local: bool = True
@@ -141,6 +145,14 @@ class ResearchRequest(BaseModel):
     user_id: str | None = None
     session_id: str | None = None
     local_only: bool = False
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+    user_id: str | None = None
 
 class InMemoryRateLimiter:
     def __init__(self, limit_per_minute: int = 5):
@@ -281,6 +293,44 @@ async def login(request: LoginRequest):
     
     access_token = create_access_token(data={"sub": username})
     return {"access_token": access_token, "token_type": "bearer"}
+
+@app.post("/api/auth/exchange")
+async def exchange_token(request: ExchangeRequest):
+    supabase_secret = os.getenv("SUPABASE_JWT_SECRET")
+    if not supabase_secret:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="SUPABASE_JWT_SECRET is not configured on the server."
+        )
+    
+    try:
+        payload = jwt.decode(request.access_token, supabase_secret, algorithms=["HS256"], audience="authenticated")
+        email = payload.get("email")
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Supabase token claims (missing email)"
+            )
+        
+        # Enforce allowed emails if configured
+        allowed_emails_env = os.getenv("ARIA_ALLOWED_EMAILS")
+        if allowed_emails_env:
+            allowed_emails = [e.strip().lower() for e in allowed_emails_env.split(",") if e.strip()]
+            if allowed_emails and email.lower() not in allowed_emails:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Email not on the allowed list for ARIA."
+                )
+        
+        # Issue ARIA JWT
+        access_token = create_access_token(data={"sub": email})
+        return {"access_token": access_token, "token_type": "bearer", "user_id": email}
+        
+    except JWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Could not validate Supabase token: {e}"
+        )
 
 @app.post("/api/auth/register")
 async def register(request: RegisterRequest):
@@ -535,9 +585,40 @@ async def run_research(
             
         except Exception as e:
             logger.exception("Exception occurred in sse_generator:")
-            yield f"event: error\ndata: {json.dumps({'error': redact_secrets(str(e))})}\n\n"
-
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+        
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
+
+@app.post("/api/chat")
+async def chat_endpoint(
+    request: ChatRequest,
+    x_openrouter_key: str | None = Header(None),
+    current_user: str = Depends(get_current_user)
+):
+    try:
+        from aria.chat import stream_chat_response
+        memory = get_memory()
+        
+        async def sse_chat_generator():
+            try:
+                async for chunk in stream_chat_response(
+                    request.messages, 
+                    memory, 
+                    settings, 
+                    x_openrouter_key
+                ):
+                    # We format as SSE
+                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                yield "data: [DONE]\n\n"
+
+        return StreamingResponse(sse_chat_generator(), media_type="text/event-stream")
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/research/plan")
 async def generate_plan(request: ResearchRequest, x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):
@@ -937,8 +1018,30 @@ def get_resource_path(relative_path: str) -> Path:
 
 dist_path = get_resource_path("frontend/dist")
 if dist_path.exists():
-    app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="static")
+    from fastapi.responses import FileResponse
+    import os
 
+    # Mount the static directory itself to serve assets, icons, manifest etc.
+    # We mount it at / to allow files like /favicon.svg to be resolved.
+    # BUT we do not use html=True, and we will define a catch-all route instead.
+    
+    @app.get("/")
+    async def serve_spa_root():
+        return FileResponse(str(dist_path / "index.html"))
+        
+    @app.api_route("/{path_name:path}", methods=["GET"])
+    async def catch_all(path_name: str):
+        # Prevent path traversal
+        file_path = (dist_path / path_name).resolve()
+        try:
+            # Check if the requested file actually exists in dist_path
+            if file_path.is_relative_to(dist_path.resolve()) and file_path.exists() and file_path.is_file():
+                return FileResponse(str(file_path))
+        except Exception:
+            pass
+            
+        # Fallback to index.html for React Router
+        return FileResponse(str(dist_path / "index.html"))
 if __name__ == "__main__":
     import uvicorn
     host = os.getenv("ARIA_HOST", "0.0.0.0")
