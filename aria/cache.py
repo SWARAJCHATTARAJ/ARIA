@@ -3,7 +3,6 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 import numpy as np
-import chromadb.utils.embedding_functions as ef
 from .auth import get_db_connection
 from .sessions import is_db_mode, result_to_dict, result_from_dict
 from .core import ResearchResult
@@ -13,6 +12,7 @@ _EMBEDDING_FN = None
 def get_embedding_fn():
     global _EMBEDDING_FN
     if _EMBEDDING_FN is None:
+        import chromadb.utils.embedding_functions as ef
         _EMBEDDING_FN = ef.DefaultEmbeddingFunction()
     return _EMBEDDING_FN
 

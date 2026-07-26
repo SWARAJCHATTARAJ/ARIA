@@ -273,7 +273,6 @@ propcache==0.5.2
     #   yarl
 protobuf==3.20.3
     # via
-    #   aria-research-assistant (pyproject.toml)
     #   googleapis-common-protos
     #   onnxruntime
     #   opentelemetry-proto
@@ -412,7 +411,6 @@ threadpoolctl==3.6.0
     # via scikit-learn
 tokenizers==0.22.2
     # via
-    #   aria-research-assistant (pyproject.toml)
     #   chromadb
     #   transformers
 toml==0.10.2
@@ -493,5 +491,4 @@ yarl==1.24.2
 yfinance==1.5.1
     # via aria-research-assistant (pyproject.toml)
 zstandard==0.25.0
-openai
     # via langsmith

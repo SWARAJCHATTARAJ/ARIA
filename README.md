@@ -127,9 +127,12 @@ pip install -r requirements.txt
 Create a `.env` file in the root directory. You can use `.env.example` as a starting template:
 ```env
 # Optional: Provide an API key to enable LLM-powered planning and verification
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-ARIA_LLM_PROVIDER=openrouter
-ARIA_MODEL=google/gemma-2-9b-it:free
+AZURE_OPENAI_API_KEY=your_azure_key_here
+AZURE_OPENAI_ENDPOINT=your_azure_endpoint
+ARIA_LLM_PROVIDER=azure
+ARIA_MODEL=gpt-4o-mini
+# OpenRouter can be used as a fallback
+# OPENROUTER_API_KEY=your_openrouter_key
 ```
 *Note: If no LLM key is supplied, ARIA runs in a local-only extractive synthesis mode.*
 
