@@ -58,3 +58,9 @@ local.properties
 app-release-unsigned-aligned.apk
 app-release-signed.apk.idsig
 
+
+# Added to protect sensitive files and ignore temporary directories
+aria-secure-key
+aria-secure-key.pub
+.venv_old/
+audit_logs/
