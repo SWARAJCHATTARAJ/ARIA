@@ -22,6 +22,26 @@ source venv/bin/activate
 echo "Installing dependencies from requirements.txt..."
 pip install -r requirements.txt
 
-# e. Startup command to launch the FastAPI server on Port 80 using Uvicorn
-echo "Starting FastAPI server on Port 80..."
-sudo venv/bin/uvicorn main:app --host 0.0.0.0 --port 80
+# e. Setup systemd service for production deployment
+echo "Configuring systemd service for FastAPI..."
+cat <<EOF | sudo tee /etc/systemd/system/aria.service
+[Unit]
+Description=ARIA FastAPI Backend
+After=network.target
+
+[Service]
+User=$USER
+Group=www-data
+WorkingDirectory=$(pwd)
+Environment="PATH=$(pwd)/venv/bin"
+ExecStart=$(pwd)/venv/bin/uvicorn main:app --host 0.0.0.0 --port 80
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable aria.service
+sudo systemctl start aria.service
+echo "FastAPI server started successfully via systemd on Port 80."
