@@ -1140,31 +1140,29 @@ function App() {
             </button>
           </form>
 
-          {authMode === "login" && (
-            <>
-              <div className="flex items-center gap-4 my-2">
-                <div className="h-px bg-aria-border flex-1"></div>
-                <span className="text-xs text-aria-muted uppercase font-semibold">Or</span>
-                <div className="h-px bg-aria-border flex-1"></div>
-              </div>
-              <div className="flex flex-col gap-2">
-                <button
-                  onClick={handleGoogleLogin}
-                  disabled={isLoggingIn}
-                  className="w-full py-2.5 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-bold rounded-lg transition-all flex items-center justify-center gap-2"
-                >
-                  Continue with Google
-                </button>
-                <button
-                  onClick={handleGithubLogin}
-                  disabled={isLoggingIn}
-                  className="w-full py-2.5 bg-[#24292e] text-white hover:bg-[#2f363d] disabled:opacity-50 font-bold rounded-lg transition-all flex items-center justify-center gap-2"
-                >
-                  Continue with GitHub
-                </button>
-              </div>
-            </>
-          )}
+          <>
+            <div className="flex items-center gap-4 my-2">
+              <div className="h-px bg-aria-border flex-1"></div>
+              <span className="text-xs text-aria-muted uppercase font-semibold">Or</span>
+              <div className="h-px bg-aria-border flex-1"></div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleGoogleLogin}
+                disabled={isLoggingIn}
+                className="w-full py-2.5 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-bold rounded-lg transition-all flex items-center justify-center gap-2"
+              >
+                Continue with Google
+              </button>
+              <button
+                onClick={handleGithubLogin}
+                disabled={isLoggingIn}
+                className="w-full py-2.5 bg-[#24292e] text-white hover:bg-[#2f363d] disabled:opacity-50 font-bold rounded-lg transition-all flex items-center justify-center gap-2"
+              >
+                Continue with GitHub
+              </button>
+            </div>
+          </>
 
           <div className="text-center text-xs text-aria-muted mt-2 border-t border-aria-border pt-4">
             {authMode === "login" ? (
