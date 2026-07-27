@@ -787,71 +787,74 @@ function App() {
 
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+        
+        if (value) {
+          buffer += decoder.decode(value, { stream: !done });
+          
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary !== -1) {
+            const message = buffer.substring(0, boundary).trim();
+            buffer = buffer.substring(boundary + 2);
 
-        buffer += decoder.decode(value, { stream: true });
+            let eventType = "message";
+            let eventData = "";
 
-        let boundary = buffer.indexOf("\n\n");
-        while (boundary !== -1) {
-          const message = buffer.substring(0, boundary).trim();
-          buffer = buffer.substring(boundary + 2);
-
-          let eventType = "message";
-          let eventData = "";
-
-          const lines = message.split("\n");
-          for (const line of lines) {
-            if (line.startsWith("event:")) {
-              eventType = line.substring(6).trim();
-            } else if (line.startsWith("data:")) {
-              eventData = line.substring(5).trim();
-            }
-          }
-
-          if (eventData) {
-            try {
-              const parsed = JSON.parse(eventData);
-
-              if (eventType === "init") {
-                setResearchLogs(prev => [...prev, `[System] > ${parsed.message}`]);
-              } else if (eventType === "stage_start") {
-                const { stage, memory_mb } = parsed;
-                setCurrentStage(stage);
-                const memInfo = memory_mb ? ` [Memory: ${memory_mb} MB]` : "";
-                setResearchLogs(prev => [...prev, `[System] > Running stage: ${stage}...${memInfo}`]);
-              } else if (eventType === "stage_complete") {
-                const { stage, elapsed, events, memory_mb } = parsed;
-                setCurrentStage(stage === "verify" ? "verify" : stage);
-                if (events && events.length > 0) {
-                  setResearchLogs(prev => [...prev, ...events.map(ev => `[ARIA] > ${ev}`)]);
-                }
-                const memInfo = memory_mb ? ` [Memory: ${memory_mb} MB]` : "";
-                setResearchLogs(prev => [...prev, `[System] > Timeline: ${stage} completed in ${elapsed}s${memInfo}`]);
-              } else if (eventType === "result") {
-                hasResult = true;
-                setCurrentStage("complete");
-                setResult({
-                  ...parsed.result,
-                  created_at: parsed.created_at || new Date().toISOString()
-                });
-                setCustomPlan(parsed.result?.plan || []);
-                setCustomPlanQuestion(parsed.result?.question || trimmedQuestion);
-                setSelectedSessionId(parsed.session_id);
-                fetchSessions();
-                fetchMemoryCount();
-                fetchRetrievalLogs();
-              } else if (eventType === "error") {
-                hasError = true;
-                setError(parsed.error);
-                setCurrentStage("idle");
+            const lines = message.split("\n");
+            for (const line of lines) {
+              if (line.startsWith("event:")) {
+                eventType = line.substring(6).trim();
+              } else if (line.startsWith("data:")) {
+                eventData = line.substring(5).trim();
               }
-            } catch (err) {
-              console.error("Failed to parse stream event:", err);
             }
-          }
 
-          boundary = buffer.indexOf("\n\n");
+            if (eventData) {
+              try {
+                const parsed = JSON.parse(eventData);
+
+                if (eventType === "init") {
+                  setResearchLogs(prev => [...prev, `[System] > ${parsed.message}`]);
+                } else if (eventType === "stage_start") {
+                  const { stage, memory_mb } = parsed;
+                  setCurrentStage(stage);
+                  const memInfo = memory_mb ? ` [Memory: ${memory_mb} MB]` : "";
+                  setResearchLogs(prev => [...prev, `[System] > Running stage: ${stage}...${memInfo}`]);
+                } else if (eventType === "stage_complete") {
+                  const { stage, elapsed, events, memory_mb } = parsed;
+                  setCurrentStage(stage === "verify" ? "verify" : stage);
+                  if (events && events.length > 0) {
+                    setResearchLogs(prev => [...prev, ...events.map(ev => `[ARIA] > ${ev}`)]);
+                  }
+                  const memInfo = memory_mb ? ` [Memory: ${memory_mb} MB]` : "";
+                  setResearchLogs(prev => [...prev, `[System] > Timeline: ${stage} completed in ${elapsed}s${memInfo}`]);
+                } else if (eventType === "result") {
+                  hasResult = true;
+                  setCurrentStage("complete");
+                  setResult({
+                    ...parsed.result,
+                    created_at: parsed.created_at || new Date().toISOString()
+                  });
+                  setCustomPlan(parsed.result?.plan || []);
+                  setCustomPlanQuestion(parsed.result?.question || trimmedQuestion);
+                  setSelectedSessionId(parsed.session_id);
+                  fetchSessions();
+                  fetchMemoryCount();
+                  fetchRetrievalLogs();
+                } else if (eventType === "error") {
+                  hasError = true;
+                  setError(parsed.error);
+                  setCurrentStage("idle");
+                }
+              } catch (err) {
+                console.error("Failed to parse stream event:", err);
+              }
+            }
+
+            boundary = buffer.indexOf("\n\n");
+          }
         }
+        
+        if (done) break;
       }
 
       if (!hasResult && !hasError) {

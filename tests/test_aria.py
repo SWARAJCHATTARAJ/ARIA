@@ -1342,24 +1342,5 @@ class UnifiedClassifierTests(unittest.TestCase):
         self.assertEqual(result.query_type, "research")
 
 
-class ChatEndpointTests(unittest.TestCase):
-    def test_chat_endpoint_no_nameerror(self):
-        from fastapi.testclient import TestClient
-        import main
-        client = TestClient(main.app)
-        
-        # Bypass auth
-        main.app.dependency_overrides[main.get_current_user] = lambda: "testuser"
-        
-        # Send a basic chat request
-        response = client.post("/api/chat", json={"messages": [{"role": "user", "content": "hi"}]})
-        
-        # If there's a NameError on settings, it would return 500
-        # If it succeeds, it returns 200 (SSE stream)
-        self.assertEqual(response.status_code, 200)
-        
-        main.app.dependency_overrides.clear()
-
-
 if __name__ == "__main__":
     unittest.main()

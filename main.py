@@ -598,37 +598,6 @@ async def run_research(
         
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
-@app.post("/api/chat")
-async def chat_endpoint(
-    request: ChatRequest,
-    x_openrouter_key: str | None = Header(None),
-    current_user: str = Depends(get_current_user)
-):
-    try:
-        from aria.chat import stream_chat_response
-        memory = get_memory()
-        
-        async def sse_chat_generator():
-            try:
-                from aria.core import Settings
-                settings = Settings.from_env()
-                async for chunk in stream_chat_response(
-                    request.messages, 
-                    memory, 
-                    settings, 
-                    x_openrouter_key
-                ):
-                    # We format as SSE
-                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
-                yield "data: [DONE]\n\n"
-            except Exception as e:
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                yield "data: [DONE]\n\n"
-
-        return StreamingResponse(sse_chat_generator(), media_type="text/event-stream")
-    except Exception as e:
-        logger.error(f"Error in chat endpoint: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/research/plan")
 async def generate_plan(request: ResearchRequest, x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):
