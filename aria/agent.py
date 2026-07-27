@@ -570,7 +570,7 @@ class LLMClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "temperature": 0.2,
+            "temperature": 1,
         }
         max_retries = 3
         backoff_factor = 2
@@ -639,7 +639,7 @@ class LLMClient:
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
-                    temperature=0.2,
+                    temperature=1,
                     timeout=60,
                 )
                 return response.choices[0].message.content
