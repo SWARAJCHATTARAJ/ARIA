@@ -625,7 +625,7 @@ class LLMClient:
         client = AzureOpenAI(
             azure_endpoint=self.settings.azure_endpoint,
             api_key=self.settings.azure_api_key,
-            api_version="2024-02-01",
+            api_version=self.settings.azure_api_version,
         )
         deployment_name = self.settings.azure_deployment_name or self.settings.model
         

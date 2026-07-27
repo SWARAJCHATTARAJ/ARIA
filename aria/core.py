@@ -18,6 +18,7 @@ class Settings:
     azure_endpoint: str | None = None
     azure_api_key: str | None = None
     azure_deployment_name: str | None = None
+    azure_api_version: str = "2024-06-01"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -26,6 +27,7 @@ class Settings:
         azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip() or None
         azure_api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip() or None
         azure_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "").strip() or None
+        azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "").strip() or "2024-06-01"
 
         if provider != "openrouter" and openrouter_api_key and not openrouter_api_key.startswith("your_"):
             import logging
@@ -57,6 +59,7 @@ class Settings:
             azure_endpoint=azure_endpoint,
             azure_api_key=azure_api_key,
             azure_deployment_name=azure_deployment_name,
+            azure_api_version=azure_api_version,
         )
 
 
