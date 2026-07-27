@@ -1099,7 +1099,7 @@ function App() {
             )}
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-aria-muted uppercase tracking-wider">Username</label>
+              <label className="text-xs font-semibold text-aria-muted uppercase tracking-wider">Email or Username</label>
               <input
                 type="text"
                 placeholder="Enter username"

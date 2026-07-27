@@ -331,10 +331,10 @@ async def exchange_token(request: ExchangeRequest):
 async def register(request: RegisterRequest):
     import re
     username = request.username.strip().lower()
-    if not re.match(r"^[a-zA-Z0-9_\-]+$", username):
+    if not re.match(r"^[a-zA-Z0-9_\-\.@]+$", username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username can only contain alphanumeric characters, underscores, and hyphens."
+            detail="Username/Email can only contain alphanumeric characters, underscores, hyphens, @, and dots."
         )
     if len(username) < 3 or len(username) > 30:
         raise HTTPException(
