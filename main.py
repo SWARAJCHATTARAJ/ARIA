@@ -494,7 +494,7 @@ async def run_research(
             q_type, q_subtype = classify_question(request.question)
             
             if q_type != QueryType.RESEARCH:
-                logger.info(f"Query classified as {q_type.value}. Using instant bypass.")
+                logger.info(f"Query classified as {q_type}. Using instant bypass.")
                 instant_result = agent.run(request.question)
                 yield f"event: stage_start\ndata: {json.dumps({'stage': 'plan', 'memory_mb': round(get_memory_usage_mb(), 2)})}\n\n"
                 yield f"event: stage_complete\ndata: {json.dumps({'stage': 'plan', 'elapsed': 0.0, 'events': instant_result.events})}\n\n"
