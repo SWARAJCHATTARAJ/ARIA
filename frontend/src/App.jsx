@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
-import ChatBot from './ChatBot';
 import {
   Search, Play, Settings, History, Layers, ChevronDown, ChevronUp, 
   ExternalLink, ShieldCheck, Download, 
@@ -1601,7 +1600,7 @@ function App() {
 
 
               {/* Research synthesized markdown report */}
-              {result && !isResearching && (
+              {result && !isResearching && (!result.query_type || result.query_type === "research") && (
                 <div className="space-y-6">
                   {/* Enhanced Header Row above brief content */}
                   <div className="p-4 bg-aria-surface/60 border border-aria-border rounded-xl space-y-3 shadow-sm">
@@ -1777,7 +1776,23 @@ function App() {
 
 
           {/* RIGHT PANEL: Sleek Citations, Activity Trace Logs, and Metrics */}
-          {result && !isResearching && (
+              {/* Casual / Meta Chat Response UI */}
+              {result && !isResearching && result.query_type && result.query_type !== "research" && (
+                <div className="flex-1 flex flex-col items-center justify-center space-y-6 max-w-2xl mx-auto w-full px-4 pt-12">
+                  <div className="w-full flex justify-end">
+                    <div className="bg-aria-accent/10 border border-aria-accent/20 rounded-2xl rounded-tr-sm px-4 py-3 max-w-[85%] text-sm text-aria-text">
+                      {result.question}
+                    </div>
+                  </div>
+                  <div className="w-full flex justify-start">
+                    <div className="bg-aria-surface border border-aria-border rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%] text-sm text-aria-muted prose prose-invert prose-sm">
+                      <ReactMarkdown components={markdownComponents}>{result.answer}</ReactMarkdown>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+          {result && !isResearching && (!result.query_type || result.query_type === "research") && (
             <div className={`w-full md:w-96 flex flex-col bg-aria-surface overflow-hidden select-none shrink-0 border-l border-aria-border ${
               mobileActiveTab !== "details" ? "hidden md:flex" : "flex"
             }`}>
@@ -2925,9 +2940,6 @@ function App() {
         </div>
       )}
 
-      {token && (
-        <ChatBot authorizedFetch={authorizedFetch} API_BASE={API_BASE} />
-      )}
     </div>
   );
 }

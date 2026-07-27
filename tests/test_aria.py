@@ -1318,7 +1318,48 @@ class StructuredRetrievalLoggingTests(unittest.TestCase):
         self.assertIn("top_chunk_similarity", logs[0])
 
 
+class UnifiedClassifierTests(unittest.TestCase):
+    def setUp(self):
+        os.environ["ARIA_COLLECTION"] = "aria_test_classifier"
+        self.settings = Settings.from_env()
+        self.memory = VectorMemory(self.settings)
+        self.memory.reset()
+        self.agent = ResearchAgent(self.settings, self.memory)
+
+    def test_casual_query(self):
+        result = self.agent.run("hi", use_web=False, use_local=False)
+        self.assertEqual(result.query_type, "casual")
+        self.assertEqual(len(result.evidence), 0)
+        self.assertIn("Direct conversational response", result.verification)
+
+    def test_meta_query(self):
+        result = self.agent.run("who created you?", use_web=False, use_local=False)
+        self.assertEqual(result.query_type, "meta")
+        self.assertEqual(len(result.evidence), 0)
+
+    def test_research_query(self):
+        result = self.agent.run("what is quantum computing?", use_web=False, use_local=False, max_iterations=1)
+        self.assertEqual(result.query_type, "research")
+
+
+class ChatEndpointTests(unittest.TestCase):
+    def test_chat_endpoint_no_nameerror(self):
+        from fastapi.testclient import TestClient
+        import main
+        client = TestClient(main.app)
+        
+        # Bypass auth
+        main.app.dependency_overrides[main.get_current_user] = lambda: "testuser"
+        
+        # Send a basic chat request
+        response = client.post("/api/chat", json={"messages": [{"role": "user", "content": "hi"}]})
+        
+        # If there's a NameError on settings, it would return 500
+        # If it succeeds, it returns 200 (SSE stream)
+        self.assertEqual(response.status_code, 200)
+        
+        main.app.dependency_overrides.clear()
+
+
 if __name__ == "__main__":
     unittest.main()
-
-

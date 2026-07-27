@@ -489,6 +489,19 @@ async def run_research(
                 yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(cached_result)})}\n\n"
                 return
 
+            # Check query classification first
+            from aria.agent import classify_question, QueryType
+            q_type, q_subtype = classify_question(request.question)
+            
+            if q_type != QueryType.RESEARCH:
+                logger.info(f"Query classified as {q_type.value}. Using instant bypass.")
+                instant_result = agent.run(request.question)
+                yield f"event: stage_start\ndata: {json.dumps({'stage': 'plan', 'memory_mb': round(get_memory_usage_mb(), 2)})}\n\n"
+                yield f"event: stage_complete\ndata: {json.dumps({'stage': 'plan', 'elapsed': 0.0, 'events': instant_result.events})}\n\n"
+                session = save_session(instant_result, user_id=request.user_id)
+                yield f"event: result\ndata: {json.dumps({'session_id': session['id'], 'result': result_to_dict(instant_result)})}\n\n"
+                return
+
             def run_graph():
                 try:
                     logger.info("LangGraph thread started execution.")
@@ -597,6 +610,8 @@ async def chat_endpoint(
         
         async def sse_chat_generator():
             try:
+                from aria.core import Settings
+                settings = Settings.from_env()
                 async for chunk in stream_chat_response(
                     request.messages, 
                     memory, 
