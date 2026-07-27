@@ -45,7 +45,7 @@ from aria.core import Settings, validate_pdf_upload, estimate_tokens
 from aria.rag import VectorMemory
 from aria.reports import build_markdown_report, build_pdf_report, build_trace_report
 from aria.sessions import find_session_path, is_admin_user, list_sessions, load_session, save_session, result_to_dict
-from aria.auth import get_current_user, verify_password, create_access_token, get_auth_settings, get_user_hash, create_user, oauth2_scheme
+from aria.auth import get_current_user, verify_password, create_access_token, get_auth_settings, get_user_hash, create_user, oauth2_scheme, verify_supabase_token
 
 
 load_dotenv()
@@ -296,15 +296,8 @@ async def login(request: LoginRequest):
 
 @app.post("/api/auth/exchange")
 async def exchange_token(request: ExchangeRequest):
-    supabase_secret = os.getenv("SUPABASE_JWT_SECRET")
-    if not supabase_secret:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="SUPABASE_JWT_SECRET is not configured on the server."
-        )
-    
     try:
-        payload = jwt.decode(request.access_token, supabase_secret, algorithms=["HS256"], audience="authenticated")
+        payload = await verify_supabase_token(request.access_token)
         email = payload.get("email")
         if not email:
             raise HTTPException(
@@ -326,7 +319,9 @@ async def exchange_token(request: ExchangeRequest):
         access_token = create_access_token(data={"sub": email})
         return {"access_token": access_token, "token_type": "bearer", "user_id": email}
         
-    except JWTError as e:
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Could not validate Supabase token: {e}"

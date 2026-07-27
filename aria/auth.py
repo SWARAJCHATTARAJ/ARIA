@@ -2,6 +2,8 @@ import os
 import bcrypt
 import sqlite3
 from datetime import datetime, timedelta, timezone
+import httpx
+import time
 from pathlib import Path
 from jose import jwt, JWTError
 from fastapi import HTTPException, status, Depends
@@ -213,4 +215,41 @@ def get_current_user(token: str | None = Depends(oauth2_scheme)) -> str:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+# Cache variables for JWKS
+_JWKS_CACHE = None
+_JWKS_CACHE_TIME = 0
+
+async def get_supabase_jwks():
+    global _JWKS_CACHE, _JWKS_CACHE_TIME
+    now = time.time()
+    if _JWKS_CACHE and (now - _JWKS_CACHE_TIME) < 3600:
+        return _JWKS_CACHE
+
+    supabase_url = os.getenv("VITE_SUPABASE_URL", "https://buwixynplswefemmoshf.supabase.co")
+    jwks_url = f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(jwks_url, timeout=10.0)
+        resp.raise_for_status()
+        _JWKS_CACHE = resp.json()
+        _JWKS_CACHE_TIME = now
+        return _JWKS_CACHE
+
+async def verify_supabase_token(token: str) -> dict:
+    jwks = await get_supabase_jwks()
+    try:
+        # Decode the token using the JWKS from Supabase
+        payload = jwt.decode(
+            token, 
+            jwks, 
+            algorithms=["HS256", "RS256", "ES256"], 
+            audience="authenticated"
+        )
+        return payload
+    except JWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Could not validate Supabase token: {e}"
         )
