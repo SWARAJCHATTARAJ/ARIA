@@ -580,7 +580,7 @@ async def run_research(
             
         except Exception as e:
             logger.exception("Exception occurred in sse_generator:")
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
         yield "data: [DONE]\n\n"
         
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
