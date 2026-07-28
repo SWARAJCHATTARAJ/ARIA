@@ -299,24 +299,62 @@ def classify_question(question: str) -> tuple[str, str]:
     if is_meta and not has_external_research_intent:
         return QueryType.META, ResearchSubtype.ABOUT_ARIA
 
-    # Category 2 (Group A): Greetings / Small talk
-    casual_greetings = {"hi", "hello", "hey", "greetings", "good morning", "good evening", "good afternoon", "howdy", "sup", "yo"}
-    casual_phrases = {"how are you", "how are you doing", "whats up", "what is up", "nice to meet you", "thanks", "thank you", "thanks a lot", "thank you very much", "bye", "goodbye", "see ya", "have a nice day"}
-    casual_vocab = casual_greetings | {"there", "aria", "assistant", "how", "are", "you", "doing", "today", "thanks", "thank", "much", "very", "bye", "goodbye", "great", "cool", "awesome", "ok", "okay"}
-
+    # Category 2 (Group A): Casual / Small talk (Expanded 10 Categories)
     clean_q = re.sub(r"[^\w\s]", "", q).strip()
     words = clean_q.split()
     
-    if clean_q in casual_phrases or clean_q in casual_vocab:
-        return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
-        
-    if words and words[0] in casual_greetings:
-        remaining = " ".join(words[1:]).strip()
-        if not remaining or remaining in casual_phrases or remaining in {"there", "aria", "assistant", "buddy"} or remaining.startswith("how are you"):
-            return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
+    # Boundary check: Ensure there's no factual/research intent mixed in
+    research_indicators = ["what is", "how do", "why did", "can you explain", "who is", 
+                           "where is", "when did", "source", "article", "paper", "data",
+                           "research", "summarize", "analyze", "what was", "revenue of", "stock price"]
+    
+    is_factual_question = any(ind in q for ind in research_indicators) and not (
+        clean_q == "what is up" or clean_q == "whats up"
+    )
 
-    if words and all(w in casual_vocab for w in words):
-        return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
+    if not is_factual_question and not has_external_research_intent:
+        casual_phrases = [
+            # 1. Greetings
+            "hi", "hello", "hey", "greetings", "good morning", "good evening", "good afternoon", "howdy", "sup", "yo",
+            # 2. Wellbeing check-ins
+            "how are you", "how are you doing", "hows it going", "how is it going", "whats up", "what is up", "you good", "how do you do",
+            # 3. Gratitude/closing
+            "thanks", "thank you", "appreciate it", "thats all", "that is all", "bye", "goodbye", "see you", "see ya", "have a good one", "have a nice day", "cool thanks for that", "thanks a lot",
+            # 4. Acknowledgment/reactions
+            "ok", "okay", "cool", "nice", "got it", "makes sense", "that makes sense", "thats interesting", "that is interesting", "understood", "right", "sure", "awesome", "great",
+            # 5. Small talk
+            "hows your day", "how is your day", "busy day", "nice weather", "good day",
+            # 6. Compliments/feedback about ARIA
+            "youre helpful", "you are helpful", "this is cool", "good job", "that was fast", "you are smart", "great job", "nice work", "amazing",
+            # 7. Mild frustration/casual complaints
+            "this is confusing", "ugh", "that didnt work", "that did not work", "im confused", "i am confused", "frustrating", "annoying",
+            # 8. Testing/probing messages
+            "are you real", "can you hear me", "test", "testing", "123", "hello world", "is anyone there",
+            # 9. Casual follow-up
+            "cool thanks", "ok thanks", "got it thanks"
+        ]
+        
+        casual_vocab = set(casual_phrases + ["aria", "assistant", "there", "buddy", "man", "bro", "dude", "much", "very", "got", "it", "makes", "sense", "thank", "bye", "haha", "lol", "joke", "funny"])
+        
+        if clean_q in casual_phrases:
+            return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
+            
+        if words and words[0] in ["hi", "hello", "hey", "yo", "greetings"]:
+            remaining = " ".join(words[1:]).strip()
+            if not remaining or remaining in casual_phrases or remaining in ["there", "aria", "buddy"]:
+                return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
+                
+        if words and len(words) <= 6 and all(w in casual_vocab for w in words):
+            return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
+            
+        # If it starts with a known casual phrase and is short (<= 8 words)
+        if len(words) <= 8 and any(clean_q.startswith(cp) for cp in casual_phrases):
+            return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
+            
+        # 10. Off-topic musing/jokes (Fallback)
+        joke_musing_phrases = ["tell me a joke", "knock knock", "haha", "lol", "that is funny", "thats funny"]
+        if any(jm in clean_q for jm in joke_musing_phrases):
+            return QueryType.CASUAL, ResearchSubtype.SMALL_TALK
 
     # Category 15 (Group C): Ambiguous keyword queries
     ambiguous_patterns = [
@@ -422,7 +460,10 @@ def classify_question(question: str) -> tuple[str, str]:
 def handle_casual_query(question: str, llm: LLMClient) -> str:
     system = (
         "You are ARIA, a friendly and intelligent assistant. "
-        "Answer the user's greeting or casual comment directly, politely, and briefly in 1-2 sentences. "
+        "Answer the user's greeting, casual comment, wellbeing check-in, compliment, or mild frustration directly, naturally, and briefly in 1-2 sentences. "
+        "Do not force a pivot back to 'how can I help with research' in every message—let casual replies just be replies. "
+        "If they express frustration (e.g., 'this is confusing', 'that didn't work'), respond with light empathy and gently offer to help troubleshoot. "
+        "If they are testing (e.g., 'are you real', '123'), respond naturally acknowledging it's a test. "
         "Do NOT format as a research brief, do NOT add section headers, bullet lists, or citation markers."
     )
     user = f"User message: {question}"
@@ -435,14 +476,23 @@ def handle_casual_query(question: str, llm: LLMClient) -> str:
             pass
             
     q_lower = (question or "").lower()
-    if any(w in q_lower for w in ["hi", "hello", "hey"]):
-        return "Hello! How can I assist you with your research or questions today?"
-    elif any(w in q_lower for w in ["thanks", "thank"]):
-        return "You're very welcome! Let me know if you have any more questions."
+    clean_q = re.sub(r"[^\w\s]", "", q_lower).strip()
+    if clean_q in ["thanks", "thank you", "appreciate it", "cool thanks for that"]:
+        return "You're very welcome!"
+    elif any(clean_q.startswith(w) for w in ["this is confusing", "ugh", "that didnt work"]):
+        return "I'm sorry to hear that. Let me know if you'd like to troubleshoot or if I can explain something differently."
+    elif clean_q in ["are you real", "test", "testing", "123", "can you hear me"]:
+        return "Loud and clear! I'm here and working."
+    elif any(w in q_lower for w in ["hi", "hello", "hey"]):
+        return "Hello! How can I assist you today?"
     elif "how are you" in q_lower:
-        return "I'm doing great and ready to assist you! What research topic would you like to explore today?"
+        return "I'm doing great, thanks for asking!"
+    elif any(clean_q.startswith(w) for w in ["ok", "cool", "nice", "got it", "makes sense"]):
+        return "Sounds good."
+    elif any(clean_q.startswith(w) for w in ["youre helpful", "this is cool", "good job", "awesome"]):
+        return "Thank you! I appreciate the feedback."
     else:
-        return "Hello! I'm ARIA, ready to help answer your questions or perform research whenever you need."
+        return "Got it. Let me know if you need anything else!"
 
 
 class AgentState(TypedDict):
