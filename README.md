@@ -139,7 +139,7 @@ ARIA_MODEL=gpt-4o-mini
 ### 4. Run the Application
 Start the backend server directly:
 ```bash
-uvicorn app.main:app --reload
+uvicorn main:app --reload
 ```
 Open your browser to the local frontend port.
 

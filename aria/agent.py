@@ -14,7 +14,6 @@ from .core import Settings, Evidence, ResearchResult, estimate_tokens
 from .rag import VectorMemory
 from .tools import free_web_search, get_market_snapshot, run_async
 from .relevance import filter_evidence_by_relevance
-from .relevance import filter_evidence_by_relevance
 
 logger = logging.getLogger("aria.agent")
 
@@ -37,7 +36,7 @@ def is_developer_query(query: str) -> bool:
     if q in exact_phrases:
         return True
 
-    if re.fullmatch(r"(?:who\s+is\s+)?swaraj(?:\s+chattaraj)?", q):
+    if re.search(r"\bswaraj(?:\s+chattaraj)?\b", q):
         return True
     if re.search(r"\b(?:your|aria'?s)\s+(?:developer|creator|author|maker)\b", q):
         return True
@@ -50,6 +49,9 @@ def normalize_query_text(query: str) -> str:
 
 
 def is_meta_about_aria_query(question: str) -> bool:
+    if is_developer_query(question):
+        return True
+    
     q = normalize_query_text(question)
     if not q:
         return False
@@ -94,6 +96,23 @@ DEVELOPER_PROFILE_EVIDENCE = Evidence(
     score=1.0,
     source_id="developer_profile",
     retrieved_via="developer_database"
+)
+
+APP_INFO_EVIDENCE = Evidence(
+    title="Official System Documentation: App Download & Installation",
+    summary=(
+        "ARIA can be installed and run as a standalone Windows Desktop application or as a Progressive Web App (PWA) on mobile devices (Android & iOS). "
+        "Windows Desktop Application: Download the standalone Windows desktop launcher (aria-desktop-app.zip) from the App & Icon Downloads section in the ARIA console sidebar. "
+        "The desktop application runs the FastAPI backend and React frontend locally, wrapped in a native desktop window via webview (PyWebView). "
+        "Mobile App (Android & iOS): ARIA is fully optimized to run as a PWA on mobile devices and tablet screens. "
+        "Installation (Android & iOS): Open the ARIA URL in Google Chrome (on Android) or Safari (on iOS). Tap the browser's menu (Android) or share icon (iOS). Select Add to Home Screen. "
+        "On Android, the browser automatically registers and installs it as a native WebAPK."
+    ),
+    source_type="system",
+    url="local://system",
+    score=1.0,
+    source_id="app_downloads",
+    retrieved_via="system_database"
 )
 
 
@@ -474,8 +493,8 @@ def handle_casual_query(question: str, llm: LLMClient) -> str:
             reply = llm.complete(system, user, task="casual")
             if reply and not reply.startswith("### Executive Brief"):
                 return reply.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Casual response failed: {e}")
             
     q_lower = (question or "").lower()
     clean_q = re.sub(r"[^\w\s]", "", q_lower).strip()
@@ -653,7 +672,7 @@ class LLMClient:
                     detail = "Bad Request"
                     try:
                         detail = response.json().get("error", {}).get("message", "Bad Request")
-                    except Exception:
+                    except ValueError:
                         pass
                     raise RuntimeError(f"OpenRouter API Bad Request (HTTP 400): {detail}")
                 response.raise_for_status()
@@ -1004,8 +1023,8 @@ class ResearchAgent:
                 res = self.llm.complete(system, user, task="ungrounded_fallback")
                 if res:
                     return res.strip()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Fallback response failed: {e}")
         return f"Based on general knowledge: '{question}' touches on general concepts. Please verify specific details independently."
 
     def run(
@@ -1076,7 +1095,7 @@ class ResearchAgent:
                 plan=[],
                 answer=ans,
                 verification="STATUS: PASSED\nREASON: Instant app functionality lookup.",
-                evidence=[],
+                evidence=[APP_INFO_EVIDENCE],
                 events=["Classifier: identified App Help query; answered from app documentation"],
                 metrics={"iterations": 0, "answer_tokens_est": estimate_tokens(ans)},
                 query_type=QueryType.APP_HELP,
@@ -1516,8 +1535,8 @@ class ResearchAgent:
         if not is_global_summary:
             new_evidence = re_rank_evidence(question, new_evidence)
 
-        # Semantic relevance filter: drop evidence below similarity threshold
-        new_evidence = filter_evidence_by_relevance(question, new_evidence)
+            # Semantic relevance filter: drop evidence below similarity threshold.
+            new_evidence = filter_evidence_by_relevance(question, new_evidence)
 
         logger.info(f"[Stage: search] Retriever completed (iteration {iteration}). Found {len(new_evidence)} evidence items.")
         return {"evidence": new_evidence, "events": new_events}
@@ -1752,7 +1771,7 @@ class ResearchAgent:
                                 if current_conf is None:
                                     current_conf = 1.0
                                 evidence[idx].confidence = min(current_conf, confidence)
-                        except Exception:
+                        except (ValueError, IndexError, TypeError):
                             pass
                             
                     if confidence < 0.9:
@@ -2173,7 +2192,7 @@ def enforce_source_diversity(evidence: list[Evidence], max_per_source: int = 2) 
             try:
                 parsed = urlparse(item.url)
                 source = parsed.netloc or item.url
-            except Exception:
+            except ValueError:
                 pass
         source = source.lower().strip()
         counts[source] = counts.get(source, 0) + 1
@@ -2190,8 +2209,9 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
     if model is None:
         ranked = re_rank_evidence(query, evidence)
         filtered = [item for item in ranked if item.score >= 0.20]
-        if len(filtered) < 3 and len(ranked) >= 3:
-            filtered = ranked[:3]
+        min_keep = min(3, len(ranked))
+        if len(filtered) < min_keep:
+            filtered = ranked[:min_keep]
         elif not filtered and ranked:
             filtered = [ranked[0]]
         return enforce_source_diversity(filtered, max_per_source=2)
@@ -2206,8 +2226,9 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
         evidence.sort(key=lambda x: x.score, reverse=True)
         # Filter results that are only loosely/tangentially related (threshold 0.25)
         filtered = [item for item in evidence if item.score >= 0.25]
-        if len(filtered) < 3 and len(evidence) >= 3:
-            filtered = evidence[:3]
+        min_keep = min(3, len(evidence))
+        if len(filtered) < min_keep:
+            filtered = evidence[:min_keep]
         elif not filtered and evidence:
             filtered = [evidence[0]]
         return enforce_source_diversity(filtered, max_per_source=2)
@@ -2215,8 +2236,9 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
         logger.warning(f"CrossEncoder inference failed: {e}. Falling back to token overlap.")
         ranked = re_rank_evidence(query, evidence)
         filtered = [item for item in ranked if item.score >= 0.20]
-        if len(filtered) < 3 and len(ranked) >= 3:
-            filtered = ranked[:3]
+        min_keep = min(3, len(ranked))
+        if len(filtered) < min_keep:
+            filtered = ranked[:min_keep]
         elif not filtered and ranked:
             filtered = [ranked[0]]
         return enforce_source_diversity(filtered, max_per_source=2)

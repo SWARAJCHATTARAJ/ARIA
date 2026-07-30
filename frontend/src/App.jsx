@@ -23,7 +23,7 @@ const formatTimestamp = (ts) => {
       year: 'numeric', month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
-  } catch (e) {
+  } catch {
     return ts;
   }
 };
@@ -121,7 +121,7 @@ function App() {
         setLoginError(errorData.detail || "Not authorized.");
         await supabase.auth.signOut();
       }
-    } catch (err) {
+    } catch {
       setLoginError("Failed to verify authentication with server.");
     }
   };
@@ -143,6 +143,7 @@ function App() {
     });
 
     return () => subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
@@ -230,7 +231,7 @@ function App() {
           if (data && data.detail) {
             errorMsg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
           }
-        } catch (e) {
+        } catch {
           try {
             const text = await response.text();
             if (text) {
@@ -238,7 +239,7 @@ function App() {
             } else {
               errorMsg = `Server error (${response.status})`;
             }
-          } catch (_) {
+          } catch {
             errorMsg = `Server error (${response.status})`;
           }
         }
@@ -273,7 +274,7 @@ function App() {
           if (data && data.detail) {
             errorMsg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
           }
-        } catch (e) {
+        } catch {
           try {
             const text = await response.text();
             if (text) {
@@ -281,7 +282,7 @@ function App() {
             } else {
               errorMsg = `Server error (${response.status})`;
             }
-          } catch (_) {
+          } catch {
             errorMsg = `Server error (${response.status})`;
           }
         }
@@ -380,7 +381,7 @@ function App() {
 
   // Connection and API Key configuration states
   const [connectionStatus, setConnectionStatus] = useState("connecting"); // connecting, connected, error
-  const [connectionError, setConnectionError] = useState(null);
+  const [, setConnectionError] = useState(null);
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("aria_openrouter_api_key") || "");
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
@@ -497,12 +498,14 @@ function App() {
     fetchSettings();
     fetchMemoryCount();
     fetchRetrievalLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
 
   useEffect(() => {
     fetchSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   useEffect(() => {
@@ -1424,12 +1427,7 @@ function App() {
                 <span>Connecting...</span>
               </div>
             )}
-            {connectionStatus === "error" && (
-              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-bold rounded-full shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                <span>Offline</span>
-              </div>
-            )}
+
             {connectionStatus === "connected" && (
               <div className="flex items-center gap-1 px-2.5 py-0.5 bg-green-500/10 border border-green-500/20 text-green-500 text-[9px] font-bold rounded-full shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />

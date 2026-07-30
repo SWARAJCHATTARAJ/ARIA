@@ -47,6 +47,7 @@ desktop = [
     "pywebview>=5.1.0"
 ]
 eval = [
+    "pytest>=9.1.1",
     "ragas>=0.1.7"
 ]
 

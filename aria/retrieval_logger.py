@@ -22,6 +22,7 @@ logger = logging.getLogger("aria.retrieval_logger")
 LOG_FILE_PATH = Path(".aria_sessions/retrieval_logs.jsonl")
 DEFAULT_THRESHOLD = 0.35
 _LOG_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="aria_retrieval_logger")
+_PENDING_LOG_WRITES = []
 
 # =====================================================================
 # TODO: ALERTING THRESHOLD (Future-Proofing Config Stub)
@@ -157,6 +158,17 @@ def _write_log_entry_sync(entry: dict[str, Any], log_path: Path = LOG_FILE_PATH)
             logger.warning(f"Failed to write retrieval log entry to Postgres DB: {db_exc}")
 
 
+def _flush_pending_log_writes() -> None:
+    """Wait for queued local log writes before serving read-after-write calls."""
+    pending = list(_PENDING_LOG_WRITES)
+    _PENDING_LOG_WRITES.clear()
+    for future in pending:
+        try:
+            future.result(timeout=2)
+        except Exception as exc:
+            logger.warning(f"Retrieval log write did not complete cleanly: {exc}")
+
+
 def log_retrieval_call(
     query: str,
     evidence: list[Evidence],
@@ -199,13 +211,18 @@ def log_retrieval_call(
         "fallback_triggered": fallback_triggered,
     }
 
-    # Asynchronous non-blocking file write
-    _LOG_EXECUTOR.submit(_write_log_entry_sync, entry, log_path)
+    if Path(log_path) != LOG_FILE_PATH:
+        _write_log_entry_sync(entry, log_path)
+    else:
+        # Asynchronous non-blocking file write for the production default path.
+        _PENDING_LOG_WRITES.append(_LOG_EXECUTOR.submit(_write_log_entry_sync, entry, log_path))
     return entry
 
 
 def get_retrieval_logs(limit: int = 50, log_path: Path = LOG_FILE_PATH) -> list[dict[str, Any]]:
     """Retrieves last N retrieval log entries from Postgres or local jsonl file, newest first."""
+    _flush_pending_log_writes()
+
     db_url = os.getenv("DATABASE_URL")
     if db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")):
         try:

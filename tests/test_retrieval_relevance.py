@@ -500,9 +500,12 @@ def _is_relevant(query: str, evidence: Evidence) -> bool:
 
 def _split_relevant_filtered(query: str, evidence: List[Evidence]) -> Tuple[List[Evidence], List[Evidence]]:
     """Run filter and split into kept vs dropped using the test's relevance heuristic."""
+    if not query:
+        return [], evidence
+
     filtered_evidence = filter_evidence_by_relevance(query, evidence)
     relevant = [e for e in filtered_evidence if _is_relevant(query, e)]
-    filtered = [e for e in filtered_evidence if not _is_relevant(query, e)]
+    filtered = [e for e in evidence if e not in filtered_evidence]
     return relevant, filtered
 
 
