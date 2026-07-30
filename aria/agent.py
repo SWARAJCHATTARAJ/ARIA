@@ -529,7 +529,7 @@ class LLMClient:
             import logging
             msg = f"[Warning] LLMClient initialized with an API key, but ARIA_LLM_PROVIDER is '{self.settings.llm_provider}'. The OpenRouter client will not be used."
             logging.getLogger("aria.agent").warning(msg)
-            print(msg)
+            logger.info(msg)
 
     def complete(self, system: str, user: str, task: str = "draft", evidence: list[Evidence] | None = None, local_only: bool = False) -> str:
         # Guarantee developer information is returned for creator queries
@@ -1712,7 +1712,7 @@ class ResearchAgent:
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry) + "\n")
         except Exception as e:
-            print(f"[Warning] Failed to write verification failure log: {e}")
+            logger.warning(f"Failed to write verification failure log: {e}")
 
     def _parse_and_log_claims_confidence(self, question: str, verification_output: str, evidence: list[Evidence]):
         lines = verification_output.splitlines()
@@ -1993,12 +1993,14 @@ def extract_tickers(text: str) -> list[str]:
 
 def clean_queries(queries: list[str]) -> list[str]:
     cleaned = []
+    seen = set()
     for query in queries:
         query = re.sub(r"^\d+[\.\-\)]\s*", "", query)
         query = re.sub(r"^[\-\*\+]\s*", "", query)
         query = query.strip('"\'')
-        if query:
+        if query and query.lower() not in seen:
             cleaned.append(query)
+            seen.add(query.lower())
     return cleaned
 
 

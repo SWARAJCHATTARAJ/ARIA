@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 import os
 import json
 import sqlite3
@@ -104,7 +106,7 @@ def check_cache(question: str) -> ResearchResult | None:
             finally:
                 conn.close()
     except Exception as e:
-        print(f"[Warning] Query cache lookup failed: {e}")
+        logger.warning(f"Query cache lookup failed: {e}")
         
     return None
 
@@ -117,7 +119,7 @@ def store_cache(question: str, result: ResearchResult) -> None:
     # Never cache a result unless the verifier passed it
     verification = result.verification or ""
     if "PASSED" not in verification.upper():
-        print(f"[Info] Skipping query caching because verification status is not PASSED: {verification.splitlines()[0] if verification else 'None'}")
+        logger.info(f"Skipping query caching because verification status is not PASSED: {verification.splitlines()[0] if verification else 'None'}")
         return
 
     try:
@@ -167,4 +169,4 @@ def store_cache(question: str, result: ResearchResult) -> None:
             finally:
                 conn.close()
     except Exception as e:
-        print(f"[Warning] Failed to store result in query cache: {e}")
+        logger.warning(f"Failed to store result in query cache: {e}")

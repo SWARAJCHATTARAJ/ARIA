@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 import os
 import bcrypt
 import sqlite3
@@ -34,7 +36,7 @@ def get_db_connection():
                     quoted_password = urllib.parse.quote(unquoted_password)
                     db_url = f"{scheme}://{user}:{quoted_password}@{host_part}"
         except Exception as e:
-            print(f"[Warning] Failed to sanitize DATABASE_URL: {e}")
+            logger.warning(f"Failed to sanitize DATABASE_URL: {e}")
 
         import psycopg2
         return psycopg2.connect(db_url)
@@ -58,7 +60,7 @@ def init_db():
                 try:
                     cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 except Exception as e:
-                    print(f"[Warning] Failed to enable pgvector extension: {e}")
+                    logger.warning(f"Failed to enable pgvector extension: {e}")
                 
                 cursor.execute(
                     """
@@ -111,7 +113,7 @@ def init_db():
         finally:
             conn.close()
     except Exception as e:
-        print(f"[Warning] Database initialization failed: {e}")
+        logger.warning(f"Database initialization failed: {e}")
 
 # Initialize DB at startup
 init_db()

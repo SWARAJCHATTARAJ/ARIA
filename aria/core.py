@@ -33,13 +33,13 @@ class Settings:
             import logging
             msg = f"[Warning] ARIA_LLM_PROVIDER is set to '{provider}', but an OPENROUTER_API_KEY is configured. The OpenRouter client will not be used."
             logging.getLogger("aria.core").warning(msg)
-            print(msg)
+            logger.info(msg)
 
         if provider != "azure" and azure_api_key and not azure_api_key.startswith("your_"):
             import logging
             msg = f"[Warning] ARIA_LLM_PROVIDER is set to '{provider}', but an AZURE_OPENAI_API_KEY is configured. The Azure OpenAI client will not be used."
             logging.getLogger("aria.core").warning(msg)
-            print(msg)
+            logger.info(msg)
 
         # Security pass: warning if other provider keys are configured
         other_keys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "COHERE_API_KEY", "MISTRAL_API_KEY"]
@@ -49,7 +49,7 @@ class Settings:
                 import logging
                 msg = f"[Security Warning] LLM credential variable '{key}' is set. ARIA is configured to use OpenRouter or Azure OpenAI ONLY. This credential will be ignored and should be removed to prevent leaks."
                 logging.getLogger("aria.core").warning(msg)
-                print(msg)
+                logger.info(msg)
 
         return cls(
             llm_provider=provider,

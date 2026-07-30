@@ -146,13 +146,6 @@ class ResearchRequest(BaseModel):
     session_id: str | None = None
     local_only: bool = False
 
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-class ChatRequest(BaseModel):
-    messages: list[ChatMessage]
-    user_id: str | None = None
 
 class InMemoryRateLimiter:
     def __init__(self, limit_per_minute: int = 5):
@@ -277,12 +270,12 @@ async def login(request: LoginRequest):
     username = request.username.strip().lower()
     db_hash = get_user_hash(username)
     
-    print(f"[Auth Debug] Login attempt for username: '{username}'")
-    print(f"[Auth Debug] Hash found in DB: {'Yes' if db_hash else 'No'}")
+    logger.debug(f"[Auth Debug] Login attempt for username: '{username}'")
+    logger.debug(f"[Auth Debug] Hash found in DB: {'Yes' if db_hash else 'No'}")
     
     if db_hash:
         is_verified = verify_password(request.password, db_hash)
-        print(f"[Auth Debug] Password verified: {is_verified}")
+        logger.debug(f"[Auth Debug] Password verified: {is_verified}")
         
     if not db_hash or not verify_password(request.password, db_hash):
         raise HTTPException(
@@ -828,7 +821,7 @@ def run_scheduler_loop():
     
     def scheduler_loop():
         time.sleep(5)
-        print("[Scheduler] Started background recurring research scheduler thread.")
+        logger.info(f"[Scheduler] Started background recurring research scheduler thread.")
 
         while True:
             try:
@@ -879,7 +872,7 @@ def run_scheduler_loop():
                         should_run = delta.total_seconds() >= 10
                         
                     if should_run:
-                        print(f"[Scheduler] Running recurring job for session {session_id} (interval: {interval})")
+                        logger.info(f"[Scheduler] Running recurring job for session {session_id} (interval: {interval})")
                         
                         result.last_run_at = now.isoformat()
                         save_session(result, session_id=session_id, user_id=user_id)
@@ -903,11 +896,11 @@ def run_scheduler_loop():
                             new_result.last_run_at = now.isoformat()
                             
                             save_session(new_result, session_id=session_id, user_id=user_id)
-                            print(f"[Scheduler] Recurring job completed for session {session_id}")
+                            logger.info(f"[Scheduler] Recurring job completed for session {session_id}")
                         except Exception as e:
-                            print(f"[Scheduler Error] Job failed for session {session_id}: {e}")
+                            logger.error(f"[Scheduler Error] Job failed for session {session_id}: {e}")
             except Exception as outer_err:
-                print(f"[Scheduler Error] Outer loop exception: {outer_err}")
+                logger.error(f"[Scheduler Error] Outer loop exception: {outer_err}")
             
             time.sleep(30)
             
