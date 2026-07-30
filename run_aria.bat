@@ -62,7 +62,7 @@ python -c "import webview, uvicorn, fastapi" >nul 2>&1
 if %errorlevel% equ 0 goto :dependencies_ok
 
 echo [INFO] Installing python dependencies...
-pip install -r requirements.txt
+pip install -r requirements.txt pywebview
 if %errorlevel% neq 0 (
     echo [ERROR] Failed to install dependencies.
     pause

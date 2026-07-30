@@ -660,7 +660,7 @@ async def ingest_text(request: IngestTextRequest, current_user: str = Depends(ge
         raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
 @app.get("/api/memory/count")
-async def get_memory_count(current_user: str = Depends(get_current_user)):
+async def get_memory_count(current_user: str = Depends(get_current_user_or_guest)):
     """Get the total number of indexed chunks."""
     try:
         memory = get_memory()
@@ -914,7 +914,7 @@ def startup_event():
 
 
 @app.get("/api/settings")
-async def get_settings(x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user)):
+async def get_settings(x_openrouter_key: str | None = Header(None), current_user: str = Depends(get_current_user_or_guest)):
     """Fetch current ARIA configuration."""
     settings = Settings.from_env()
     key = x_openrouter_key.strip() if x_openrouter_key else ""
@@ -934,7 +934,7 @@ class SettingsRequest(BaseModel):
     openrouter_api_key: str | None = None
 
 @app.post("/api/settings")
-async def update_settings(request: SettingsRequest, current_user: str = Depends(get_current_user)):
+async def update_settings(request: SettingsRequest, current_user: str = Depends(get_current_user_or_guest)):
     """Update current ARIA configuration."""
     if request.openrouter_api_key is not None:
         key = request.openrouter_api_key.strip()
