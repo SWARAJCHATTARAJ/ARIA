@@ -13,6 +13,8 @@ from langgraph.graph import StateGraph, END
 from .core import Settings, Evidence, ResearchResult, estimate_tokens
 from .rag import VectorMemory
 from .tools import free_web_search, get_market_snapshot, run_async
+from .relevance import filter_evidence_by_relevance
+from .relevance import filter_evidence_by_relevance
 
 logger = logging.getLogger("aria.agent")
 
@@ -1513,6 +1515,9 @@ class ResearchAgent:
 
         if not is_global_summary:
             new_evidence = re_rank_evidence(question, new_evidence)
+
+        # Semantic relevance filter: drop evidence below similarity threshold
+        new_evidence = filter_evidence_by_relevance(question, new_evidence)
 
         logger.info(f"[Stage: search] Retriever completed (iteration {iteration}). Found {len(new_evidence)} evidence items.")
         return {"evidence": new_evidence, "events": new_events}
