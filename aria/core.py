@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger("aria.core")
 
 MAX_UPLOAD_MB = 15
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
@@ -29,26 +32,14 @@ class Settings:
         azure_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "").strip() or None
         azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "").strip() or "2024-06-01"
 
-        if provider != "openrouter" and openrouter_api_key and not openrouter_api_key.startswith("your_"):
-            import logging
-            msg = f"[Warning] ARIA_LLM_PROVIDER is set to '{provider}', but an OPENROUTER_API_KEY is configured. The OpenRouter client will not be used."
-            logging.getLogger("aria.core").warning(msg)
-            logger.info(msg)
-
-        if provider != "azure" and azure_api_key and not azure_api_key.startswith("your_"):
-            import logging
-            msg = f"[Warning] ARIA_LLM_PROVIDER is set to '{provider}', but an AZURE_OPENAI_API_KEY is configured. The Azure OpenAI client will not be used."
-            logging.getLogger("aria.core").warning(msg)
-            logger.info(msg)
 
         # Security pass: warning if other provider keys are configured
         other_keys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "COHERE_API_KEY", "MISTRAL_API_KEY"]
         for key in other_keys:
             val = os.getenv(key, "").strip()
             if val and not val.startswith("your_"):
-                import logging
                 msg = f"[Security Warning] LLM credential variable '{key}' is set. ARIA is configured to use OpenRouter or Azure OpenAI ONLY. This credential will be ignored and should be removed to prevent leaks."
-                logging.getLogger("aria.core").warning(msg)
+                logger.warning(msg)
                 logger.info(msg)
 
         return cls(
