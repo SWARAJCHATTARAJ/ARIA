@@ -5,18 +5,16 @@ Tests that known keyword-collision traps are filtered out by the embedding-based
 
 import os
 import unittest
-from typing import List, Tuple
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("DISABLE_HEAVY_MODELS", "true")
 os.environ.setdefault("ARIA_RELEVANCE_THRESHOLD", "0.35")
 
 from aria.core import Evidence
-from aria.relevance import filter_evidence_by_relevance, compute_relevance_scores
-
+from aria.relevance import compute_relevance_scores, filter_evidence_by_relevance
 
 # Known keyword-collision traps (from bug reports)
-KNOWN_TRAPS: List[Tuple[str, List[Evidence]]] = [
+KNOWN_TRAPS: list[tuple[str, list[Evidence]]] = [
     (
         "remote work productivity trends 2024",
         [
@@ -190,7 +188,7 @@ KNOWN_TRAPS: List[Tuple[str, List[Evidence]]] = [
 
 
 # Additional synthetic ambiguous-term queries for broader coverage
-SYNTHETIC_TRAPS: List[Tuple[str, List[Evidence]]] = [
+SYNTHETIC_TRAPS: list[tuple[str, list[Evidence]]] = [
     (
         "bank merger acquisition finance",
         [
@@ -493,12 +491,12 @@ def _is_relevant(query: str, evidence: Evidence) -> bool:
         return any(kw in text for kw in ["langgraph", "autogen", "multi-agent", "agent framework", "orchestration", "stateful"])
     else:
         # Fallback: check for any significant word overlap
-        q_words = set(w for w in q_lower.split() if len(w) > 3)
-        t_words = set(w for w in text.split() if len(w) > 3)
+        q_words = {w for w in q_lower.split() if len(w) > 3}
+        t_words = {w for w in text.split() if len(w) > 3}
         return len(q_words & t_words) >= 2
 
 
-def _split_relevant_filtered(query: str, evidence: List[Evidence]) -> Tuple[List[Evidence], List[Evidence]]:
+def _split_relevant_filtered(query: str, evidence: list[Evidence]) -> tuple[list[Evidence], list[Evidence]]:
     """Run filter and split into kept vs dropped using the test's relevance heuristic."""
     if not query:
         return [], evidence
@@ -512,7 +510,7 @@ def _split_relevant_filtered(query: str, evidence: List[Evidence]) -> Tuple[List
 class TestRelevanceFilter(unittest.TestCase):
     """Test that semantic relevance filter correctly handles keyword-collision traps."""
 
-    def _run_trap_test(self, query: str, evidence: List[Evidence], trap_name: str):
+    def _run_trap_test(self, query: str, evidence: list[Evidence], trap_name: str):
         """Run a single trap test and verify relevant items are kept, traps filtered."""
         relevant, filtered = _split_relevant_filtered(query, evidence)
         

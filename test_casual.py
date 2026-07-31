@@ -1,4 +1,4 @@
-from aria.agent import classify_question, handle_casual_query, QueryType, ResearchSubtype
+from aria.agent import QueryType, classify_question, handle_casual_query
 
 test_cases = {
     "1. Greetings": "hi",

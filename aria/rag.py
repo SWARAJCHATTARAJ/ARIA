@@ -1,25 +1,26 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 from uuid import uuid4
 
-import sqlite3
 if sqlite3.sqlite_version_info < (3, 35, 0):
     try:
-        import pysqlite3
         import sys
+
+        import pysqlite3
         sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
     except ImportError:
         pass
 
 import os
 
-from .core import Settings, Evidence, MAX_PDF_PAGES, safe_temp_pdf_path
+from .core import MAX_PDF_PAGES, Evidence, Settings, safe_temp_pdf_path
 
 
 def is_db_mode() -> bool:
     db_url = os.getenv("DATABASE_URL")
-    return bool(db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")))
+    return bool(db_url and (db_url.startswith(("postgres://", "postgresql://"))))
 
 
 class VectorMemory:
@@ -74,8 +75,9 @@ class VectorMemory:
             embedding_fn = ef.DefaultEmbeddingFunction()
             embeddings = embedding_fn(documents)
 
-            from .auth import get_db_connection
             import json
+
+            from .auth import get_db_connection
             conn = get_db_connection()
             try:
                 with conn.cursor() as cursor:
@@ -118,8 +120,9 @@ class VectorMemory:
             embedding_fn = ef.DefaultEmbeddingFunction()
             embeddings = embedding_fn(documents)
 
-            from .auth import get_db_connection
             import json
+
+            from .auth import get_db_connection
             conn = get_db_connection()
             try:
                 with conn.cursor() as cursor:
@@ -196,8 +199,9 @@ class VectorMemory:
             query_emb_str = f"[{','.join(map(str, query_emb))}]"
 
             limit = min(n_results, total_count)
-            from .auth import get_db_connection
             import json
+
+            from .auth import get_db_connection
             conn = get_db_connection()
             evidence: list[Evidence] = []
             try:
@@ -289,8 +293,9 @@ class VectorMemory:
             if not total_count:
                 return []
 
-            from .auth import get_db_connection
             import json
+
+            from .auth import get_db_connection
             conn = get_db_connection()
             evidence: list[Evidence] = []
             try:

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import os
 import logging
-from typing import Optional
+import os
 from functools import lru_cache
 
 from .core import Evidence
@@ -53,8 +52,8 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 def filter_evidence_by_relevance(
     query: str,
     evidence: list[Evidence],
-    threshold: Optional[float] = None,
-    max_evidence: Optional[int] = None,
+    threshold: float | None = None,
+    max_evidence: int | None = None,
 ) -> list[Evidence]:
     """
     Filter evidence by semantic similarity to the query.

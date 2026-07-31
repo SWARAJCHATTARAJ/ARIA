@@ -1,5 +1,7 @@
 import os
+
 import dotenv
+
 dotenv.load_dotenv = lambda *args, **kwargs: None
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 # Isolate unit tests from external Supabase database and OpenRouter API keys
@@ -7,9 +9,10 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["DISABLE_HEAVY_MODELS"] = "true"
 os.environ.pop("OPENROUTER_API_KEY", None)
 import unittest
-from aria.core import Settings, MAX_UPLOAD_BYTES, validate_pdf_upload
-from aria.rag import split_text, VectorMemory
+
 from aria.agent import ResearchAgent
+from aria.core import MAX_UPLOAD_BYTES, Settings, validate_pdf_upload
+from aria.rag import VectorMemory, split_text
 
 
 class SecurityTests(unittest.TestCase):
@@ -100,8 +103,8 @@ class SearchModesTestCase(unittest.TestCase):
 
 class ReportTests(unittest.TestCase):
     def test_markdown_report_linkifies_inline_citations(self) -> None:
+        from aria.core import Evidence, ResearchResult
         from aria.reports import build_markdown_report
-        from aria.core import ResearchResult, Evidence
 
         result = ResearchResult(
             question="What changed?",
@@ -122,8 +125,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("[[1]](https://example.com/source)", report)
 
     def test_pdf_report_with_query_params_url(self) -> None:
+        from aria.core import Evidence, ResearchResult
         from aria.reports import build_pdf_report
-        from aria.core import ResearchResult, Evidence
         
         result = ResearchResult(
             question="What is the stock price of AAPL?",
@@ -143,8 +146,8 @@ class ReportTests(unittest.TestCase):
         self.assertTrue(len(pdf_bytes) > 0)
 
     def test_pdf_report_with_visual_analytics(self) -> None:
+        from aria.core import Evidence, ResearchResult
         from aria.reports import build_pdf_report, citation_stats, evidence_type_counts
-        from aria.core import ResearchResult, Evidence
 
         result = ResearchResult(
             question="Compare evidence quality.",
@@ -166,10 +169,11 @@ class ReportTests(unittest.TestCase):
 
 class SessionTests(unittest.TestCase):
     def test_session_round_trip(self) -> None:
-        from tempfile import TemporaryDirectory
         from pathlib import Path
-        from aria.core import ResearchResult, Evidence
-        from aria.sessions import save_session, list_sessions, load_session
+        from tempfile import TemporaryDirectory
+
+        from aria.core import Evidence, ResearchResult
+        from aria.sessions import list_sessions, load_session, save_session
 
         with TemporaryDirectory() as tmp:
             result = ResearchResult(
@@ -198,12 +202,14 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(loaded.metrics["answer_tokens_est"], 3)
 
     def test_download_endpoints_return_pdf_and_markdown_for_owner(self) -> None:
-        from tempfile import TemporaryDirectory
         from pathlib import Path
+        from tempfile import TemporaryDirectory
+
         from fastapi.testclient import TestClient
-        from aria.core import ResearchResult, Evidence
-        from aria.sessions import save_session
+
         import main
+        from aria.core import Evidence, ResearchResult
+        from aria.sessions import save_session
 
         with TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -324,9 +330,7 @@ class LLMClientTests(unittest.TestCase):
 
     def test_async_duckduckgo_search_stub(self) -> None:
         import asyncio
-        from aria.tools import run_async
-        from aria.core import Evidence
-        
+
         # Test parsing function directly with simulated HTML content
         from aria.tools import async_duckduckgo_search
         
@@ -368,6 +372,7 @@ class LLMClientTests(unittest.TestCase):
 
     def test_async_doaj_search_stub(self) -> None:
         import asyncio
+
         from aria.tools import async_doaj_search
         
         class MockResponse:
@@ -409,6 +414,7 @@ class LLMClientTests(unittest.TestCase):
 
     def test_async_pubmed_search_stub(self) -> None:
         import asyncio
+
         from aria.tools import async_pubmed_search
         
         class MockResponse:
@@ -520,10 +526,17 @@ class LLMClientTests(unittest.TestCase):
         self.assertIn("Deterministic grounding audit failed", verification)
 
     def test_user_session_isolation_and_clear(self) -> None:
-        from tempfile import TemporaryDirectory
         from pathlib import Path
+        from tempfile import TemporaryDirectory
+
         from aria.core import ResearchResult
-        from aria.sessions import save_session, list_sessions, clear_sessions, find_session_path, is_valid_session_id
+        from aria.sessions import (
+            clear_sessions,
+            find_session_path,
+            is_valid_session_id,
+            list_sessions,
+            save_session,
+        )
 
         with TemporaryDirectory() as tmp:
             previous_admin = os.environ.get("ARIA_ADMIN_USER_ID")
@@ -580,7 +593,7 @@ class LLMClientTests(unittest.TestCase):
 
 class QueryCacheTests(unittest.TestCase):
     def setUp(self) -> None:
-        from aria.auth import init_db, get_db_connection
+        from aria.auth import get_db_connection, init_db
         init_db()
         conn = get_db_connection()
         try:
@@ -593,7 +606,7 @@ class QueryCacheTests(unittest.TestCase):
         
     def test_cache_hit_and_miss(self) -> None:
         from aria.cache import check_cache, store_cache
-        from aria.core import ResearchResult, Evidence
+        from aria.core import Evidence, ResearchResult
         
         q1 = "What is the capital of France?"
         q2 = "What is France's capital city?"
@@ -666,7 +679,7 @@ class SourceDiversityTests(unittest.TestCase):
 class MultiTurnFollowUpTests(unittest.TestCase):
     def test_multi_turn_flow(self) -> None:
         from aria.agent import ResearchAgent
-        from aria.core import Settings, Evidence, ResearchResult
+        from aria.core import Evidence, Settings
         from aria.rag import VectorMemory
         
         settings = Settings.from_env()
@@ -691,8 +704,10 @@ class MultiTurnFollowUpTests(unittest.TestCase):
 
 class OutputValidationTests(unittest.TestCase):
     def test_brief_validation(self) -> None:
-        from pydantic import BaseModel, model_validator
         import re
+
+        from pydantic import BaseModel, model_validator
+
         from aria.core import Evidence
         
         evidence = [
@@ -741,8 +756,9 @@ class OutputValidationTests(unittest.TestCase):
 
 class RateLimiterTests(unittest.TestCase):
     def test_in_memory_rate_limiter(self) -> None:
-        from main import InMemoryRateLimiter
         from fastapi import HTTPException
+
+        from main import InMemoryRateLimiter
         
         limiter = InMemoryRateLimiter(limit_per_minute=3)
         
@@ -762,8 +778,8 @@ class RateLimiterTests(unittest.TestCase):
 
 class SourceTrustWeightingTests(unittest.TestCase):
     def test_trust_tier_mapping(self) -> None:
-        from aria.core import Evidence
         from aria.agent import format_evidence
+        from aria.core import Evidence
 
         # Check default mapping based on source_type
         ev_academic = Evidence(title="Paper", summary="details", source_type="arxiv")
@@ -846,8 +862,8 @@ class ComparativeModeTests(unittest.TestCase):
 
 class RecurringResearchTests(unittest.TestCase):
     def test_research_result_serialization_recurring(self) -> None:
-        from aria.core import ResearchResult, Evidence
-        from aria.sessions import result_to_dict, result_from_dict
+        from aria.core import Evidence, ResearchResult
+        from aria.sessions import result_from_dict, result_to_dict
 
         result = ResearchResult(
             question="Test Q",
@@ -868,8 +884,8 @@ class RecurringResearchTests(unittest.TestCase):
         self.assertEqual(deserialized.last_run_at, "2026-07-13T10:00:00Z")
 
     def test_generate_research_diff(self) -> None:
-        from aria.core import Evidence, ResearchResult
         from aria.agent import generate_research_diff
+        from aria.core import Evidence, ResearchResult
 
         ev_old = Evidence(title="Acme Info", summary="Revenue $10M", source_type="web", url="https://acme.com")
         ev_new_same = Evidence(title="Acme Info", summary="Revenue $10M", source_type="web", url="https://acme.com")
@@ -937,8 +953,9 @@ class LocalOnlyOfflineModeTests(unittest.TestCase):
 
 class GuestAccessTests(unittest.TestCase):
     def test_guest_rate_limiting(self) -> None:
-        import main
         from fastapi import HTTPException
+
+        import main
 
         main.GUEST_LIMITER.clear()
 
@@ -963,15 +980,15 @@ class GuestAccessTests(unittest.TestCase):
 
 class QueryClassificationAndRoutingTests(unittest.TestCase):
     def setUp(self):
+        from aria.agent import ResearchAgent
         from aria.core import Settings
         from aria.rag import VectorMemory
-        from aria.agent import ResearchAgent
         self.settings = Settings.from_env()
         self.memory = VectorMemory(self.settings)
         self.agent = ResearchAgent(self.settings, self.memory)
 
     def test_classify_meta_queries(self) -> None:
-        from aria.agent import classify_question, QueryType, ResearchSubtype
+        from aria.agent import QueryType, classify_question
         
         meta_samples = [
             "who built you",
@@ -984,11 +1001,11 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
             "are you free to use"
         ]
         for q in meta_samples:
-            q_type, q_sub = classify_question(q)
+            q_type, _q_sub = classify_question(q)
             self.assertEqual(q_type, QueryType.META, f"Failed for query: {q}")
 
     def test_classify_creator_phrase_requires_self_or_aria_subject(self) -> None:
-        from aria.agent import classify_question, is_developer_query, QueryType
+        from aria.agent import QueryType, classify_question, is_developer_query
 
         meta_type, _ = classify_question("who created you?")
         self.assertEqual(meta_type, QueryType.META)
@@ -1008,15 +1025,15 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
             self.assertFalse(is_developer_query(q), f"Developer helper false positive for: {q}")
 
     def test_classify_casual_queries(self) -> None:
-        from aria.agent import classify_question, QueryType
+        from aria.agent import QueryType, classify_question
         
         casual_samples = ["hi", "how are you", "thanks", "hello", "good morning", "thank you!"]
         for q in casual_samples:
-            q_type, q_sub = classify_question(q)
+            q_type, _q_sub = classify_question(q)
             self.assertEqual(q_type, QueryType.CASUAL, f"Failed for query: {q}")
 
     def test_classify_app_help_queries(self) -> None:
-        from aria.agent import classify_question, QueryType, ResearchSubtype
+        from aria.agent import QueryType, ResearchSubtype, classify_question
 
         app_samples = [
             "how do I export a PDF",
@@ -1030,18 +1047,18 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
             self.assertEqual(q_sub, ResearchSubtype.APP_USAGE)
 
     def test_classify_all_18_taxonomy_categories(self) -> None:
-        from aria.agent import classify_question, QueryType, ResearchSubtype
+        from aria.agent import QueryType, ResearchSubtype, classify_question
 
         # 1. Meta / About ARIA
-        t1_type, t1_sub = classify_question("are you free to use")
+        t1_type, _t1_sub = classify_question("are you free to use")
         self.assertEqual(t1_type, QueryType.META)
 
         # 2. Greetings / Small talk
-        t2_type, t2_sub = classify_question("good morning")
+        t2_type, _t2_sub = classify_question("good morning")
         self.assertEqual(t2_type, QueryType.CASUAL)
 
         # 3. App usage / help questions
-        t3_type, t3_sub = classify_question("how do I export a PDF")
+        t3_type, _t3_sub = classify_question("how do I export a PDF")
         self.assertEqual(t3_type, QueryType.APP_HELP)
 
         # 4. Conceptual / definitional
@@ -1120,7 +1137,7 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
         self.assertEqual(t18_sub, ResearchSubtype.LIMITATIONS)
 
     def test_classify_deliberately_ambiguous_queries(self) -> None:
-        from aria.agent import classify_question, QueryType, ResearchSubtype
+        from aria.agent import QueryType, ResearchSubtype, classify_question
 
         # Query mixing Meta (mentions "ARIA") with external research intent (remote work trends)
         ambiguous_q1 = "Can ARIA summarize remote work trends in 2026?"
@@ -1135,7 +1152,7 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
         self.assertIn(q_sub2, (ResearchSubtype.OPINION, ResearchSubtype.STATISTICAL_COMPARATIVE))
 
     def test_classify_research_subtypes(self) -> None:
-        from aria.agent import classify_question, QueryType, ResearchSubtype
+        from aria.agent import QueryType, ResearchSubtype, classify_question
 
         # Academic
         q_type, q_sub = classify_question("quantum error correction paper study")
@@ -1158,7 +1175,7 @@ class QueryClassificationAndRoutingTests(unittest.TestCase):
         self.assertEqual(q_sub, ResearchSubtype.CURRENT_EVENTS)
 
     def test_classify_ambiguous_query_defaults_to_research(self) -> None:
-        from aria.agent import classify_question, QueryType, ResearchSubtype
+        from aria.agent import QueryType, ResearchSubtype, classify_question
 
         # Deliberately ambiguous query mentioning "ARIA" but requesting external research
         ambiguous_q = "Can ARIA summarize remote work trends in 2026?"
@@ -1213,8 +1230,9 @@ class StructuredRetrievalLoggingTests(unittest.TestCase):
 
     def test_log_entry_written_on_accept_path(self):
         import time
+
         from aria.core import Evidence
-        from aria.retrieval_logger import log_retrieval_call, get_retrieval_logs
+        from aria.retrieval_logger import get_retrieval_logs, log_retrieval_call
 
         ev = [Evidence(title="Solar Energy Guide", summary="Solar cells generate electricity.", source_type="web", score=0.85)]
         entry = log_retrieval_call(
@@ -1239,8 +1257,9 @@ class StructuredRetrievalLoggingTests(unittest.TestCase):
 
     def test_log_entry_written_on_reject_path(self):
         import time
+
         from aria.core import Evidence
-        from aria.retrieval_logger import log_retrieval_call, get_retrieval_logs
+        from aria.retrieval_logger import get_retrieval_logs, log_retrieval_call
 
         ev = [Evidence(title="Irrelevant Fragment", summary="Random snippet", source_type="web", score=0.15)]
         entry = log_retrieval_call(
@@ -1261,8 +1280,9 @@ class StructuredRetrievalLoggingTests(unittest.TestCase):
 
     def test_log_entry_written_on_entity_mismatch_path(self):
         import time
+
         from aria.core import Evidence
-        from aria.retrieval_logger import log_retrieval_call, get_retrieval_logs
+        from aria.retrieval_logger import get_retrieval_logs, log_retrieval_call
 
         ev = [Evidence(title="Hydroelectric Power", summary="Water turbines generate energy", source_type="web", score=0.75)]
         entry = log_retrieval_call(
@@ -1282,8 +1302,9 @@ class StructuredRetrievalLoggingTests(unittest.TestCase):
 
     def test_get_retrieval_stats(self):
         import time
+
         from aria.core import Evidence
-        from aria.retrieval_logger import log_retrieval_call, get_retrieval_stats
+        from aria.retrieval_logger import get_retrieval_stats, log_retrieval_call
 
         # Log 1 accepted and 2 rejected
         log_retrieval_call("solar energy", [Evidence(title="Solar Energy Overview", summary="Data on solar energy", source_type="web", score=0.8)], threshold=0.35, log_path=self.log_path)
@@ -1299,9 +1320,10 @@ class StructuredRetrievalLoggingTests(unittest.TestCase):
 
     def test_vector_memory_retrieve_emits_log_entry(self):
         import time
+
         from aria.core import Settings
         from aria.rag import VectorMemory
-        from aria.retrieval_logger import get_retrieval_logs, LOG_FILE_PATH
+        from aria.retrieval_logger import get_retrieval_logs
 
         settings = Settings.from_env()
         memory = VectorMemory(settings)

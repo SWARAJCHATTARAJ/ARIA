@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-import os
-import re
-import operator
-import requests
 import asyncio
 import logging
-from typing import TypedDict, Annotated
-from concurrent.futures import ThreadPoolExecutor
-from langgraph.graph import StateGraph, END
+import operator
+import os
+import re
+from typing import Annotated, TypedDict
 
-from .core import Settings, Evidence, ResearchResult, estimate_tokens
+import requests
+from langgraph.graph import END, StateGraph
+
+from .core import Evidence, ResearchResult, Settings, estimate_tokens
 from .rag import VectorMemory
-from .tools import free_web_search, get_market_snapshot, run_async
 from .relevance import filter_evidence_by_relevance
+from .tools import get_market_snapshot, run_async
 
 logger = logging.getLogger("aria.agent")
 
@@ -688,8 +688,8 @@ class LLMClient:
     def _azure_openai(self, system: str, user: str) -> str:
         import time
         try:
-            from openai import AzureOpenAI
             import openai
+            from openai import AzureOpenAI
         except ImportError:
             raise RuntimeError("openai Python package is not installed but Azure OpenAI is selected.")
             
@@ -971,6 +971,7 @@ def is_comparative_query(question: str) -> bool:
 
 import threading
 import time
+
 SUBQUERY_CACHE = {}
 SUBQUERY_CACHE_LOCK = threading.Lock()
 
@@ -1232,15 +1233,16 @@ class ResearchAgent:
         field_focus: str = "all",
     ) -> tuple[list[Evidence], list[str]]:
         import aiohttp
+
         from .tools import (
-            async_wikipedia_search,
-            async_openalex_search,
+            HEADERS,
             async_arxiv_search,
+            async_doaj_search,
             async_duckduckgo_instant_answer,
             async_duckduckgo_search,
-            async_doaj_search,
+            async_openalex_search,
             async_pubmed_search,
-            HEADERS,
+            async_wikipedia_search,
         )
 
         events = []
@@ -1406,7 +1408,7 @@ class ResearchAgent:
                     with SUBQUERY_CACHE_LOCK:
                         now = time.time()
                         for q in uncached_queries:
-                            if q in query_to_results and query_to_results[q]:
+                            if query_to_results.get(q):
                                 cache_key = (q, field_focus)
                                 from copy import deepcopy
                                 SUBQUERY_CACHE[cache_key] = {
@@ -1561,14 +1563,15 @@ class ResearchAgent:
         history = state.get("history")
         
         # Pydantic model for brief validation
-        from pydantic import BaseModel, model_validator
         import re
+
+        from pydantic import BaseModel, model_validator
         
         class ResearchBriefValidation(BaseModel):
             answer: str
             
             @model_validator(mode="after")
-            def validate_brief(self) -> "ResearchBriefValidation":
+            def validate_brief(self) -> ResearchBriefValidation:
                 # 1. Non-empty answer
                 if not self.answer or not self.answer.strip():
                     raise ValueError("Research brief answer must not be empty.")
@@ -2003,7 +2006,7 @@ def extract_tickers(text: str) -> list[str]:
         "ARIA", "PDF", "HTML", "API", "HTTP", "DATA", "YEAR", "DATE", 
         "CASE", "NOTE", "LIST", "SHOW", "OPEN", "LIVE", "FREE", "LLM", 
         "RAG", "NS", "NEW", "RUN", "GET", "USE", "BASE", "ONLY", "WEB",
-        "INFO", "TIME", "MAIN", "WIKI", "HTTP", "HTTPS", "JSON", "URL",
+        "INFO", "TIME", "MAIN", "WIKI", "HTTPS", "JSON", "URL",
         "FILE", "PATH", "PASS", "FAIL", "TRUE", "NONE", "TEST", "PORT"
     }
     valid_tickers = [t for t in raw_tickers if t not in exclude_words]

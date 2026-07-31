@@ -1,13 +1,15 @@
+from __future__ import annotations
+
 import logging
+
 logger = logging.getLogger(__name__)
-import os
 import json
-import sqlite3
-from datetime import datetime, timezone
+
 import numpy as np
+
 from .auth import get_db_connection
-from .sessions import is_db_mode, result_to_dict, result_from_dict
 from .core import ResearchResult
+from .sessions import is_db_mode, result_from_dict, result_to_dict
 
 _EMBEDDING_FN = None
 

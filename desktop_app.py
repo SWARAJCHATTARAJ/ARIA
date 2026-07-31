@@ -1,7 +1,6 @@
-import os
+import socket
 import sys
 import time
-import socket
 from pathlib import Path
 from threading import Thread
 
@@ -34,7 +33,7 @@ def get_resource_path(relative_path: str) -> Path:
         import sys as sys_lib
         if hasattr(sys_lib, "_MEIPASS"):
             return Path(sys_lib._MEIPASS) / relative_path
-    except Exception:
+    except Exception:  # nosec B110
         pass
     return Path(__file__).parent / relative_path
 

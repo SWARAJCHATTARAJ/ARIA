@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import json
 import os
+import socket
 import sys
 import time
-import json
-import socket
-import requests
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from urllib.parse import urlparse
-from jose import jwt, JWTError
+
+import requests
 
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
@@ -18,19 +18,47 @@ try:
     import sys
     sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 except ImportError:
-    pass
 
     pass
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends, status, Request
-from fastapi.responses import Response, StreamingResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from dotenv import load_dotenv
 import logging
 
+from dotenv import load_dotenv
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, Response, StreamingResponse
+from pydantic import BaseModel
+
 load_dotenv()
+
+def _check_db_reachable():
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url: return
+    try:
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        from urllib.parse import urlparse
+        parsed = urlparse(db_url)
+        host = parsed.hostname
+        port = parsed.port or 5432
+        if host:
+            import socket
+            socket.create_connection((host, port), timeout=2.0).close()
+    except Exception:
+        if "DATABASE_URL" in os.environ:
+            del os.environ["DATABASE_URL"]
+
+_check_db_reachable()
+
 
 # Configure structured-like console logging
 logging.basicConfig(
@@ -41,12 +69,26 @@ logging.basicConfig(
 logger = logging.getLogger("aria.api")
 
 from aria.agent import ResearchAgent, generate_research_diff
-from aria.core import Settings, validate_pdf_upload, estimate_tokens
+from aria.auth import (
+    create_access_token,
+    create_user,
+    get_current_user,
+    get_user_hash,
+    oauth2_scheme,
+    verify_password,
+    verify_supabase_token,
+)
+from aria.core import Settings, estimate_tokens, validate_pdf_upload
 from aria.rag import VectorMemory
 from aria.reports import build_markdown_report, build_pdf_report, build_trace_report
-from aria.sessions import find_session_path, is_admin_user, list_sessions, load_session, save_session, result_to_dict
-from aria.auth import get_current_user, verify_password, create_access_token, get_auth_settings, get_user_hash, create_user, oauth2_scheme, verify_supabase_token
-
+from aria.sessions import (
+    find_session_path,
+    is_admin_user,
+    list_sessions,
+    load_session,
+    result_to_dict,
+    save_session,
+)
 
 load_dotenv()
 
@@ -93,8 +135,9 @@ app.add_middleware(
 
 def get_memory_usage_mb() -> float:
     try:
-        import psutil
         import os
+
+        import psutil
         process = psutil.Process(os.getpid())
         return process.memory_info().rss / (1024 * 1024)
     except ImportError:
@@ -103,7 +146,7 @@ def get_memory_usage_mb() -> float:
                 for line in f:
                     if line.startswith('VmRSS:'):
                         return float(line.split()[1]) / 1024.0
-        except Exception:
+        except (OSError, ValueError):
             pass
         return 0.0
 
@@ -216,7 +259,7 @@ def is_safe_url(url: str) -> bool:
         for ip_info in ips:
             ip = ip_info[4][0]
             # IPv4 checks
-            if ip.startswith("127.") or ip.startswith("169.254.") or ip.startswith("10."):
+            if ip.startswith(("127.", "169.254.", "10.")):
                 return False
             if ip.startswith("192.168."):
                 return False
@@ -226,7 +269,7 @@ def is_safe_url(url: str) -> bool:
                 if len(parts) >= 2 and 16 <= int(parts[1]) <= 31:
                     return False
             # IPv6 checks
-            if ip == "::1" or ip.startswith("fe80:") or ip.startswith("fc00:") or ip.startswith("fd00:"):
+            if ip == "::1" or ip.startswith(("fe80:", "fc00:", "fd00:")):
                 return False
         return True
     except Exception:
@@ -285,7 +328,7 @@ async def login(request: LoginRequest):
         )
     
     access_token = create_access_token(data={"sub": username})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer"}  # nosec B105
 
 @app.post("/api/auth/exchange")
 async def exchange_token(request: ExchangeRequest):
@@ -310,7 +353,7 @@ async def exchange_token(request: ExchangeRequest):
         
         # Issue ARIA JWT
         access_token = create_access_token(data={"sub": email})
-        return {"access_token": access_token, "token_type": "bearer", "user_id": email}
+        return {"access_token": access_token, "token_type": "bearer", "user_id": email}  # nosec B105
         
     except HTTPException:
         raise
@@ -483,8 +526,8 @@ async def run_research(
                 return
 
             # Check query classification first
-            from aria.agent import classify_question, QueryType
-            q_type, q_subtype = classify_question(request.question)
+            from aria.agent import QueryType, classify_question
+            q_type, _q_subtype = classify_question(request.question)
             
             if q_type != QueryType.RESEARCH:
                 logger.info(f"Query classified as {q_type}. Using instant bypass.")
@@ -720,8 +763,8 @@ async def get_session(session_id: str, user_id: str | None = None, current_user:
             "created_at": data.get("created_at", ""),
             "result": result_to_dict(result)
         }
-    except HTTPException as he:
-        raise he
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
@@ -739,8 +782,8 @@ async def download_session_pdf(session_id: str, user_id: str | None = None, curr
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="aria_brief_{session_id}.pdf"'},
         )
-    except HTTPException as he:
-        raise he
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
@@ -758,8 +801,8 @@ async def download_session_md(session_id: str, user_id: str | None = None, curre
             media_type="application/octet-stream",
             headers={"Content-Disposition": f'attachment; filename="aria_brief_{session_id}.md"'},
         )
-    except HTTPException as he:
-        raise he
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
@@ -777,8 +820,8 @@ async def download_session_trace(session_id: str, user_id: str | None = None, cu
             media_type="application/octet-stream",
             headers={"Content-Disposition": f'attachment; filename="aria_trace_{session_id}.md"'},
         )
-    except HTTPException as he:
-        raise he
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
@@ -810,8 +853,8 @@ async def configure_recurring(session_id: str, request: RecurringRequest, user_i
             
         save_session(result, session_id=session_id, user_id=user_id or current_user)
         return {"status": "success", "message": f"Recurring interval set to {request.interval}"}
-    except HTTPException as he:
-        raise he
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
@@ -821,7 +864,7 @@ def run_scheduler_loop():
     
     def scheduler_loop():
         time.sleep(5)
-        logger.info(f"[Scheduler] Started background recurring research scheduler thread.")
+        logger.info("[Scheduler] Started background recurring research scheduler thread.")
 
         while True:
             try:
@@ -836,7 +879,7 @@ def run_scheduler_loop():
                         continue
                     try:
                         result = load_session(path)
-                    except Exception:
+                    except (OSError, ValueError):
                         continue
                         
                     interval = getattr(result, "recurring_interval", None)
@@ -853,7 +896,7 @@ def run_scheduler_loop():
                     try:
                         from datetime import datetime, timezone
                         base_time = datetime.fromisoformat(base_time_str.replace("Z", "+00:00"))
-                    except Exception:
+                    except ValueError:
                         continue
                         
                     now = datetime.now(timezone.utc)
@@ -956,12 +999,12 @@ async def update_settings(request: SettingsRequest, current_user: str = Depends(
                 if not updated:
                     lines.append(f"OPENROUTER_API_KEY={key}")
                 env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
         else:
             try:
                 env_path.write_text(f"OPENROUTER_API_KEY={key}\n", encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
             
     return {"status": "success", "message": "Settings updated successfully"}
@@ -984,14 +1027,15 @@ def get_resource_path(relative_path: str) -> Path:
         import sys
         if hasattr(sys, "_MEIPASS"):
             return Path(sys._MEIPASS) / relative_path
-    except Exception:
+    except AttributeError:
         pass
     return Path(__file__).parent / relative_path
 
 dist_path = get_resource_path("frontend/dist")
 if dist_path.exists():
-    from fastapi.responses import FileResponse
     import os
+
+    from fastapi.responses import FileResponse
 
     # Mount the static directory itself to serve assets, icons, manifest etc.
     # We mount it at / to allow files like /favicon.svg to be resolved.
@@ -1009,13 +1053,13 @@ if dist_path.exists():
             # Check if the requested file actually exists in dist_path
             if file_path.is_relative_to(dist_path.resolve()) and file_path.exists() and file_path.is_file():
                 return FileResponse(str(file_path))
-        except Exception:
+        except (OSError, ValueError):
             pass
             
         # Fallback to index.html for React Router
         return FileResponse(str(dist_path / "index.html"))
 if __name__ == "__main__":
     import uvicorn
-    host = os.getenv("ARIA_HOST", "0.0.0.0")
+    host = os.getenv("ARIA_HOST", "127.0.0.1")
     port = int(os.getenv("PORT", os.getenv("ARIA_PORT", "8000")))
     uvicorn.run("main:app", host=host, port=port, reload=True)

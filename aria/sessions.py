@@ -10,7 +10,6 @@ from uuid import uuid4
 
 from .core import Evidence, ResearchResult
 
-
 SESSION_DIR = Path(".aria_sessions")
 
 
@@ -85,7 +84,7 @@ def result_from_dict(data: dict) -> ResearchResult:
 
 def is_db_mode() -> bool:
     db_url = os.getenv("DATABASE_URL")
-    return bool(db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")))
+    return bool(db_url and (db_url.startswith(("postgres://", "postgresql://"))))
 
 
 class DatabaseSessionPath:
@@ -96,6 +95,7 @@ class DatabaseSessionPath:
 
     def read_text(self, encoding="utf-8") -> str:
         import json
+
         from .auth import get_db_connection
         conn = get_db_connection()
         try:

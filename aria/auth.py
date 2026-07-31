@@ -1,15 +1,19 @@
+from __future__ import annotations
+
 import logging
+
 logger = logging.getLogger(__name__)
 import os
-import bcrypt
 import sqlite3
-from datetime import datetime, timedelta, timezone
-import httpx
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from jose import jwt, JWTError
-from fastapi import HTTPException, status, Depends
+
+import bcrypt
+import httpx
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 
 # OAuth2 Scheme for extracting token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
@@ -19,7 +23,7 @@ DB_PATH = Path(".aria_sessions") / "users.db"
 
 def get_db_connection():
     db_url = os.getenv("DATABASE_URL")
-    if db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")):
+    if db_url and (db_url.startswith(("postgres://", "postgresql://"))):
         # Supabase database URLs start with postgres://, but psycopg2 prefers postgresql://
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -27,10 +31,10 @@ def get_db_connection():
         # Ensure password is URL-encoded if it contains '@' or other special chars
         import urllib.parse
         try:
-            scheme, sep, rest = db_url.partition("://")
-            cred_part, sep_at, host_part = rest.rpartition("@")
+            scheme, _sep, rest = db_url.partition("://")
+            cred_part, _sep_at, host_part = rest.rpartition("@")
             if cred_part:
-                user, sep_colon, password = cred_part.partition(":")
+                user, _sep_colon, password = cred_part.partition(":")
                 if password:
                     unquoted_password = urllib.parse.unquote(password)
                     quoted_password = urllib.parse.quote(unquoted_password)
@@ -48,7 +52,7 @@ def init_db():
     try:
         Path(".aria_sessions").mkdir(parents=True, exist_ok=True)
         db_url = os.getenv("DATABASE_URL")
-        is_postgres = db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://"))
+        is_postgres = db_url and (db_url.startswith(("postgres://", "postgresql://")))
         
         conn = get_db_connection()
         try:
@@ -134,7 +138,7 @@ def get_user_hash(username: str) -> str | None:
 
     # Check database
     db_url = os.getenv("DATABASE_URL")
-    is_postgres = db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://"))
+    is_postgres = db_url and (db_url.startswith(("postgres://", "postgresql://")))
     
     conn = get_db_connection()
     try:
@@ -159,7 +163,7 @@ def create_user(username: str, password: str) -> bool:
     hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     
     db_url = os.getenv("DATABASE_URL")
-    is_postgres = db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://"))
+    is_postgres = db_url and (db_url.startswith(("postgres://", "postgresql://")))
     
     conn = get_db_connection()
     try:

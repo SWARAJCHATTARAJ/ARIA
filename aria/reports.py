@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from html import escape
 from io import BytesIO
-import re
 
+from reportlab.graphics.shapes import Circle, Drawing, Line, Rect, String
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
-)
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.pdfgen import canvas
-from reportlab.graphics.shapes import Drawing, Rect, String, Line, Circle
+from reportlab.platypus import (
+    KeepTogether,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
-from .core import ResearchResult, Evidence
+from .core import Evidence, ResearchResult
 
 
 class NumberedCanvas(canvas.Canvas):
@@ -869,7 +874,7 @@ def build_trace_report(result: ResearchResult) -> str:
             )
             
     # Parse citations to find used vs discarded
-    citations = set(int(m) for m in re.findall(r"(?<!\!)\[(\d+)\]", result.answer or ""))
+    citations = {int(m) for m in re.findall(r"(?<!\!)\[(\d+)\]", result.answer or "")}
     used_lines = []
     discarded_lines = []
     

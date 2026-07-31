@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -26,7 +26,7 @@ class Settings:
     @classmethod
     def from_env(cls) -> Settings:
         provider = os.getenv("ARIA_LLM_PROVIDER", "azure").strip().lower()
-        openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        os.getenv("OPENROUTER_API_KEY", "").strip()
         azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip() or None
         azure_api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip() or None
         azure_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "").strip() or None

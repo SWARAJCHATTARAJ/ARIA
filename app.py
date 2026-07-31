@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 import socket
-import subprocess
+import subprocess  # nosec B404
 import sys
 import time
-import ipaddress
-from urllib.parse import urlparse
 from pathlib import Path
 from shutil import which
+from urllib.parse import urlparse
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -26,12 +26,12 @@ def is_local_host(host: str) -> bool:
     if not host:
         return True
     host = host.split(":")[0].strip()
-    if host.lower() in {"localhost", "::1", "0.0.0.0"}:
+    if host.lower() in {"localhost", "::1", "0.0.0.0"}:  # nosec B104
         return True
     if "." not in host:
         return True
     lower_host = host.lower()
-    for suffix in {".local", ".lan", ".home", ".internal", ".test"}:
+    for suffix in (".local", ".lan", ".home", ".internal", ".test"):
         if lower_host.endswith(suffix):
             return True
     try:
@@ -69,8 +69,9 @@ def configured_backend_url() -> str:
                     else:
                         # On a public Streamlit host, default to the deployed public backend URL
                         return "https://aria.swarajchattaraj.tech"
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Error checking host ip: {e}")
 
     return f"http://{BACKEND_HOST}:{BACKEND_PORT}"
 
@@ -95,7 +96,7 @@ def npm_command() -> str | None:
 
 
 def run_command(command: list[str], cwd: Path) -> None:
-    completed = subprocess.run(
+    completed = subprocess.run(  # nosec B603
         command,
         cwd=str(cwd),
         stdout=subprocess.PIPE,
@@ -125,7 +126,7 @@ def ensure_frontend_build() -> None:
                     try:
                         if path.stat().st_mtime > dist_mtime:
                             return True
-                    except Exception:
+                    except OSError:
                         pass
             return False
 
@@ -168,14 +169,14 @@ def start_backend() -> subprocess.Popen | None:
     if not python.exists():
         python = Path(sys.executable)
 
-    process = subprocess.Popen(
+    process = subprocess.Popen(  # nosec B603
         [
             str(python),
             "-m",
             "uvicorn",
             "main:app",
             "--host",
-            "0.0.0.0",
+            "127.0.0.1",
             "--port",
             str(BACKEND_PORT),
         ],

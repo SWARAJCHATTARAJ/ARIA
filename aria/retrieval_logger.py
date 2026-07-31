@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import re
-
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -111,7 +110,7 @@ def _write_log_entry_sync(entry: dict[str, Any], log_path: Path = LOG_FILE_PATH)
 
     # If DB mode (Postgres), attempt writing to DB table retrieval_logs
     db_url = os.getenv("DATABASE_URL")
-    if db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")):
+    if db_url and (db_url.startswith(("postgres://", "postgresql://"))):
         try:
             from .auth import get_db_connection
             conn = get_db_connection()
@@ -224,7 +223,7 @@ def get_retrieval_logs(limit: int = 50, log_path: Path = LOG_FILE_PATH) -> list[
     _flush_pending_log_writes()
 
     db_url = os.getenv("DATABASE_URL")
-    if db_url and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")):
+    if db_url and (db_url.startswith(("postgres://", "postgresql://"))):
         try:
             from .auth import get_db_connection
             conn = get_db_connection()

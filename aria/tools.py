@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-import xml.etree.ElementTree as ET
-import re
 import html
-import urllib.parse
 import json
 import logging
 import os
+import re
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
+
+import defusedxml.ElementTree as ET
 
 from .core import Evidence
 
@@ -132,7 +133,7 @@ async def async_arxiv_search(session, query: str, max_results: int = 2) -> list[
         async with session.get("https://export.arxiv.org/api/query", params=params) as response:
             response.raise_for_status()
             content = await response.read()
-        root = ET.fromstring(content)
+        root = ET.fromstring(content)  # nosec
     except Exception:
         return []
 
@@ -498,7 +499,8 @@ def get_market_snapshot(tickers: list[str]) -> list[Evidence]:
                     retrieved_via="yfinance",
                 )
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to fetch Yahoo Finance for {ticker}: {e}")
             continue
     return snapshots
 
@@ -575,7 +577,7 @@ async def async_pubmed_search(session, query: str, max_results: int = 2) -> list
     """Queries NCBI PubMed to retrieve biomedical and life sciences literature with full abstracts."""
     try:
         import aiohttp
-        import xml.etree.ElementTree as ET
+        import defusedxml.ElementTree as ET
         search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         params = {
             "db": "pubmed",
@@ -605,7 +607,7 @@ async def async_pubmed_search(session, query: str, max_results: int = 2) -> list
                 return []
             content = await fetch_response.read()
             
-        root = ET.fromstring(content)
+        root = ET.fromstring(content)  # nosec
         evidence = []
         for article in root.findall(".//PubmedArticle"):
             pmid_el = article.find(".//PMID")
@@ -618,7 +620,7 @@ async def async_pubmed_search(session, query: str, max_results: int = 2) -> list
             
             # Extract journal source
             journal_el = article.find(".//Journal/Title")
-            source = journal_el.text.strip() if journal_el is not None else "NCBI PubMed"
+            journal_el.text.strip() if journal_el is not None else "NCBI PubMed"
             
             # Extract publication date
             pubdate_el = article.find(".//JournalIssue/PubDate/Year")
