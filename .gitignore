@@ -64,3 +64,12 @@ aria-secure-key
 aria-secure-key.pub
 .venv_old/
 audit_logs/
+
+# Scratch & Temporary Scripts
+bandit_report.json
+bandit_report_new.json
+check_new_report.py
+extract.py
+extract_all.py
+extract_main.py
+test_eval.py
