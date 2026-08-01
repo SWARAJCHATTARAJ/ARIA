@@ -496,3 +496,5 @@ zstandard==0.25.0
 defusedxml
 
 
+openai==1.59.3
+
