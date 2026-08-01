@@ -696,6 +696,7 @@ class LLMClient:
         client = OpenAI(
             base_url=self.settings.azure_endpoint,
             api_key=self.settings.azure_api_key,
+            default_query={"api-version": self.settings.azure_api_version},
         )
         deployment_name = self.settings.azure_deployment_name or self.settings.model
         
