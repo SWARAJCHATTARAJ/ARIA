@@ -689,14 +689,13 @@ class LLMClient:
         import time
         try:
             import openai
-            from openai import AzureOpenAI
+            from openai import OpenAI
         except ImportError:
             raise RuntimeError("openai Python package is not installed but Azure OpenAI is selected.")
             
-        client = AzureOpenAI(
-            azure_endpoint=self.settings.azure_endpoint,
+        client = OpenAI(
+            base_url=self.settings.azure_endpoint,
             api_key=self.settings.azure_api_key,
-            api_version=self.settings.azure_api_version,
         )
         deployment_name = self.settings.azure_deployment_name or self.settings.model
         
