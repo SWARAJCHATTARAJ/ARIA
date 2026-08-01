@@ -21,7 +21,7 @@ class Settings:
     azure_endpoint: str | None = None
     azure_api_key: str | None = None
     azure_deployment_name: str | None = None
-    azure_api_version: str = "2024-06-01"
+    azure_api_version: str = "2024-08-01-preview"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -30,7 +30,7 @@ class Settings:
         azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip() or None
         azure_api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip() or None
         azure_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "").strip() or None
-        azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "").strip() or "2024-06-01"
+        azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "").strip() or "2024-08-01-preview"
 
 
         # Security pass: warning if other provider keys are configured
