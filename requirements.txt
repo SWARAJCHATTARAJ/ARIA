@@ -68,7 +68,8 @@ colorama==0.4.6
     # via
     #   build
     #   click
-    #   tqdm
+defusedxml==0.7.1
+    # via
     #   typer
     #   uvicorn
 cryptography==49.0.0
