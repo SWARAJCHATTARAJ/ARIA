@@ -25,17 +25,17 @@ def _get_embedding_model():
 def _get_threshold() -> float:
     """Get the similarity threshold from environment variable."""
     try:
-        return float(os.getenv("ARIA_RELEVANCE_THRESHOLD", "0.35"))
+        return float(os.getenv("ARIA_RELEVANCE_THRESHOLD", "0.20"))
     except ValueError:
-        return 0.35
+        return 0.20
 
 
 def _get_max_evidence() -> int:
     """Get max evidence items to keep after filtering."""
     try:
-        return int(os.getenv("ARIA_RELEVANCE_MAX_EVIDENCE", "20"))
+        return int(os.getenv("ARIA_RELEVANCE_MAX_EVIDENCE", "30"))
     except ValueError:
-        return 20
+        return 30
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:

@@ -680,7 +680,7 @@ class LLMClient:
                 if response.status_code == 429:
                     if attempt < max_retries:
                         sleep_time = backoff_factor ** (attempt + 1)
-                        logger.warning(f"OpenRouter API rate limit hit (429). Retrying in {sleep_time} seconds (attempt {attempt + 1}/{max_retries})...")
+                        logger.warning(f"OpenRouter API rate limit hit (429). Retrying in {sleep_time}s (attempt {attempt + 1}/{max_retries})...")
                         time.sleep(sleep_time)
                         continue
                     else:
@@ -699,12 +699,28 @@ class LLMClient:
                     )
                 response.raise_for_status()
                 data = response.json()
+                if "choices" not in data or not data["choices"]:
+                    logger.warning("OpenRouter response missing 'choices'. Keys: %s", list(data.keys()))
+                    if attempt < max_retries:
+                        time.sleep(backoff_factor ** attempt)
+                        continue
+                    raise RuntimeError(f"OpenRouter returned no choices. Response keys: {list(data.keys())}")
                 return data["choices"][0]["message"]["content"]
             except requests.Timeout as e:
-                raise TimeoutError("OpenRouter API request timed out after 60 seconds. The model is taking too long to generate a response.") from e
+                if attempt < max_retries:
+                    time.sleep(backoff_factor ** attempt)
+                    continue
+                raise TimeoutError("OpenRouter API request timed out after 60 seconds.") from e
             except requests.RequestException as e:
+                if attempt < max_retries:
+                    time.sleep(backoff_factor ** attempt)
+                    continue
                 raise RuntimeError(f"OpenRouter API connection failed: {e}") from e
-            except (KeyError, IndexError) as e:
+            except (KeyError, IndexError, TypeError) as e:
+                if attempt < max_retries:
+                    logger.warning("OpenRouter parse error (attempt %d): %s", attempt + 1, e)
+                    time.sleep(backoff_factor ** attempt)
+                    continue
                 raise RuntimeError(f"Failed to parse OpenRouter response JSON: {e}") from e
 
     def _azure_openai(self, system: str, user: str) -> str:
@@ -1238,14 +1254,38 @@ class ResearchAgent:
         final_evidence = final_state.get("citation_evidence") or cross_encoder_rerank_evidence(question, final_evidence)
 
         answer_text = final_state["answer"]
-        is_no_evidence = (
-            not final_evidence or
+        llm_says_no_evidence = (
             "no sufficient evidence" in answer_text.lower() or
             "no usable evidence" in answer_text.lower()
         )
+        actually_has_evidence = bool(final_evidence) and any(
+            (ev.summary or "").strip() and len((ev.summary or "").strip()) > 20
+            for ev in final_evidence
+        )
         
         is_grounded = True
-        if is_no_evidence:
+        if llm_says_no_evidence and actually_has_evidence:
+            retry_answer = self._draft(question, final_evidence, history=state.get("history"), local_only=state.get("local_only", False))
+            if retry_answer and "no sufficient evidence" not in retry_answer.lower():
+                answer_text = retry_answer
+                final_state["verification"] = "STATUS: PASSED\nREASON: Draft regenerated from retrieved evidence."
+            else:
+                fallback_body = self._generate_ungrounded_fallback(question)
+                answer_text = (
+                    f"### Executive Brief\n\n**Query:** {question}\n\n"
+                    f"Retrieved **{len(final_evidence)} sources** but the synthesis engine could not produce a grounded brief.\n\n"
+                    f"#### Sources Found\n"
+                )
+                for idx, ev in enumerate(final_evidence[:8], 1):
+                    title = ev.title or "Untitled"
+                    url = f" ({ev.url})" if ev.url else ""
+                    answer_text += f"- **[{idx}]** {title}{url}\n"
+                answer_text += (
+                    f"\n---\n\n#### General Knowledge Summary\n\n"
+                    f"{fallback_body}"
+                )
+                final_state["verification"] = "STATUS: PARTIAL\nREASON: Evidence retrieved but synthesis failed. Sources listed above."
+        elif not final_evidence:
             if allow_ungrounded_fallback:
                 is_grounded = False
                 fallback_body = self._generate_ungrounded_fallback(question)
@@ -1256,7 +1296,6 @@ class ResearchAgent:
                     f"{fallback_body}"
                 )
                 final_state["verification"] = "STATUS: UNGROUNDED_FALLBACK\nREASON: Answer generated from general knowledge; unverified."
-                final_evidence = []
             else:
                 answer_text = (
                     "No cited sources found. Get a general-knowledge answer instead? (Not verified, not cited)."
@@ -1726,14 +1765,16 @@ class ResearchAgent:
                 system = (
                     "You are ARIA's Lead Planner. You have detected that this is a COMPARATIVE research question.\n"
                     "Break down the user's question into paired, balanced search queries targeting each side of the comparison, "
-                    f"as well as direct comparative parameters. Generate EXACTLY {target_queries} distinct, highly specific search queries.\n"
+                    f"as well as direct comparative parameters. Generate EXACTLY {target_queries} distinct search queries.\n"
+                    "CRITICAL: Each query MUST be short (3-8 words max) and suitable for web search APIs.\n"
                     "Output each query on a new line. Do not include numbers, bullets, or markdown."
                 )
             else:
                 system = (
                     "You are ARIA's Lead Planner. Break down the user's research "
-                    f"question into EXACTLY {target_queries} distinct, highly specific search queries targeting technical specifications, "
-                    "standards, key developments, risks, or relevant parameters.\n"
+                    f"question into EXACTLY {target_queries} distinct search queries.\n"
+                    "CRITICAL: Each query MUST be short (3-8 words max) and suitable for web search APIs.\n"
+                    "Target: definitions, key concepts, recent developments, standards, and data.\n"
                     "Output each query on a new line. Do not include numbers, bullets, or markdown."
                 )
             user = f"Research Question: {question}"
@@ -1756,14 +1797,16 @@ class ResearchAgent:
         if history:
             history_context = "\nPrevious Conversation History:\n" + "\n".join(f"User: {h['question']}\nARIA: {h['answer']}" for h in history)
             
+        has_evidence = bool(evidence) and any(
+            (ev.summary or "").strip() and len((ev.summary or "").strip()) > 20
+            for ev in evidence
+        )
         system = (
             "You are ARIA, an Autonomous Research Intelligence Analyst. "
             "Write a clear, structured, accurate research brief answering the query.\n"
             "CRITICAL WARNING ON HALLUCINATION:\n"
             "- You must base your response SOLELY and STRICTLY on the provided evidence.\n"
             "- Do NOT make up, assume, or extrapolate any details, numbers, URLs, specifications, or facts not explicitly stated in the evidence.\n"
-            "- If the provided evidence is empty, contains no factual details, or does not contain information directly relevant to answering the question, you MUST respond with: 'No sufficient evidence found to answer the query.' and nothing else.\n"
-            "- For any product, technology, standard, component, or algorithm described, explicitly state its core purpose and intended function as supported by the evidence.\n"
             "- Cite all sources using bracketed numbers [1], [2], etc., corresponding to the exact index in the provided evidence. Every claim must have a citation.\n"
             "- Wrap key findings, key metrics, and important technical terms in markdown bold (e.g. **term**) for readability. Do NOT bold entire sentences or long phrases; bold only 1-3 key words at a time.\n"
             "SOURCE TRUST WEIGHTING DIRECTIVE:\n"
@@ -1771,6 +1814,18 @@ class ResearchAgent:
             "- If evidence sources conflict on the same claim (e.g., they state different values, dates, or outcomes), you should prefer higher-trust sources by default.\n"
             "- However, you must still explicitly surface and mention the conflict in your brief rather than silently discarding the lower-trust source (e.g., state the conflicting view from the lower-trust source with its citation).\n"
         )
+        if not has_evidence:
+            system += (
+                "- If the provided evidence is completely empty or contains no usable information at all, "
+                "respond with: 'No sufficient evidence found to answer the query.' and nothing else.\n"
+            )
+        else:
+            system += (
+                "- You HAVE retrieved evidence below. Synthesize a comprehensive answer from it. "
+                "Use ALL relevant evidence items. Do NOT say 'no evidence found' when evidence is provided. "
+                "If the evidence partially answers the question, provide what you can and note gaps. "
+                "Only say 'no evidence' if the evidence is truly empty or completely unrelated.\n"
+            )
         if is_comparative_query(question):
             system += (
                 "COMPARATIVE RESEARCH DIRECTIVE:\n"
@@ -2136,8 +2191,8 @@ def generate_diverse_fallback_queries(question: str) -> list[str]:
             queries.append(q)
     else:
         queries.append(clean)
-        queries.append(f"{clean} key developments risks")
-        queries.append(f"{clean} official reports data pdf")
+        queries.append(f"{clean} overview")
+        queries.append(f"{clean} latest developments")
         
     return clean_queries(queries)
 
@@ -2285,13 +2340,13 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
     model = get_cross_encoder()
     if model is None:
         ranked = re_rank_evidence(query, evidence)
-        filtered = [item for item in ranked if item.score >= 0.20]
-        min_keep = min(3, len(ranked))
+        filtered = [item for item in ranked if item.score >= 0.15]
+        min_keep = min(5, len(ranked))
         if len(filtered) < min_keep:
             filtered = ranked[:min_keep]
         elif not filtered and ranked:
             filtered = [ranked[0]]
-        return enforce_source_diversity(filtered, max_per_source=2)
+        return enforce_source_diversity(filtered, max_per_source=3)
         
     try:
         pairs = [(query, item.summary) for item in evidence]
@@ -2301,24 +2356,23 @@ def cross_encoder_rerank_evidence(query: str, evidence: list[Evidence]) -> list[
         for item, score in zip(evidence, normalized):
             item.score = round(float(score), 2)
         evidence.sort(key=lambda x: x.score, reverse=True)
-        # Filter results that are only loosely/tangentially related (threshold 0.25)
-        filtered = [item for item in evidence if item.score >= 0.25]
-        min_keep = min(3, len(evidence))
+        filtered = [item for item in evidence if item.score >= 0.20]
+        min_keep = min(5, len(evidence))
         if len(filtered) < min_keep:
             filtered = evidence[:min_keep]
         elif not filtered and evidence:
             filtered = [evidence[0]]
-        return enforce_source_diversity(filtered, max_per_source=2)
+        return enforce_source_diversity(filtered, max_per_source=3)
     except Exception as e:
         logger.warning(f"CrossEncoder inference failed: {e}. Falling back to token overlap.")
         ranked = re_rank_evidence(query, evidence)
-        filtered = [item for item in ranked if item.score >= 0.20]
-        min_keep = min(3, len(ranked))
+        filtered = [item for item in ranked if item.score >= 0.15]
+        min_keep = min(5, len(ranked))
         if len(filtered) < min_keep:
             filtered = ranked[:min_keep]
         elif not filtered and ranked:
             filtered = [ranked[0]]
-        return enforce_source_diversity(filtered, max_per_source=2)
+        return enforce_source_diversity(filtered, max_per_source=3)
 
 
 _RERANKER_MODEL = None
