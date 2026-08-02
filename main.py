@@ -531,7 +531,14 @@ async def run_research(
             
             if q_type != QueryType.RESEARCH:
                 logger.info(f"Query classified as {q_type}. Using instant bypass.")
-                instant_result = agent.run(request.question)
+                from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(agent.run, request.question)
+                    try:
+                        instant_result = future.result(timeout=30)
+                    except FuturesTimeout:
+                        logger.error(f"Non-research query timed out after 30s: {request.question}")
+                        raise TimeoutError("The direct answer took too long to generate. Please try again.")
                 yield f"event: stage_start\ndata: {json.dumps({'stage': 'plan', 'memory_mb': round(get_memory_usage_mb(), 2)})}\n\n"
                 yield f"event: stage_complete\ndata: {json.dumps({'stage': 'plan', 'elapsed': 0.0, 'events': instant_result.events})}\n\n"
                 session = save_session(instant_result, user_id=request.user_id)
@@ -555,17 +562,43 @@ async def run_research(
             final_state = initial_state
             node_started_at = time.perf_counter()
             
+            # Overall pipeline timeout: 3 minutes (configurable via env)
+            pipeline_timeout = float(os.getenv("ARIA_PIPELINE_TIMEOUT", "180"))
+            pipeline_start = time.perf_counter()
+            
             last_ping_time = time.perf_counter()
             while True:
+                # Check overall pipeline timeout
+                elapsed_total = time.perf_counter() - pipeline_start
+                if elapsed_total > pipeline_timeout:
+                    logger.error(f"Research pipeline timed out after {pipeline_timeout:.0f}s.")
+                    raise TimeoutError(
+                        f"Research pipeline exceeded the overall time limit of {pipeline_timeout:.0f} seconds. "
+                        "This may be due to slow LLM responses or web retrieval. "
+                        "Try a simpler query or increase ARIA_PIPELINE_TIMEOUT."
+                    )
+                
                 while q.empty():
                     await asyncio.sleep(0.2)
+                    # Check overall pipeline timeout again inside inner loop
+                    elapsed_total = time.perf_counter() - pipeline_start
+                    if elapsed_total > pipeline_timeout:
+                        logger.error(f"Research pipeline timed out after {pipeline_timeout:.0f}s.")
+                        raise TimeoutError(
+                            f"Research pipeline exceeded the overall time limit of {pipeline_timeout:.0f} seconds. "
+                            "This may be due to slow LLM responses or web retrieval."
+                        )
                     # Check if thread is still alive
                     if not t.is_alive() and q.empty():
                         logger.error("ARIA research engine thread terminated unexpectedly.")
-                        raise RuntimeError("ARIA research engine thread terminated unexpectedly. This might be due to an Out-of-Memory (OOM) kill or process crash.")
+                        raise RuntimeError(
+                            "ARIA research engine thread terminated unexpectedly. "
+                            "This might be due to an Out-of-Memory (OOM) kill, process crash, "
+                            "or an unhandled exception in the research pipeline."
+                        )
                     # Keep-alive ping to prevent proxy/load balancer timeouts
                     if time.perf_counter() - last_ping_time > 15:
-                        yield f"event: ping\ndata: {json.dumps({'message': 'keep-alive'})}\n\n"
+                        yield f"event: ping\ndata: {json.dumps({'message': 'keep-alive', 'elapsed_seconds': round(time.perf_counter() - pipeline_start, 1)})}\n\n"
                         last_ping_time = time.perf_counter()
                 
                 status, val = q.get()
@@ -629,7 +662,20 @@ async def run_research(
             
         except Exception as e:
             logger.exception("Exception occurred in sse_generator:")
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            # Surface specific error types to help users diagnose issues
+            error_msg = str(e)
+            error_type = type(e).__name__
+            if isinstance(e, TimeoutError):
+                error_msg = f"Research timed out: {e}"
+                logger.warning(f"Pipeline timeout: {error_msg}")
+            elif "terminated unexpectedly" in error_msg:
+                error_msg = "The research engine crashed. This may be due to insufficient memory on the server. Try a shorter query."
+                logger.error(f"Thread death detected: {error_msg}")
+            elif "LLM providers failed" in error_msg or "AI service" in error_msg:
+                logger.warning(f"LLM service error: {error_msg}")
+            elif "OpenRouter" in error_msg or "Azure" in error_msg:
+                logger.warning(f"LLM provider error: {error_msg}")
+            yield f"event: error\ndata: {json.dumps({'error': error_msg, 'type': error_type})}\n\n"
         yield "data: [DONE]\n\n"
         
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
@@ -975,37 +1021,53 @@ async def get_settings(x_openrouter_key: str | None = Header(None), current_user
 
 class SettingsRequest(BaseModel):
     openrouter_api_key: str | None = None
+    llm_provider: str | None = None
+    model: str | None = None
 
 @app.post("/api/settings")
 async def update_settings(request: SettingsRequest, current_user: str = Depends(get_current_user_or_guest)):
     """Update current ARIA configuration."""
-    if request.openrouter_api_key is not None:
-        key = request.openrouter_api_key.strip()
-        # Save to os.environ so it's active immediately
-        os.environ["OPENROUTER_API_KEY"] = key
-        
-        # Also write to .env to persist across restarts
-        env_path = Path(__file__).parent / ".env"
-        if env_path.exists():
-            try:
+    env_path = Path(__file__).parent / ".env"
+    
+    def persist_env(key: str, value: str) -> None:
+        """Persist a key/value pair to the .env file."""
+        os.environ[key] = value
+        try:
+            if env_path.exists():
                 content = env_path.read_text(encoding="utf-8")
                 lines = content.splitlines()
                 updated = False
                 for i, line in enumerate(lines):
-                    if line.startswith("OPENROUTER_API_KEY="):
-                        lines[i] = f"OPENROUTER_API_KEY={key}"
+                    if line.startswith(f"{key}="):
+                        lines[i] = f"{key}={value}"
                         updated = True
                         break
                 if not updated:
-                    lines.append(f"OPENROUTER_API_KEY={key}")
+                    lines.append(f"{key}={value}")
                 env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            except OSError:
-                pass
-        else:
-            try:
-                env_path.write_text(f"OPENROUTER_API_KEY={key}\n", encoding="utf-8")
-            except OSError:
-                pass
+            else:
+                env_path.write_text(f"{key}={value}\n", encoding="utf-8")
+        except OSError:
+            pass
+
+    if request.openrouter_api_key is not None:
+        key = request.openrouter_api_key.strip()
+        # Save to os.environ so it's active immediately, persist to .env
+        persist_env("OPENROUTER_API_KEY", key)
+
+    if request.llm_provider is not None:
+        provider = request.llm_provider.strip().lower()
+        if provider not in {"openrouter", "azure", "local-extractive"}:
+            raise HTTPException(status_code=400, detail="Invalid llm_provider. Must be one of: openrouter, azure, local-extractive.")
+        # Save to os.environ so it's active immediately, persist to .env
+        persist_env("ARIA_LLM_PROVIDER", provider)
+
+    if request.model is not None:
+        model = request.model.strip()
+        if not model:
+            raise HTTPException(status_code=400, detail="Model cannot be empty.")
+        # Save to os.environ so it's active immediately, persist to .env
+        persist_env("ARIA_MODEL", model)
             
     return {"status": "success", "message": "Settings updated successfully"}
 

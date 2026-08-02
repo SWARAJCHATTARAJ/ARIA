@@ -25,12 +25,46 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
-        provider = os.getenv("ARIA_LLM_PROVIDER", "azure").strip().lower()
-        os.getenv("OPENROUTER_API_KEY", "").strip()
+        # Auto-detect provider when ARIA_LLM_PROVIDER is not explicitly set:
+        #   - If an OpenRouter key is configured -> openrouter
+        #   - Else if Azure credentials are configured -> azure
+        #   - Otherwise -> local-extractive (fully offline)
+        provider_env = os.getenv("ARIA_LLM_PROVIDER", "").strip().lower()
         azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip() or None
         azure_api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip() or None
         azure_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "").strip() or None
         azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "").strip() or "2024-08-01-preview"
+        openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+
+        if not provider_env:
+            if openrouter_key and not openrouter_key.startswith("your_"):
+                provider_env = "openrouter"
+            elif azure_endpoint and azure_api_key:
+                provider_env = "azure"
+            else:
+                provider_env = "local-extractive"
+
+        provider = provider_env
+
+        # When using OpenRouter, default to a valid OpenRouter model.
+        if provider == "openrouter":
+            model = os.getenv("ARIA_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free").strip()
+        else:
+            model = os.getenv("ARIA_MODEL", "local-extractive").strip()
+
+        # Warning: if provider is local-extractive but valid Azure/OpenRouter credentials exist,
+        # the user likely misconfigured ARIA_LLM_PROVIDER. This commonly causes "queries not answered" issues.
+        if provider == "local-extractive":
+            if openrouter_key and not openrouter_key.startswith("your_"):
+                logger.warning(
+                    "[Misconfiguration] ARIA_LLM_PROVIDER is 'local-extractive' but a valid OPENROUTER_API_KEY is set. "
+                    "Set ARIA_LLM_PROVIDER=openrouter to use OpenRouter as your LLM provider."
+                )
+            elif azure_endpoint and azure_api_key:
+                logger.warning(
+                    "[Misconfiguration] ARIA_LLM_PROVIDER is 'local-extractive' but valid Azure OpenAI credentials are set. "
+                    "Set ARIA_LLM_PROVIDER=azure (or openrouter) to enable generative answers instead of extractive-only mode."
+                )
 
 
         # Security pass: warning if other provider keys are configured
@@ -44,7 +78,7 @@ class Settings:
 
         return cls(
             llm_provider=provider,
-            model=os.getenv("ARIA_MODEL", "local-extractive"),
+            model=model,
             collection_name=os.getenv("ARIA_COLLECTION", "aria_research_memory"),
             memory_path=os.getenv("ARIA_MEMORY_PATH", ".aria_chroma_db"),
             azure_endpoint=azure_endpoint,

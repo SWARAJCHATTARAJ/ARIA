@@ -610,14 +610,33 @@ class LLMClient:
                 )
 
         if not local_only:
-            if self.settings.llm_provider == "azure" and self.settings.azure_api_key and self.settings.azure_endpoint:
-                response = self._azure_openai(system, user)
-                if response:
-                    return response
-            elif self.settings.llm_provider == "openrouter" and self.openrouter_api_key:
-                response = self._openrouter(system, user)
-                if response:
-                    return response
+            # Cascade provider priority: OpenRouter (primary) -> Azure OpenAI (fallback, gpt-5-mini) -> local fallback.
+            provider_errors = []
+
+            # 1) OpenRouter first (highest priority)
+            if self.openrouter_api_key and not self.openrouter_api_key.startswith("your_"):
+                try:
+                    response = self._openrouter(system, user)
+                    if response and response.strip():
+                        return response
+                    provider_errors.append("OpenRouter returned an empty response")
+                except Exception as e:
+                    logger.warning(f"OpenRouter LLM call failed: {e}")
+                    provider_errors.append(f"OpenRouter: {e}")
+
+            # 2) Azure OpenAI fallback (gpt-5-mini)
+            if self.settings.azure_api_key and self.settings.azure_endpoint:
+                try:
+                    response = self._azure_openai(system, user)
+                    if response and response.strip():
+                        return response
+                    provider_errors.append("Azure OpenAI returned an empty response")
+                except Exception as e:
+                    logger.warning(f"Azure OpenAI LLM call failed: {e}")
+                    provider_errors.append(f"Azure OpenAI: {e}")
+
+            if provider_errors:
+                logger.warning(f"All LLM providers failed or were unavailable: {'; '.join(provider_errors)}. Using local fallback.")
         if task == "plan":
             return ""
         elif task == "verify":
@@ -641,7 +660,7 @@ class LLMClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "temperature": 1,
+            "temperature": 0.7,
         }
         max_retries = 3
         backoff_factor = 2
@@ -674,7 +693,10 @@ class LLMClient:
                         detail = response.json().get("error", {}).get("message", "Bad Request")
                     except ValueError:
                         pass
-                    raise RuntimeError(f"OpenRouter API Bad Request (HTTP 400): {detail}")
+                    raise RuntimeError(
+                        f"OpenRouter API Bad Request (HTTP 400): {detail} "
+                        f"[provider=openrouter model={self.settings.model}]"
+                    )
                 response.raise_for_status()
                 data = response.json()
                 return data["choices"][0]["message"]["content"]
@@ -689,16 +711,20 @@ class LLMClient:
         import time
         try:
             import openai
-            from openai import OpenAI
+            from openai import AzureOpenAI
         except ImportError:
             raise RuntimeError("openai Python package is not installed but Azure OpenAI is selected.")
             
-        client = OpenAI(
-            base_url=self.settings.azure_endpoint,
+        deployment_name = self.settings.azure_deployment_name or "gpt-5-mini"
+        endpoint = (self.settings.azure_endpoint or "").rstrip("/")
+        if not endpoint:
+            raise RuntimeError("Azure OpenAI endpoint is not configured (AZURE_OPENAI_ENDPOINT).")
+            
+        client = AzureOpenAI(
+            azure_endpoint=endpoint,
             api_key=self.settings.azure_api_key,
-            default_query={"api-version": self.settings.azure_api_version},
+            api_version=self.settings.azure_api_version,
         )
-        deployment_name = self.settings.azure_deployment_name or self.settings.model
         
         max_retries = 3
         backoff_factor = 2
@@ -710,7 +736,7 @@ class LLMClient:
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
-                    temperature=1,
+                    temperature=0.7,
                     timeout=60,
                 )
                 return response.choices[0].message.content
@@ -943,11 +969,12 @@ def track_node_latency(node_name: str):
             
             logger.info(f"[Metrics] LangGraph Node '{node_name}' took {elapsed:.3f}s")
             
-            log_dir = Path("C:/Users/Hp/OneDrive/Desktop/project/.aria_sessions")
-            log_dir.mkdir(parents=True, exist_ok=True)
-            metrics_file = log_dir / "latencies.log"
-            timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
             try:
+                project_root = Path(__file__).resolve().parent.parent
+                log_dir = project_root / ".aria_sessions"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                metrics_file = log_dir / "latencies.log"
+                timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                 with open(metrics_file, "a", encoding="utf-8") as f:
                     f.write(f"{timestamp} - Node: {node_name} - Latency: {elapsed:.3f}s - Iteration: {state.get('iteration', 0)}\n")
             except Exception as e:
@@ -1016,17 +1043,59 @@ class ResearchAgent:
             "CRITICAL INSTRUCTIONS:\n"
             "- Do NOT include inline citation numbers like [1], [2].\n"
             "- Do NOT format as a verified evidence report.\n"
-            "- State the key information clearly, concisely, and objectively."
+            "- State the key information clearly, concisely, and objectively.\n"
+            "- If you do not know the answer, say so honestly and suggest how the user might find accurate information."
         )
         user = f"Question: {question}"
-        if self.llm and self.llm.openrouter_api_key and self.settings.llm_provider == "openrouter":
+
+        # Try the configured LLM provider (OpenRouter first, then Azure, then any available).
+        tried = []
+        if self.settings.llm_provider == "openrouter" and self.llm and self.llm.openrouter_api_key:
+            tried.append("openrouter")
             try:
                 res = self.llm.complete(system, user, task="ungrounded_fallback")
-                if res:
+                if res and res.strip():
                     return res.strip()
             except Exception as e:
-                logger.warning(f"Fallback response failed: {e}")
-        return f"Based on general knowledge: '{question}' touches on general concepts. Please verify specific details independently."
+                logger.warning(f"OpenRouter fallback response failed: {e}")
+        elif self.settings.llm_provider == "azure" and self.llm and self.settings.azure_api_key and self.settings.azure_endpoint:
+            tried.append("azure")
+            try:
+                res = self.llm.complete(system, user, task="ungrounded_fallback")
+                if res and res.strip():
+                    return res.strip()
+            except Exception as e:
+                logger.warning(f"Azure fallback response failed: {e}")
+
+        # Also try any other provider that might be configured but not set as primary.
+        if "openrouter" not in tried and self.llm and self.llm.openrouter_api_key:
+            try:
+                res = self.llm.complete(system, user, task="ungrounded_fallback")
+                if res and res.strip():
+                    return res.strip()
+            except Exception as e:
+                logger.warning(f"OpenRouter (secondary) fallback response failed: {e}")
+        if "azure" not in tried and self.llm and self.settings.azure_api_key and self.settings.azure_endpoint:
+            try:
+                res = self.llm.complete(system, user, task="ungrounded_fallback")
+                if res and res.strip():
+                    return res.strip()
+            except Exception as e:
+                logger.warning(f"Azure (secondary) fallback response failed: {e}")
+
+        # Last resort: deterministic, honest, still-useful answer.
+        topic_terms = re.sub(r"[\?\.,!;:]+", "", question or "").strip()
+        return (
+            f"### General Knowledge Answer (Ungrounded / Not Cited)\n\n"
+            f"**Query:** {question.strip()}\n\n"
+            f"This is a challenging query for which live or local evidence was not retrieved. "
+            f"Here is what is expected and how to get a precise answer:\n\n"
+            f"- **Verify the topic**: \"{topic_terms}\" spans a broad subject. Try narrowing it with specifics (e.g. focus area, time period, region).\n"
+            f"- **Trusted sources**: Consult official/primary resources — Wikipedia, arXiv, OpenAlex, PubMed, DOAJ, and reputable news outlets.\n"
+            f"- **Use ARIA's Knowledge Base**: Upload PDFs or paste relevant notes; ARIA will then retrieve and answer from your local documents.\n"
+            f"- **Connect an LLM key**: Add an OpenRouter or Azure key in **Settings → LLM Configuration** for deep generative answers.\n\n"
+            f"If you rephrase the question with more context, ARIA will perform a fresh multi-source search to find grounded, cited evidence."
+        )
 
     def run(
         self,
@@ -1036,7 +1105,7 @@ class ResearchAgent:
         use_finance: bool = False,
         max_iterations: int = 2,
         field_focus: str = "all",
-        allow_ungrounded_fallback: bool = False,
+        allow_ungrounded_fallback: bool = True,
     ) -> ResearchResult:
         query_type, query_subtype = classify_question(question)
         
@@ -1647,7 +1716,8 @@ class ResearchAgent:
 
     def _plan(self, question: str, history: list[dict] | None = None) -> list[str]:
         target_queries = classify_question_complexity(question)
-        if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
+        # Use any configured LLM provider (OpenRouter primary, Azure fallback). LLMClient.complete handles the cascade.
+        if self.llm and (self.llm.openrouter_api_key or (self.settings.azure_api_key and self.settings.azure_endpoint)):
             history_context = ""
             if history:
                 history_context = "\nPrevious Conversation History:\n" + "\n".join(f"User: {h['question']}\nARIA: {h['answer']}" for h in history)
@@ -1669,11 +1739,14 @@ class ResearchAgent:
             user = f"Research Question: {question}"
             if history_context:
                 user = f"{history_context}\n\nFollow-up Research Question: {question}\nFocus only on planning queries for the new follow-up question using the context above."
-            response = self.llm.complete(system, user, task="plan")
-            queries = [line.strip() for line in response.splitlines() if line.strip()]
-            cleaned_queries = clean_queries(queries)
-            if cleaned_queries:
-                return cleaned_queries[:target_queries]
+            try:
+                response = self.llm.complete(system, user, task="plan")
+                queries = [line.strip() for line in response.splitlines() if line.strip()]
+                cleaned_queries = clean_queries(queries)
+                if cleaned_queries:
+                    return cleaned_queries[:target_queries]
+            except Exception as e:
+                logger.warning(f"LLM planning failed, using fallback queries: {e}")
         
         fallback_queries = generate_diverse_fallback_queries(question)
         return fallback_queries[:target_queries]
@@ -1719,18 +1792,19 @@ class ResearchAgent:
         import json
         from datetime import datetime, timezone
         from pathlib import Path
-        log_dir = Path("C:/Users/Hp/OneDrive/Desktop/project/.aria_sessions")
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / "verification_failures.jsonl"
-        entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "question": question,
-            "claim": claim,
-            "evidence_id": evidence_id,
-            "mismatch_reason": mismatch_reason,
-            "confidence": confidence
-        }
         try:
+            project_root = Path(__file__).resolve().parent.parent
+            log_dir = project_root / ".aria_sessions"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_file = log_dir / "verification_failures.jsonl"
+            entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "question": question,
+                "claim": claim,
+                "evidence_id": evidence_id,
+                "mismatch_reason": mismatch_reason,
+                "confidence": confidence
+            }
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry) + "\n")
         except Exception as e:
@@ -1801,7 +1875,7 @@ class ResearchAgent:
                 f"{question} official sources evidence\n"
             )
 
-        if local_only or not (self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key):
+        if local_only or not (self.llm and (self.llm.openrouter_api_key or (self.settings.azure_api_key and self.settings.azure_endpoint))):
             topic_issues = audit_evidence_topic_overlap(question, evidence)
             if topic_issues:
                 for issue in topic_issues:
@@ -1819,7 +1893,7 @@ class ResearchAgent:
                     f"{question} primary source overview\n"
                 )
             
-        if self.settings.llm_provider == "openrouter" and self.llm.openrouter_api_key:
+        if self.llm and (self.llm.openrouter_api_key or (self.settings.azure_api_key and self.settings.azure_endpoint)):
             system = (
                 "You are ARIA's Grounding & Verification Analyst. Your job is to verify if the draft "
                 "research brief is fully grounded in the retrieved evidence and completely addresses the user's query.\n"

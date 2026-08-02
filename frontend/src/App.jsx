@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import {
-  Search, Play, Settings, History, Layers, ChevronDown, ChevronUp, 
-  ExternalLink, ShieldCheck, Download, 
+  Search, Play, Settings, History, Layers, ChevronDown, ChevronUp,
+  ExternalLink, ShieldCheck, Download,
   CheckCircle, AlertCircle, Plus, X, RefreshCw,
   LogOut,
   Sun, Moon, Monitor, Smartphone,
@@ -19,7 +19,7 @@ const formatTimestamp = (ts) => {
   try {
     const date = new Date(ts);
     if (isNaN(date.getTime())) return ts;
-    return date.toLocaleString(undefined, { 
+    return date.toLocaleString(undefined, {
       year: 'numeric', month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
@@ -57,13 +57,13 @@ const renderTextWithMarkdown = (text, evidence, onCitationClick) => {
       }
       return (
         <span key={idx} className="inline-flex items-center gap-1.5 mx-1 relative group">
-          <button 
+          <button
             onClick={() => onCitationClick(num)}
             className="px-1.5 py-0.5 bg-aria-accent/15 hover:bg-aria-accent/30 text-aria-accent rounded text-[10px] font-bold border border-aria-accent/25 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.2)] hover:scale-105"
           >
             [{num}]
           </button>
-          <span 
+          <span
             className={`w-1.5 h-1.5 rounded-full ${badgeColor} inline-block cursor-help transition-transform hover:scale-125`}
             title={`${badgeTitle} (${conf.toFixed(2)})`}
           />
@@ -106,11 +106,11 @@ function App() {
         const data = await response.json();
         localStorage.setItem("aria_auth_token", data.access_token);
         setToken(data.access_token);
-        
+
         const lowerUser = data.user_id.trim().toLowerCase();
         setUserId(lowerUser);
         localStorage.setItem("aria_user_id", lowerUser);
-        
+
         setTimeout(() => {
           fetchSettings();
           fetchMemoryCount();
@@ -212,11 +212,11 @@ function App() {
         const data = await response.json();
         localStorage.setItem("aria_auth_token", data.access_token);
         setToken(data.access_token);
-        
+
         const lowerUser = loginUsername.trim().toLowerCase();
         setUserId(lowerUser);
         localStorage.setItem("aria_user_id", lowerUser);
-        
+
         setLoginUsername("");
         setLoginPassword("");
         setTimeout(() => {
@@ -330,13 +330,13 @@ function App() {
     }
   }, [darkMode]);
 
-  
+
 
   // Pipeline Visualizer states
   const [currentStage, setCurrentStage] = useState("idle"); // idle, plan, search, draft, verify, complete
   const [researchLogs, setResearchLogs] = useState([]);
 
-  
+
 
   // Active research result states
   const [result, setResult] = useState(null);
@@ -345,12 +345,12 @@ function App() {
   const [memoryStatus, setMemoryStatus] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  
+
 
   // Sidebar / Session History
   const [sessions, setSessions] = useState([]);
 
-  
+
 
   // Ingestion Drawer state
   const [showIngestModal, setShowIngestModal] = useState(false);
@@ -362,12 +362,12 @@ function App() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestMessage, setIngestMessage] = useState(null);
 
-  
+
 
   // Vector Database state
   const [memoryCount, setMemoryCount] = useState(0);
 
-  
+
 
   // Settings Panel drawer
   const [showSettings, setShowSettings] = useState(false);
@@ -386,7 +386,7 @@ function App() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
 
-  
+
 
   // Settings controls
   const [useLocal, setUseLocal] = useState(true);
@@ -550,20 +550,24 @@ function App() {
   const handleSaveApiKey = async () => {
     const trimmedKey = apiKey.trim();
     setIsSavingApiKey(true);
-    
+
     // Save to local storage
     if (trimmedKey) {
       localStorage.setItem("aria_openrouter_api_key", trimmedKey);
     } else {
       localStorage.removeItem("aria_openrouter_api_key");
     }
-    
+
     // Also attempt to save to the backend for persistence on self-hosted instances
     try {
       const response = await authorizedFetch(`${API_BASE}/api/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ openrouter_api_key: trimmedKey || "" })
+        body: JSON.stringify({
+          openrouter_api_key: trimmedKey || "",
+          llm_provider: settings.llm_provider,
+          model: settings.model
+        })
       });
       if (!response.ok) {
         console.warn("Server settings update failed, fallback to client-side localStorage.");
@@ -641,7 +645,7 @@ function App() {
     setCustomPlanQuestion(null);
     try {
       const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
-      const headers = { 
+      const headers = {
         "Content-Type": "application/json"
       };
       if (userApiKey) {
@@ -756,7 +760,7 @@ function App() {
 
     try {
       const userApiKey = localStorage.getItem("aria_openrouter_api_key") || "";
-      const headers = { 
+      const headers = {
         "Content-Type": "application/json"
       };
       if (userApiKey) {
@@ -790,10 +794,10 @@ function App() {
 
       while (true) {
         const { value, done } = await reader.read();
-        
+
         if (value) {
           buffer += decoder.decode(value, { stream: !done });
-          
+
           let boundary = buffer.indexOf("\n\n");
           while (boundary !== -1) {
             const message = buffer.substring(0, boundary).trim();
@@ -856,7 +860,7 @@ function App() {
             boundary = buffer.indexOf("\n\n");
           }
         }
-        
+
         if (done) break;
       }
 
@@ -1021,7 +1025,7 @@ function App() {
 
 
 
-    const downloadReport = async (format) => {
+  const downloadReport = async (format) => {
     if (!selectedSessionId) {
       setError("No saved research session is selected for download.");
       return;
@@ -1210,12 +1214,12 @@ function App() {
   return (
     <div className="flex h-screen overflow-hidden bg-aria-bg text-aria-text font-sans antialiased">
 
-      
+
 
       {/* Backdrop overlay for mobile sidebar drawer */}
       {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 z-40 bg-aria-bg/60 backdrop-blur-sm md:hidden" 
+        <div
+          className="fixed inset-0 z-40 bg-aria-bg/60 backdrop-blur-sm md:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -1223,11 +1227,10 @@ function App() {
 
 
       {/* 1. LEFT SIDEBAR: Responsive drawer / sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-aria-border flex flex-col bg-aria-surface select-none transition-all duration-300 ease-in-out md:relative md:z-auto ${
-        isSidebarOpen ? "translate-x-0" : "-translate-x-full md:-ml-64"
-      }`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-aria-border flex flex-col bg-aria-surface select-none transition-all duration-300 ease-in-out md:relative md:z-auto ${isSidebarOpen ? "translate-x-0" : "-translate-x-full md:-ml-64"
+        }`}>
 
-        
+
 
         {/* Brand Header */}
         <div className="h-14 px-4 flex items-center justify-between border-b border-aria-border">
@@ -1243,17 +1246,17 @@ function App() {
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-aria-border text-aria-muted font-mono font-medium">v1.2</span>
           </div>
 
-          
+
 
           <div className="flex items-center gap-1.5">
-            <button 
+            <button
               onClick={() => setDarkMode(!darkMode)}
               className="p-1 rounded text-aria-muted hover:text-aria-text transition-colors"
               title="Toggle Theme"
             >
               {darkMode ? <Sun size={14} /> : <Moon size={14} />}
             </button>
-            <button 
+            <button
               onClick={() => {
                 localStorage.removeItem("aria_auth_token");
                 setToken("");
@@ -1266,9 +1269,9 @@ function App() {
               <LogOut size={14} />
             </button>
 
-            
 
-            <button 
+
+            <button
               onClick={() => setShowSettings(!showSettings)}
               className="p-1 rounded text-aria-muted hover:text-aria-text transition-colors"
               title="Settings"
@@ -1279,7 +1282,7 @@ function App() {
 
 
             {/* Close / Collapse button */}
-            <button 
+            <button
               onClick={() => setIsSidebarOpen(false)}
               className="p-1 rounded text-aria-muted hover:text-aria-text transition-colors ml-0.5"
               title="Collapse Sidebar"
@@ -1337,7 +1340,7 @@ function App() {
               Recent Queries
             </h3>
 
-            
+
 
             {sessions.length === 0 ? (
               <p className="text-[11px] text-aria-muted/50 italic p-3 text-center">
@@ -1349,11 +1352,10 @@ function App() {
                   <button
                     key={s.id}
                     onClick={() => loadSessionDetails(s.id)}
-                    className={`w-full text-left py-2 px-2.5 rounded text-[11px] transition-all truncate border-l-2 ${
-                      selectedSessionId === s.id
+                    className={`w-full text-left py-2 px-2.5 rounded text-[11px] transition-all truncate border-l-2 ${selectedSessionId === s.id
                         ? "bg-aria-surface text-aria-accent border-aria-accent font-medium"
                         : "border-transparent text-aria-muted hover:bg-aria-surface/50 hover:text-aria-text"
-                    }`}
+                      }`}
                   >
                     {s.title}
                   </button>
@@ -1369,16 +1371,15 @@ function App() {
         <div className="p-3 border-t border-aria-border space-y-2 text-[10px]">
           {memoryStatus && (
             <div
-              className={`rounded border px-2 py-1.5 leading-relaxed ${
-                memoryStatus.type === "error"
+              className={`rounded border px-2 py-1.5 leading-relaxed ${memoryStatus.type === "error"
                   ? "border-aria-error/30 bg-aria-error/10 text-aria-error"
                   : "border-aria-border bg-aria-bg/40 text-aria-muted"
-              }`}
+                }`}
             >
               {memoryStatus.message}
             </div>
           )}
-          <button 
+          <button
             onClick={clearMemory}
             className="text-aria-muted hover:text-aria-error transition-colors flex items-center gap-1"
           >
@@ -1392,7 +1393,7 @@ function App() {
       {/* 2. MAIN RESEARCH CONTAINER */}
       <main className="flex-1 flex flex-col overflow-hidden bg-aria-bg">
 
-        
+
 
         {/* TOP MINIMALIST HEADER & PROGRESS TRACKER */}
         <header className="h-14 px-4 md:px-6 border-b border-aria-border flex items-center justify-between bg-aria-bg shrink-0 gap-2">
@@ -1402,15 +1403,15 @@ function App() {
               className="p-1.5 rounded text-aria-muted hover:text-aria-text transition-colors border border-aria-border bg-aria-surface shrink-0"
               title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
             >
-              <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                width="15" 
-                height="15" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2.5" 
-                strokeLinecap="round" 
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
                 strokeLinejoin="round"
               >
                 <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -1460,7 +1461,7 @@ function App() {
               const stageIndex = stagesList.indexOf(stage.id);
               const currentStageIndex = stagesList.indexOf(currentStage);
 
-              
+
 
               let status = "pending"; // pending, active, complete
               if (currentStage === "complete") {
@@ -1475,16 +1476,14 @@ function App() {
 
               return (
                 <div key={stage.id} className="flex items-center gap-1.5">
-                  <div className={`w-1.5 h-1.5 rounded-full ${
-                    status === "complete"
+                  <div className={`w-1.5 h-1.5 rounded-full ${status === "complete"
                       ? "bg-aria-complete"
                       : status === "active"
-                      ? "bg-aria-accent animate-pulse"
-                      : "bg-aria-pending"
-                  }`} />
-                  <span className={`font-medium ${
-                    status === "active" ? "text-aria-accent" : status === "complete" ? "text-aria-text" : "text-aria-muted"
-                  }`}>{stage.label}</span>
+                        ? "bg-aria-accent animate-pulse"
+                        : "bg-aria-pending"
+                    }`} />
+                  <span className={`font-medium ${status === "active" ? "text-aria-accent" : status === "complete" ? "text-aria-text" : "text-aria-muted"
+                    }`}>{stage.label}</span>
                 </div>
               );
             })}
@@ -1498,21 +1497,19 @@ function App() {
           <div className="flex border-b border-aria-border bg-aria-surface/30 md:hidden shrink-0">
             <button
               onClick={() => setMobileActiveTab("brief")}
-              className={`flex-1 py-3 text-center text-xs font-semibold transition-colors border-b-2 ${
-                mobileActiveTab === "brief"
+              className={`flex-1 py-3 text-center text-xs font-semibold transition-colors border-b-2 ${mobileActiveTab === "brief"
                   ? "border-aria-accent text-aria-accent"
                   : "border-transparent text-aria-muted hover:text-aria-text"
-              }`}
+                }`}
             >
               Executive Brief
             </button>
             <button
               onClick={() => setMobileActiveTab("details")}
-              className={`flex-1 py-3 text-center text-xs font-semibold transition-colors border-b-2 ${
-                mobileActiveTab === "details"
+              className={`flex-1 py-3 text-center text-xs font-semibold transition-colors border-b-2 ${mobileActiveTab === "details"
                   ? "border-aria-accent text-aria-accent"
                   : "border-transparent text-aria-muted hover:text-aria-text"
-              }`}
+                }`}
             >
               References & Logs
             </button>
@@ -1524,15 +1521,14 @@ function App() {
         {/* WORKSPACE MIDDLE BODY - Splits into Left Brief Panel and Right Citations/Logs Panel */}
         <div className="flex-1 flex overflow-hidden">
 
-          
+
 
           {/* LEFT PANEL: Chat objectives & synthesized results */}
-          <div className={`flex-1 flex flex-col overflow-y-auto border-r border-aria-border ${
-            result && !isResearching && mobileActiveTab !== "brief" ? "hidden md:flex" : "flex"
-          }`}>
+          <div className={`flex-1 flex flex-col overflow-y-auto border-r border-aria-border ${result && !isResearching && mobileActiveTab !== "brief" ? "hidden md:flex" : "flex"
+            }`}>
             <div className="flex-1 p-6 space-y-6 w-full">
 
-              
+
 
               {/* Errors container */}
               {error && (
@@ -1576,7 +1572,7 @@ function App() {
                     </div>
                   </div>
 
-                  
+
 
                   <div className="flex-1 overflow-y-auto space-y-2 scroll-smooth">
                     {researchLogs.map((log, idx) => {
@@ -1616,7 +1612,7 @@ function App() {
                         </span>
                       )}
                     </div>
-                    
+
                     <div className="flex flex-wrap items-center gap-3 pt-2.5 border-t border-aria-border/40 text-[10px] text-aria-muted">
                       <div className="flex items-center gap-1.5">
                         <Calendar size={12} className="text-aria-accent" />
@@ -1655,7 +1651,7 @@ function App() {
                             </>
                           )}
                         </button>
-                        
+
                         {/* Export PDF Button */}
                         <button
                           onClick={() => downloadReport("pdf")}
@@ -1779,11 +1775,10 @@ function App() {
           {/* RIGHT PANEL: Sleek Citations, Activity Trace Logs, and Metrics */}
 
           {result && !isResearching && (!result.query_type || result.query_type === "research") && (
-            <div className={`w-full md:w-96 flex flex-col bg-aria-surface overflow-hidden select-none shrink-0 border-l border-aria-border ${
-              mobileActiveTab !== "details" ? "hidden md:flex" : "flex"
-            }`}>
+            <div className={`w-full md:w-96 flex flex-col bg-aria-surface overflow-hidden select-none shrink-0 border-l border-aria-border ${mobileActiveTab !== "details" ? "hidden md:flex" : "flex"
+              }`}>
 
-              
+
 
               {/* Tab Navigation header */}
               <div className="h-11 border-b border-aria-border flex bg-aria-bg/50 text-[10px] font-semibold text-aria-muted px-2">
@@ -1796,11 +1791,10 @@ function App() {
                   <button
                     key={tab.id}
                     onClick={() => setActiveRightTab(tab.id)}
-                    className={`flex-1 text-center transition-colors border-b-2 ${
-                      activeRightTab === tab.id
+                    className={`flex-1 text-center transition-colors border-b-2 ${activeRightTab === tab.id
                         ? "border-aria-accent text-aria-accent bg-aria-surface/30"
                         : "border-transparent hover:text-aria-text"
-                    }`}
+                      }`}
                   >
                     {tab.label}
                   </button>
@@ -1812,7 +1806,7 @@ function App() {
               {/* Tab Body */}
               <div className="flex-1 overflow-y-auto p-4">
 
-                
+
 
                 {/* 1. CITATIONS TAB */}
                 {activeRightTab === "citations" && (
@@ -1823,12 +1817,11 @@ function App() {
                       result.evidence.map((item, idx) => {
                         const isExpanded = expandedCitationId === idx;
                         return (
-                          <div 
-                            key={idx} 
+                          <div
+                            key={idx}
                             id={`citation-card-${idx}`}
-                            className={`border rounded-lg transition-all bg-aria-surface ${
-                              isExpanded ? "border-aria-accent bg-aria-accent/5 ring-1 ring-aria-accent/20" : "border-aria-border"
-                            }`}
+                            className={`border rounded-lg transition-all bg-aria-surface ${isExpanded ? "border-aria-accent bg-aria-accent/5 ring-1 ring-aria-accent/20" : "border-aria-border"
+                              }`}
                           >
                             <button
                               onClick={() => setExpandedCitationId(isExpanded ? null : idx)}
@@ -1854,7 +1847,7 @@ function App() {
                                   {item.summary}
                                 </p>
 
-                                
+
 
                                 {item.url && (
                                   <div className="mt-2 flex justify-between items-center text-[10px]">
@@ -1964,11 +1957,10 @@ function App() {
                       <div className="flex items-center justify-between text-[9px] text-aria-muted">
                         {["Plan", "Retrieve", "Draft", "Verify", "Export"].map((stage, idx) => (
                           <div key={stage} className="flex flex-col items-center gap-1 min-w-0">
-                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                              stage === "Verify" && result.verification?.includes("NEEDS_MORE_RESEARCH")
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${stage === "Verify" && result.verification?.includes("NEEDS_MORE_RESEARCH")
                                 ? "bg-amber-500 text-aria-bg"
                                 : "bg-aria-accent text-aria-bg"
-                            }`}>
+                              }`}>
                               {idx + 1}
                             </span>
                             <span className="truncate">{stage}</span>
@@ -1991,8 +1983,8 @@ function App() {
                           <Database size={13} className="text-aria-accent" />
                           Retrieval Quality & Rejection Rate
                         </span>
-                        <button 
-                          onClick={fetchRetrievalLogs} 
+                        <button
+                          onClick={fetchRetrievalLogs}
                           className="p-1 hover:bg-aria-bg text-aria-muted hover:text-aria-accent rounded transition-colors"
                           title="Refresh Retrieval Logs"
                         >
@@ -2008,13 +2000,12 @@ function App() {
                           </span>
                         </div>
                         <div className="text-right">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
-                            (retrievalData.stats?.rejection_rate || 0) > 0.3
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold font-mono ${(retrievalData.stats?.rejection_rate || 0) > 0.3
                               ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
                               : (retrievalData.stats?.rejection_rate || 0) > 0.15
-                              ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
-                              : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                          }`}>
+                                ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                                : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                            }`}>
                             {((retrievalData.stats?.rejection_rate || 0) * 100).toFixed(1)}% Rejections
                           </span>
                         </div>
@@ -2171,7 +2162,7 @@ function App() {
 
               </div>
 
-              
+
 
               {/* Document download buttons bar */}
               <div className="p-3 border-t border-aria-border bg-aria-bg/50 flex flex-col gap-2">
@@ -2195,54 +2186,54 @@ function App() {
                   )}
                   <div className="flex flex-wrap gap-1.5 justify-start sm:justify-end w-full sm:w-auto">
                     {selectedSessionId ? (
-                    <>
-                      <button
-                        onClick={() => downloadReport("pdf")}
-                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
-                      >
-                        <Download size={11} /> PDF
-                      </button>
-                      <button
-                        onClick={() => downloadReport("md")}
-                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
-                      >
-                        <Download size={11} /> MD
-                      </button>
-                      <button
-                        onClick={() => downloadReport("trace")}
-                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
-                        title="Download research reasoning trace / audit log"
-                      >
-                        <Download size={11} /> Trace
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        disabled
-                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
-                      >
-                        <Download size={11} /> PDF
-                      </button>
-                      <button
-                        type="button"
-                        disabled
-                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
-                      >
-                        <Download size={11} /> MD
-                      </button>
-                      <button
-                        type="button"
-                        disabled
-                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
-                      >
-                        <Download size={11} /> Trace
-                      </button>
-                    </>
-                  )}
+                      <>
+                        <button
+                          onClick={() => downloadReport("pdf")}
+                          className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                        >
+                          <Download size={11} /> PDF
+                        </button>
+                        <button
+                          onClick={() => downloadReport("md")}
+                          className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                        >
+                          <Download size={11} /> MD
+                        </button>
+                        <button
+                          onClick={() => downloadReport("trace")}
+                          className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
+                          title="Download research reasoning trace / audit log"
+                        >
+                          <Download size={11} /> Trace
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled
+                          className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                        >
+                          <Download size={11} /> PDF
+                        </button>
+                        <button
+                          type="button"
+                          disabled
+                          className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                        >
+                          <Download size={11} /> MD
+                        </button>
+                        <button
+                          type="button"
+                          disabled
+                          className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                        >
+                          <Download size={11} /> Trace
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
                 {selectedSessionId && window.self !== window.top && (
                   <p className="text-[9px] text-aria-muted text-right">
                     Blocked by iframe sandbox? Try opening the{" "}
@@ -2271,7 +2262,7 @@ function App() {
         <div className="p-4 sm:p-6 border-t border-aria-border bg-aria-bg">
           <div className="w-full space-y-4">
 
-            
+
 
             {/* Planned subqueries editor */}
             {customPlan.length > 0 && customPlanQuestion === question.trim() && (
@@ -2281,7 +2272,7 @@ function App() {
                     <Layers size={11} />
                     Decomposed Query Steps
                   </span>
-                  <button 
+                  <button
                     onClick={() => {
                       setCustomPlan([]);
                       setCustomPlanQuestion(null);
@@ -2292,19 +2283,19 @@ function App() {
                   </button>
                 </div>
 
-                
+
 
                 <div className="space-y-2">
                   {customPlan.map((q, idx) => (
                     <div key={idx} className="flex gap-2 items-center">
-                      <span className="text-[10px] text-aria-muted font-mono w-4">{idx+1}.</span>
+                      <span className="text-[10px] text-aria-muted font-mono w-4">{idx + 1}.</span>
                       <input
                         type="text"
                         value={q}
                         onChange={(e) => updatePlanQuery(idx, e.target.value)}
                         className="flex-1 text-[11px] p-1.5 bg-aria-bg border border-aria-border text-aria-text rounded focus:outline-none focus:border-aria-accent"
                       />
-                      <button 
+                      <button
                         onClick={() => removePlanQuery(idx)}
                         aria-label={`Remove query step ${idx + 1}`}
                         className="p-1 hover:bg-aria-bg rounded text-aria-muted hover:text-aria-text transition-colors"
@@ -2351,7 +2342,7 @@ function App() {
                 className="w-full py-3 sm:py-3.5 pl-4 pr-4 sm:pr-36 bg-transparent text-xs text-aria-text outline-none rounded-xl disabled:opacity-50"
               />
 
-              
+
 
               <div className="flex gap-1.5 mt-1.5 sm:mt-0 px-2 pb-2 sm:p-0 sm:absolute sm:right-2.5 justify-end">
                 <button
@@ -2364,7 +2355,7 @@ function App() {
                   <span>Decompose</span>
                 </button>
 
-                
+
 
                 <button
                   type="button"
@@ -2378,7 +2369,7 @@ function App() {
               </div>
             </div>
 
-            
+
 
           </div>
         </div>
@@ -2393,7 +2384,7 @@ function App() {
       {showIngestModal && (
         <div className="fixed inset-0 z-50 bg-aria-bg/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
           <div className="bg-aria-surface border border-aria-border rounded-xl w-full max-w-md p-6 relative shadow-2xl">
-            <button 
+            <button
               onClick={() => {
                 setShowIngestModal(false);
                 setIngestMessage(null);
@@ -2420,11 +2411,10 @@ function App() {
                       setIngestType(type);
                       setIngestMessage(null);
                     }}
-                    className={`flex-1 py-1 rounded text-center capitalize font-medium ${
-                      ingestType === type
+                    className={`flex-1 py-1 rounded text-center capitalize font-medium ${ingestType === type
                         ? "bg-aria-border text-aria-text"
                         : "text-aria-muted hover:text-aria-text"
-                    }`}
+                      }`}
                   >
                     {type}
                   </button>
@@ -2501,11 +2491,10 @@ function App() {
 
 
               {ingestMessage && (
-                <div className={`p-2.5 rounded text-[11px] flex gap-2 items-start ${
-                  ingestMessage.type === "success" 
+                <div className={`p-2.5 rounded text-[11px] flex gap-2 items-start ${ingestMessage.type === "success"
                     ? "bg-aria-complete/10 text-aria-complete border border-aria-complete/25"
                     : "bg-aria-error/10 text-aria-error border border-aria-error/25"
-                }`}>
+                  }`}>
                   {ingestMessage.type === "success" ? <CheckCircle size={13} className="shrink-0 mt-0.5" /> : <AlertCircle size={13} className="shrink-0 mt-0.5" />}
                   <span>{ingestMessage.text}</span>
                 </div>
@@ -2520,7 +2509,7 @@ function App() {
       {/* 4. SETTINGS SIDE-PANEL DRAWER */}
       {showSettings && (
         <div className="fixed inset-0 z-40 bg-aria-bg/50 backdrop-blur-sm select-none" onClick={() => setShowSettings(false)}>
-          <div 
+          <div
             className="w-full sm:w-80 border-l border-aria-border bg-aria-surface flex flex-col absolute right-0 top-0 bottom-0 h-full shadow-2xl animate-in slide-in-from-right duration-250"
             onClick={(e) => e.stopPropagation()}
           >
@@ -2529,7 +2518,7 @@ function App() {
                 <Settings size={13} />
                 Configurations
               </span>
-              <button 
+              <button
                 onClick={() => setShowSettings(false)}
                 className="p-1 hover:bg-aria-bg rounded text-aria-muted hover:text-aria-text transition-colors"
               >
@@ -2541,27 +2530,57 @@ function App() {
 
             <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
 
-              
+
 
               {/* API Status badge */}
               <div className="p-3 bg-aria-bg border border-aria-border rounded-xl space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-aria-muted">Provider:</span>
-                  <span className="font-semibold capitalize text-aria-text">{settings.llm_provider}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-aria-muted">Model:</span>
-                  <span className="font-semibold text-aria-text">{settings.model}</span>
-                </div>
-                <div className="flex justify-between items-center">
                   <span className="text-aria-muted">API Key status:</span>
-                  <span className={`px-2 py-0.5 rounded-[4px] font-bold text-[10px] ${
-                    settings.key_configured 
+                  <span className={`px-2 py-0.5 rounded-[4px] font-bold text-[10px] ${settings.key_configured
                       ? "bg-aria-complete/10 text-aria-complete border border-aria-complete/25"
                       : "bg-aria-error/10 text-aria-error border border-aria-error/25"
-                  }`}>
+                    }`}>
                     {settings.key_configured ? "READY" : "NOT SET"}
                   </span>
+                </div>
+              </div>
+
+              {/* Configure LLM Provider & Model */}
+              <div className="p-3 bg-aria-bg border border-aria-border rounded-xl space-y-2.5">
+                <h4 className="font-semibold text-aria-muted uppercase tracking-wider text-[10px]">LLM Configuration</h4>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-medium text-aria-muted block">Provider</label>
+                  <select
+                    value={settings.llm_provider}
+                    onChange={(e) => {
+                      const provider = e.target.value;
+                      setSettings(prev => ({
+                        ...prev,
+                        llm_provider: provider,
+                        model: provider === "openrouter" && (!prev.model || prev.model === "local-extractive") ? "openrouter/free" : provider === "local-extractive" && prev.model === "openrouter/free" ? "local-extractive" : prev.model
+                      }));
+                    }}
+                    className="w-full bg-aria-bg/50 border border-aria-border rounded-lg px-2.5 py-1.5 text-[11px] text-aria-text focus:outline-none focus:border-aria-accent"
+                  >
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="azure">Azure OpenAI</option>
+                    <option value="local-extractive">Local Extractive (Offline)</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-medium text-aria-muted block">Model</label>
+                  <input
+                    type="text"
+                    value={settings.model}
+                    onChange={(e) => setSettings(prev => ({ ...prev, model: e.target.value }))}
+                    placeholder={settings.llm_provider === "openrouter" ? "openrouter/free" : settings.llm_provider === "azure" ? "azure deployment name" : "local-extractive"}
+                    className="w-full bg-aria-bg/50 border border-aria-border rounded-lg px-2.5 py-1.5 text-[11px] text-aria-text focus:outline-none focus:border-aria-accent"
+                  />
+                  {settings.llm_provider === "openrouter" && (
+                    <p className="text-[9px] text-aria-muted leading-relaxed">
+                      Use any OpenRouter model slug, e.g. <code className="text-aria-accent">openrouter/free</code> or <code className="text-aria-accent">openrouter/auto</code>.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -2569,21 +2588,21 @@ function App() {
               <div className="p-3 bg-aria-bg border border-aria-border rounded-xl space-y-2.5">
                 <h4 className="font-semibold text-aria-muted uppercase tracking-wider text-[10px]">Configure API Key</h4>
                 <div className="flex gap-2">
-                  <input 
-                    type={showApiKey ? "text" : "password"} 
-                    value={apiKey} 
+                  <input
+                    type={showApiKey ? "text" : "password"}
+                    value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder="sk-or-v1-..."
                     className="flex-1 bg-aria-bg/50 border border-aria-border rounded-lg px-2.5 py-1.5 text-[11px] font-mono text-aria-text focus:outline-none focus:border-aria-accent"
                   />
-                  <button 
+                  <button
                     type="button"
                     onClick={() => setShowApiKey(!showApiKey)}
                     className="px-2 bg-aria-surface hover:bg-aria-border border border-aria-border rounded-lg text-[9px] font-semibold text-aria-muted hover:text-aria-text transition-colors"
                   >
                     {showApiKey ? "Hide" : "Show"}
                   </button>
-                  <button 
+                  <button
                     type="button"
                     onClick={handleSaveApiKey}
                     disabled={isSavingApiKey}
@@ -2603,15 +2622,15 @@ function App() {
               <div className="space-y-3">
                 <h4 className="font-semibold text-aria-muted uppercase tracking-wider text-[10px]">Sources settings</h4>
 
-                
+
 
                 <div className="flex items-center justify-between p-2.5 bg-aria-bg/30 rounded-xl border border-aria-border">
                   <div>
                     <span className="font-medium block">Search Web Sources</span>
                     <span className="text-[10px] text-aria-muted">Wikipedia, Arxiv, OpenAlex, DDG, DOAJ, PubMed</span>
                   </div>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={useWeb}
                     onChange={(e) => setUseWeb(e.target.checked)}
                     className="accent-aria-accent h-4 w-4 rounded border-aria-border bg-aria-bg"
@@ -2625,8 +2644,8 @@ function App() {
                     <span className="font-medium block">Search Local Memory</span>
                     <span className="text-[10px] text-aria-muted">Retrieve from indexed documents</span>
                   </div>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={useLocal}
                     onChange={(e) => setUseLocal(e.target.checked)}
                     className="accent-aria-accent h-4 w-4 rounded border-aria-border bg-aria-bg"
@@ -2638,8 +2657,8 @@ function App() {
                     <span className="font-semibold text-aria-accent block">Local-only (Offline) Mode</span>
                     <span className="text-[10px] text-aria-muted">Bypass web and remote LLM queries</span>
                   </div>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={localOnly}
                     onChange={(e) => setLocalOnly(e.target.checked)}
                     className="accent-aria-accent h-4 w-4 rounded border-aria-border bg-aria-bg"
@@ -2653,8 +2672,8 @@ function App() {
                     <span className="font-medium block">Market Snapshots</span>
                     <span className="text-[10px] text-aria-muted">Include live finance stock quotes</span>
                   </div>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={useFinance}
                     onChange={(e) => setUseFinance(e.target.checked)}
                     className="accent-aria-accent h-4 w-4 rounded border-aria-border bg-aria-bg"
@@ -2735,18 +2754,18 @@ function App() {
               <div className="space-y-4">
                 <h4 className="font-semibold text-aria-muted uppercase tracking-wider text-[10px]">Parameters</h4>
 
-                
+
 
                 <div className="space-y-1">
                   <div className="flex justify-between">
                     <span className="text-aria-muted">Validation depth (passes)</span>
                     <span className="font-semibold text-aria-text">{maxIterations}</span>
                   </div>
-                  <input 
-                    type="range" 
-                    min="1" 
-                    max="3" 
-                    value={maxIterations} 
+                  <input
+                    type="range"
+                    min="1"
+                    max="3"
+                    value={maxIterations}
                     onChange={(e) => setMaxIterations(parseInt(e.target.value))}
                     className="w-full h-1.5 bg-aria-border rounded-lg appearance-none cursor-pointer accent-aria-accent"
                   />
@@ -2759,12 +2778,12 @@ function App() {
                     <span className="text-aria-muted">LLM temperature</span>
                     <span className="font-semibold text-aria-text">{temperature}</span>
                   </div>
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="1.0" 
+                  <input
+                    type="range"
+                    min="0"
+                    max="1.0"
                     step="0.05"
-                    value={temperature} 
+                    value={temperature}
                     onChange={(e) => setTemperature(parseFloat(e.target.value))}
                     className="w-full h-1.5 bg-aria-border rounded-lg appearance-none cursor-pointer accent-aria-accent"
                   />
@@ -2777,11 +2796,11 @@ function App() {
                     <span className="text-aria-muted">Top-k vector retrieval</span>
                     <span className="font-semibold text-aria-text">{topK} chunks</span>
                   </div>
-                  <input 
-                    type="range" 
-                    min="1" 
-                    max="10" 
-                    value={topK} 
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={topK}
                     onChange={(e) => setTopK(parseInt(e.target.value))}
                     className="w-full h-1.5 bg-aria-border rounded-lg appearance-none cursor-pointer accent-aria-accent"
                   />
@@ -2792,9 +2811,9 @@ function App() {
                 <div className="space-y-1.5 pt-3 border-t border-aria-border">
                   <span className="text-[10px] font-semibold text-aria-muted uppercase tracking-wider block">User Session Profile</span>
                   <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      value={localUserId} 
+                    <input
+                      type="text"
+                      value={localUserId}
                       onChange={(e) => setLocalUserId(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -2805,7 +2824,7 @@ function App() {
                       placeholder="e.g. user_123"
                       className="flex-1 bg-aria-bg border border-aria-border rounded-xl px-3 py-2 text-xs font-semibold text-aria-text focus:outline-none focus:border-aria-accent"
                     />
-                    <button 
+                    <button
                       onClick={() => {
                         setUserId(localUserId);
                         localStorage.setItem("aria_user_id", localUserId);
@@ -2815,7 +2834,7 @@ function App() {
                     >
                       Enter
                     </button>
-                    <button 
+                    <button
                       onClick={() => {
                         const newId = "user_" + Math.random().toString(36).substring(2, 11);
                         setLocalUserId(newId);
@@ -2835,87 +2854,87 @@ function App() {
 
                 {/* App Installation & Icon Downloads Section */}
                 {!(
-                  window.location.hostname === 'localhost' || 
-                  window.location.hostname === '127.0.0.1' || 
-                  window.location.hostname.startsWith('192.168.') || 
-                  window.location.hostname.startsWith('10.') || 
-                  window.location.hostname.startsWith('172.') || 
+                  window.location.hostname === 'localhost' ||
+                  window.location.hostname === '127.0.0.1' ||
+                  window.location.hostname.startsWith('192.168.') ||
+                  window.location.hostname.startsWith('10.') ||
+                  window.location.hostname.startsWith('172.') ||
                   window.location.hostname.endsWith('.local')
                 ) && (
-                  <div className="space-y-3.5 pt-4 border-t border-aria-border">
-                    <span className="text-[10px] font-semibold text-aria-muted uppercase tracking-wider block">App & Icon Downloads</span>
-                    
-                    {/* Icon Card */}
-                    <div className="flex gap-3 items-center p-3 bg-aria-bg/40 border border-aria-border rounded-xl">
-                      <div className="relative group shrink-0">
-                        <div className="absolute -inset-0.5 bg-gradient-to-r from-aria-accent to-[#47bfff] rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-300"></div>
-                        <img 
-                          src="/aria-app-icon.png" 
-                          alt="ARIA App Icon" 
-                          className="relative w-12 h-12 rounded-xl object-cover border border-aria-border/50"
-                          onError={(e) => {
-                            e.target.src = "/favicon.svg";
-                          }}
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="font-semibold text-aria-text block text-xs truncate">ARIA Agent Console</span>
-                        <span className="text-[10px] text-aria-muted block leading-relaxed">
-                          Install as a Progressive Web App on mobile &amp; PC.
-                        </span>
-                      </div>
-                    </div>
+                    <div className="space-y-3.5 pt-4 border-t border-aria-border">
+                      <span className="text-[10px] font-semibold text-aria-muted uppercase tracking-wider block">App & Icon Downloads</span>
 
-                    {/* Installer / Instruction Actions */}
-                    <div className="space-y-2">
-                      {deferredPrompt ? (
-                        <button
-                          onClick={handleInstallClick}
-                          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-aria-accent to-[#00b4d8] text-black font-bold rounded-xl transition-all shadow-md shadow-aria-accent/15 hover:shadow-aria-accent/25 focus:outline-none cursor-pointer text-xs"
-                        >
-                          <Monitor size={13} />
-                          Install App (PWA)
-                        </button>
-                      ) : isAppInstalled ? (
-                        <div className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-aria-complete/10 border border-aria-complete/20 text-aria-complete rounded-xl font-semibold text-[11px]">
-                          <CheckCircle size={13} />
-                          Running in App Mode
+                      {/* Icon Card */}
+                      <div className="flex gap-3 items-center p-3 bg-aria-bg/40 border border-aria-border rounded-xl">
+                        <div className="relative group shrink-0">
+                          <div className="absolute -inset-0.5 bg-gradient-to-r from-aria-accent to-[#47bfff] rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-300"></div>
+                          <img
+                            src="/aria-app-icon.png"
+                            alt="ARIA App Icon"
+                            className="relative w-12 h-12 rounded-xl object-cover border border-aria-border/50"
+                            onError={(e) => {
+                              e.target.src = "/favicon.svg";
+                            }}
+                          />
                         </div>
-                      ) : null}
+                        <div className="flex-1 min-w-0">
+                          <span className="font-semibold text-aria-text block text-xs truncate">ARIA Agent Console</span>
+                          <span className="text-[10px] text-aria-muted block leading-relaxed">
+                            Install as a Progressive Web App on mobile &amp; PC.
+                          </span>
+                        </div>
+                      </div>
 
-                      {/* Direct Android APK Download */}
-                      <a 
-                        href="/downloads/aria.apk" 
-                        download="ARIA.apk"
-                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-aria-accent/20 to-[#00b4d8]/20 hover:from-aria-accent/30 hover:to-[#00b4d8]/30 border border-aria-accent/40 text-aria-text rounded-xl font-semibold transition-all focus:outline-none cursor-pointer text-xs shadow-sm"
-                        title="Download signed Android app installer (.apk)"
-                      >
-                        <Smartphone size={13} className="text-[#00E5FF]" />
-                        Download Android App (.apk)
-                      </a>
+                      {/* Installer / Instruction Actions */}
+                      <div className="space-y-2">
+                        {deferredPrompt ? (
+                          <button
+                            onClick={handleInstallClick}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-aria-accent to-[#00b4d8] text-black font-bold rounded-xl transition-all shadow-md shadow-aria-accent/15 hover:shadow-aria-accent/25 focus:outline-none cursor-pointer text-xs"
+                          >
+                            <Monitor size={13} />
+                            Install App (PWA)
+                          </button>
+                        ) : isAppInstalled ? (
+                          <div className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-aria-complete/10 border border-aria-complete/20 text-aria-complete rounded-xl font-semibold text-[11px]">
+                            <CheckCircle size={13} />
+                            Running in App Mode
+                          </div>
+                        ) : null}
 
-                      {/* Windows Desktop Download */}
-                      <a 
-                        href="/aria-desktop-app.zip" 
-                        download="aria-desktop-app.zip"
-                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text rounded-xl font-semibold transition-colors focus:outline-none cursor-pointer text-xs"
-                        title="Download standalone Windows desktop launcher (.zip)"
-                      >
-                        <Monitor size={13} className="text-[#00E5FF]" />
-                        Download for Windows Desktop
-                      </a>
+                        {/* Direct Android APK Download */}
+                        <a
+                          href="/downloads/aria.apk"
+                          download="ARIA.apk"
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-aria-accent/20 to-[#00b4d8]/20 hover:from-aria-accent/30 hover:to-[#00b4d8]/30 border border-aria-accent/40 text-aria-text rounded-xl font-semibold transition-all focus:outline-none cursor-pointer text-xs shadow-sm"
+                          title="Download signed Android app installer (.apk)"
+                        >
+                          <Smartphone size={13} className="text-[#00E5FF]" />
+                          Download Android App (.apk)
+                        </a>
 
-                      {/* Mobile App Install Instructions */}
-                      <div className="p-3 bg-aria-bg/25 border border-aria-border rounded-xl text-[10px] text-aria-muted leading-relaxed">
-                        <span className="font-semibold text-aria-text block mb-1 flex items-center gap-1.5">
-                          <Smartphone size={11} className="text-[#00E5FF]" />
-                          Download/Install on Mobile (Android &amp; iOS):
-                        </span>
-                        Open this site in Chrome (Android) or Safari (iOS), tap the browser's menu / share icon, and select <strong className="text-aria-text">Add to Home Screen</strong>. Android registers it automatically as a native WebAPK. Or tap <strong>Download Android App (.apk)</strong> above for direct APK installation.
+                        {/* Windows Desktop Download */}
+                        <a
+                          href="/aria-desktop-app.zip"
+                          download="aria-desktop-app.zip"
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-aria-surface hover:bg-aria-border border border-aria-border text-aria-text rounded-xl font-semibold transition-colors focus:outline-none cursor-pointer text-xs"
+                          title="Download standalone Windows desktop launcher (.zip)"
+                        >
+                          <Monitor size={13} className="text-[#00E5FF]" />
+                          Download for Windows Desktop
+                        </a>
+
+                        {/* Mobile App Install Instructions */}
+                        <div className="p-3 bg-aria-bg/25 border border-aria-border rounded-xl text-[10px] text-aria-muted leading-relaxed">
+                          <span className="font-semibold text-aria-text block mb-1 flex items-center gap-1.5">
+                            <Smartphone size={11} className="text-[#00E5FF]" />
+                            Download/Install on Mobile (Android &amp; iOS):
+                          </span>
+                          Open this site in Chrome (Android) or Safari (iOS), tap the browser's menu / share icon, and select <strong className="text-aria-text">Add to Home Screen</strong>. Android registers it automatically as a native WebAPK. Or tap <strong>Download Android App (.apk)</strong> above for direct APK installation.
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
               </div>
 

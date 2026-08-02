@@ -58,13 +58,19 @@ async def _read_response_json_and_body(response) -> tuple[dict, str]:
     return data, json.dumps(data)
 
 
-def run_async(coro):
-    """Run an async coroutine, supporting nested loops (e.g. under uvicorn)."""
+def run_async(coro, timeout: float = 120):
+    """Run an async coroutine, supporting nested loops (e.g. under uvicorn).
+    
+    Args:
+        coro: The coroutine to run.
+        timeout: Maximum seconds to wait. Raises TimeoutError if exceeded.
+    """
     try:
         return asyncio.run(coro)
     except RuntimeError:
         with ThreadPoolExecutor(max_workers=1) as executor:
-            return executor.submit(asyncio.run, coro).result()
+            future = executor.submit(asyncio.run, coro)
+            return future.result(timeout=timeout)
 
 
 def free_web_search(query: str, max_results: int = 5) -> list[Evidence]:
