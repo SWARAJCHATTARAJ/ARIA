@@ -1265,7 +1265,7 @@ class ResearchAgent:
         
         is_grounded = True
         if llm_says_no_evidence and actually_has_evidence:
-            retry_answer = self._draft(question, final_evidence, history=state.get("history"), local_only=state.get("local_only", False))
+            retry_answer = self._draft(question, final_evidence, history=final_state.get("history"), local_only=final_state.get("local_only", False))
             if retry_answer and "no sufficient evidence" not in retry_answer.lower():
                 answer_text = retry_answer
                 final_state["verification"] = "STATUS: PASSED\nREASON: Draft regenerated from retrieved evidence."
