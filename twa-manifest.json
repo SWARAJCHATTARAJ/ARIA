@@ -20,8 +20,8 @@
     "path": "./android.keystore",
     "alias": "aria"
   },
-  "appVersionName": "1.0.2",
-  "appVersionCode": 6,
+  "appVersionName": "1.0.3",
+  "appVersionCode": 7,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "fallbackType": "customtabs",
@@ -44,5 +44,5 @@
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "displayOverride": [],
-  "appVersion": "1.0.2"
+  "appVersion": "1.0.3"
 }
