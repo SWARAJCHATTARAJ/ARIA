@@ -400,11 +400,11 @@ def check_guest_rate_limit(ip: str):
         )
     GUEST_LIMITER[ip].append(now)
 
-def get_current_user_or_guest(token: str | None = Depends(oauth2_scheme)) -> str:
+async def get_current_user_or_guest(token: str | None = Depends(oauth2_scheme)) -> str:
     if not token:
         return "guest"
     try:
-        return get_current_user(token)
+        return await get_current_user(token)
     except Exception:
         return "guest"
 

@@ -196,32 +196,91 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
         expire = datetime.now(timezone.utc) + timedelta(hours=24)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, jwt_secret, algorithm=ALGORITHM)
+# Cache variables for JWKS
+_JWKS_CACHE = None
+_JWKS_CACHE_TIME = 0
 
-def get_current_user(token: str | None = Depends(oauth2_scheme)) -> str:
+async def get_supabase_jwks():
+    global _JWKS_CACHE, _JWKS_CACHE_TIME
+    now = time.time()
+    if _JWKS_CACHE and (now - _JWKS_CACHE_TIME) < 3600:
+        return _JWKS_CACHE
+
+    supabase_url = os.getenv("VITE_SUPABASE_URL", "https://buwixynplswefemmoshf.supabase.co")
+    jwks_url = f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(jwks_url, timeout=10.0)
+        resp.raise_for_status()
+        _JWKS_CACHE = resp.json()
+        _JWKS_CACHE_TIME = now
+        return _JWKS_CACHE
+
+async def verify_supabase_token(token: str) -> dict:
+    jwks = await get_supabase_jwks()
+    try:
+        payload = jwt.decode(
+            token, 
+            jwks, 
+            algorithms=["HS256", "RS256", "ES256"], 
+            audience="authenticated"
+        )
+        return payload
+    except JWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Could not validate Supabase token: {e}"
+        )
+
+async def get_current_user(token: str | None = Depends(oauth2_scheme)) -> str:
+    """Verify Supabase token and return GitHub username as the user_id."""
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    _, _, jwt_secret = get_auth_settings()
-    if not jwt_secret:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="JWT Secret is not configured on the server."
-        )
     
     try:
-        payload = jwt.decode(token, jwt_secret, algorithms=[ALGORITHM])
-        token_username: str = payload.get("sub")
-        if token_username:
-            return token_username
-    except JWTError:
+        # First, try to verify as a Supabase JWT
+        payload = await verify_supabase_token(token)
+        
+        # Extract GitHub username
+        user_metadata = payload.get("user_metadata", {})
+        github_username = user_metadata.get("preferred_username")
+        
+        if github_username:
+            # If the user is swarajchattaraj, ensure they are treated as admin 
+            # (sessions.py checks against admin_user_id)
+            if github_username.lower() == "swarajchattaraj":
+                return "swaraj_admin" # Map to the default admin ID
+            return github_username.lower()
+            
+        # Fallback if email is used instead of GitHub
+        email = payload.get("email")
+        if email:
+            return email.lower()
+            
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not extract GitHub username or email from Supabase token"
+        )
+        
+    except HTTPException:
+        # If Supabase fails, try to fall back to the old local JWT scheme
+        try:
+            _, _, jwt_secret = get_auth_settings()
+            if jwt_secret:
+                payload = jwt.decode(token, jwt_secret, algorithms=[ALGORITHM])
+                token_username = payload.get("sub")
+                if token_username:
+                    return token_username
+        except JWTError:
+            pass
+            
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-
-# Cache variables for JWKS
+        )# Cache variables for JWKS
 
