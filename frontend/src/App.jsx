@@ -11,6 +11,12 @@ import {
 
 
 
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import mermaid from 'mermaid';
+
+mermaid.initialize({ startOnLoad: false, theme: 'base' });
+
 const API_BASE = window.location.port === "5173" ? "http://127.0.0.1:8000" : window.location.origin;
 const OWNER_USER_ID = "swaraj_admin";
 
@@ -80,8 +86,58 @@ const renderTextWithMarkdown = (text, evidence, onCitationClick) => {
   });
 };
 
+const TraceabilityMap = ({ answer, evidence }) => {
+  const containerRef = useRef(null);
 
+  useEffect(() => {
+    if (!answer || !evidence || evidence.length === 0) return;
 
+    const regex = /\[(\d+)\]/g;
+    const matches = [...answer.matchAll(regex)];
+    const citations = new Set(matches.map(m => parseInt(m[1])));
+    const validCitations = [...citations].filter(c => c >= 1 && c <= evidence.length).sort((a, b) => a - b);
+
+    if (validCitations.length === 0) return;
+
+    let chart = "graph TD\n";
+    chart += "  subgraph Final Report\n";
+    chart += "    R[\"ARIA Verified Conclusion\"]:::reportNode\n";
+    chart += "  end\n";
+    chart += "  subgraph Verified Sources\n";
+    
+    validCitations.forEach(c => {
+      let title = evidence[c - 1]?.title || "Untitled";
+      title = title.replace(/"/g, '').replace(/\[/g, '').replace(/\]/g, '').replace(/\(/g, '').replace(/\)/g, '');
+      if (title.length > 35) title = title.substring(0, 32) + "...";
+      chart += `    S${c}["[${c}] ${title}"]:::sourceNode\n`;
+    });
+    
+    chart += "  end\n";
+    
+    validCitations.forEach(c => {
+      chart += `  S${c} -->|Cited| R\n`;
+    });
+
+    chart += "  classDef reportNode fill:#EFF6FF,stroke:#3B82F6,stroke-width:2px,color:#1E3A8A;\n";
+    chart += "  classDef sourceNode fill:#F8FAFC,stroke:#94A3B8,stroke-width:1px,color:#334155;\n";
+
+    if (containerRef.current) {
+      containerRef.current.innerHTML = `<div class="mermaid">${chart}</div>`;
+      mermaid.contentLoaded();
+    }
+  }, [answer, evidence]);
+
+  return (
+    <div className="mt-8 mb-4 border border-aria-border rounded-xl bg-aria-surface overflow-hidden shadow-sm">
+      <div className="bg-aria-bg border-b border-aria-border p-3 flex items-center gap-2">
+        <span className="text-sm font-bold text-aria-text">🗺️ Evidence Traceability Map</span>
+      </div>
+      <div className="p-4 flex justify-center bg-white" ref={containerRef}>
+        {/* Mermaid chart will be injected here */}
+      </div>
+    </div>
+  );
+};
 function App() {
   // Theme state
   const [darkMode, setDarkMode] = useState(true);
@@ -1750,7 +1806,7 @@ function App() {
                     </div>
                   </div>
 
-
+                  <TraceabilityMap answer={result.answer} evidence={result.evidence} />
 
                   {/* Verification checklist details */}
                   <div className="p-4 bg-aria-surface border border-aria-border rounded-xl">
