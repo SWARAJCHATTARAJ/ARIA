@@ -508,6 +508,44 @@ def bold_key_terms(text: str) -> str:
     return term_regex.sub(lambda m: f"**{m.group(0)}**", text)
 
 
+def generate_mermaid_traceability_map(result: ResearchResult) -> str:
+    """Generate a Mermaid.js graph showing how claims map to sources."""
+    if not result.evidence or not result.answer:
+        return ""
+        
+    citations = set(int(match) for match in re.findall(r"(?<!\!)\[(\d+)\]", result.answer))
+    valid_citations = {c for c in citations if 1 <= c <= len(result.evidence)}
+    
+    if not valid_citations:
+        return "*No inline citations found to map.*"
+        
+    lines = ["```mermaid", "graph TD"]
+    lines.append("    subgraph Final Report")
+    lines.append("        R[\"ARIA Verified Conclusion\"]:::reportNode")
+    lines.append("    end")
+    
+    lines.append("    subgraph Verified Sources")
+    
+    for c in sorted(valid_citations):
+        item = result.evidence[c-1]
+        title = item.title.replace('"', '').replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+        if len(title) > 35:
+            title = title[:32] + "..."
+        node_id = f"S{c}"
+        lines.append(f"        {node_id}[\"[{c}] {title}\"]:::sourceNode")
+        
+    lines.append("    end")
+    
+    for c in sorted(valid_citations):
+        lines.append(f"    S{c} -->|Cited| R")
+        
+    lines.append("    classDef reportNode fill:#EFF6FF,stroke:#3B82F6,stroke-width:2px;")
+    lines.append("    classDef sourceNode fill:#F8FAFC,stroke:#94A3B8,stroke-width:1px;")
+    lines.append("```")
+    
+    return "\n".join(lines)
+
+
 def build_markdown_report(result: ResearchResult) -> str:
     """Build the downloadable Markdown report."""
     evidence_lines = []
@@ -524,6 +562,7 @@ def build_markdown_report(result: ResearchResult) -> str:
     plan_lines = "\n".join(f"- {query}" for query in result.plan)
     evidence_block = "\n".join(evidence_lines) or "No evidence collected."
     confidence = confidence_label(result)
+    traceability_map = generate_mermaid_traceability_map(result)
 
     return f"""# ARIA Research Brief
 
@@ -546,6 +585,9 @@ def build_markdown_report(result: ResearchResult) -> str:
 ## Verification
 
 {result.verification}
+
+## 🗺️ Evidence Traceability Map
+{traceability_map}
 
 ## Evidence Register
 
