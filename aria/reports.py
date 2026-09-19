@@ -595,6 +595,38 @@ def build_markdown_report(result: ResearchResult) -> str:
 """
 
 
+import re
+
+def build_audio_report(result: ResearchResult) -> bytes:
+    """Generate an MP3 audio podcast summarizing the research using gTTS."""
+    try:
+        from gtts import gTTS
+    except ImportError:
+        raise RuntimeError("gTTS is not installed. Please run `pip install gTTS`.")
+        
+    # Clean the Markdown text into plain spoken text
+    # Remove citations like [1]
+    clean_text = re.sub(r'\[\d+\]', '', result.answer or "No research available.")
+    # Remove markdown bold/italics
+    clean_text = clean_text.replace('**', '').replace('*', '').replace('__', '').replace('_', '')
+    # Remove code blocks and hashes
+    clean_text = re.sub(r'```.*?```', '', clean_text, flags=re.DOTALL)
+    clean_text = clean_text.replace('#', '')
+    
+    script = (
+        f"Here is your ARIA audio briefing for the question: {result.question}. "
+        f"{clean_text}. "
+        f"This concludes your research briefing."
+    )
+    
+    from io import BytesIO
+    fp = BytesIO()
+    tts = gTTS(text=script, lang='en', slow=False)
+    tts.write_to_fp(fp)
+    
+    return fp.getvalue()
+
+
 def build_pdf_report(result: ResearchResult) -> bytes:
     """Build the downloadable PDF report."""
     buffer = BytesIO()

@@ -852,6 +852,26 @@ async def download_session_md(session_id: str, user_id: str | None = None, curre
     except Exception as e:
         raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
 
+@app.get("/api/sessions/{session_id}/download/audio")
+async def download_session_audio(session_id: str, user_id: str | None = None, current_user: str = Depends(get_current_user)):
+    """Download research brief of a session as an MP3 Audio Podcast."""
+    try:
+        from aria.reports import build_audio_report
+        path = find_session_path(session_id, user_id=user_id)
+        if not path:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        
+        result = load_session(path)
+        return Response(
+            content=build_audio_report(result),
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": f'attachment; filename="aria_audio_{session_id}.mp3"'},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=redact_secrets(str(e)))
+
 @app.get("/api/sessions/{session_id}/download/trace")
 async def download_session_trace(session_id: str, user_id: str | None = None, current_user: str = Depends(get_current_user)):
     """Download research trace/audit log of a session as a Markdown file."""
