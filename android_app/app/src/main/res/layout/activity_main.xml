@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#0A0A0B">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ARIA Research Console"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#00E5FF"
+        android:layout_gravity="center"
+        android:layout_marginBottom="24dp"/>
+
+    <EditText
+        android:id="@+id/queryInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter your research topic..."
+        android:textColorHint="#888888"
+        android:textColor="#FFFFFF"
+        android:backgroundTint="#00E5FF"
+        android:padding="12dp"
+        android:layout_marginBottom="16dp"/>
+
+    <Button
+        android:id="@+id/askButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Ask ARIA"
+        android:textColor="#0A0A0B"
+        android:backgroundTint="#00E5FF"
+        android:textStyle="bold"/>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="16dp">
+
+        <TextView
+            android:id="@+id/resultText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Results will appear here."
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"/>
+    </ScrollView>
+
+</LinearLayout>

@@ -660,7 +660,7 @@ class LLMClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "temperature": 0.7,
+            "temperature": 0.1,
         }
         max_retries = 3
         backoff_factor = 2
@@ -752,7 +752,7 @@ class LLMClient:
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
-                    temperature=0.7,
+                    temperature=0.1,
                     timeout=60,
                 )
                 return response.choices[0].message.content
@@ -1413,7 +1413,7 @@ class ResearchAgent:
             
             if uncached_queries:
                 session_timeout = float(os.getenv("ARIA_RETRIEVAL_SESSION_TIMEOUT", "10"))
-                provider_timeout = float(os.getenv("ARIA_PROVIDER_TIMEOUT", "6"))
+                provider_timeout = float(os.getenv("ARIA_PROVIDER_TIMEOUT", "3"))
                 timeout = aiohttp.ClientTimeout(total=session_timeout)
                 async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
                     tasks = []

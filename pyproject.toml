@@ -23,7 +23,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence"
 ]
 dependencies = [
-    "streamlit>=1.36.0",
     "fastapi>=0.110.0",
     "uvicorn>=0.28.0",
     "python-multipart>=0.0.9",
@@ -32,20 +31,15 @@ dependencies = [
     "aiohttp>=3.9.5",
     "PyMuPDF>=1.24.0",
     "reportlab>=4.2.0",
-    "chromadb>=0.5.0",
     "langgraph>=0.0.35",
     "langchain-core>=0.1.40",
     "yfinance>=0.2.30",
     "python-jose[cryptography]>=3.3.0",
     "bcrypt>=4.0.0",
-    "psycopg2-binary>=2.9.9",
-    "sentence-transformers>=2.2.2"
+    "psycopg2-binary>=2.9.9"
 ]
 
 [project.optional-dependencies]
-desktop = [
-    "pywebview>=5.1.0"
-]
 eval = [
     "pytest>=9.1.1",
     "ragas>=0.1.7"

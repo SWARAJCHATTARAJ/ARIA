@@ -83,7 +83,7 @@ def init_db():
                         id VARCHAR(255) PRIMARY KEY,
                         document TEXT,
                         metadata JSONB,
-                        embedding vector(384)
+                        embedding vector(1536)
                     )
                     """
                 )
@@ -92,7 +92,7 @@ def init_db():
                     CREATE TABLE IF NOT EXISTS query_cache (
                         id SERIAL PRIMARY KEY,
                         question TEXT NOT NULL,
-                        embedding vector(384) NOT NULL,
+                        embedding vector(1536) NOT NULL,
                         result JSONB NOT NULL,
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     )

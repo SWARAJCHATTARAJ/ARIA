@@ -14,11 +14,8 @@ from .sessions import is_db_mode, result_from_dict, result_to_dict
 _EMBEDDING_FN = None
 
 def get_embedding_fn():
-    global _EMBEDDING_FN
-    if _EMBEDDING_FN is None:
-        import chromadb.utils.embedding_functions as ef
-        _EMBEDDING_FN = ef.DefaultEmbeddingFunction()
-    return _EMBEDDING_FN
+    from .rag import get_openai_embeddings
+    return get_openai_embeddings
 
 
 def check_cache(question: str) -> ResearchResult | None:

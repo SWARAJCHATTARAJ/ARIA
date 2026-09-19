@@ -666,3 +666,21 @@ async def async_pubmed_search(session, query: str, max_results: int = 2) -> list
     except Exception as e:
         logger.warning(f"PubMed search failed: {e}")
         return []
+async def async_deep_crawl(session, url: str) -> str:
+    "`"`"Crawls a URL and extracts the main text content."`"`"
+    try:
+        async with session.get(url, timeout=5) as response:
+            if response.status != 200:
+                return ""
+            html = await response.text()
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+            for script in soup(["script", "style"]):
+                script.decompose()
+            text = soup.get_text(separator=' ')
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = ' '.join(chunk for chunk in chunks if chunk)
+            return text[:4000] # Return top 4000 chars to avoid overwhelming the context
+    except Exception:
+        return ""
