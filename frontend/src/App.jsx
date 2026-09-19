@@ -4,7 +4,7 @@ import {
   Search, Play, Settings, History, Layers, ChevronDown, ChevronUp,
   ExternalLink, ShieldCheck, Download,
   CheckCircle, AlertCircle, Plus, X, RefreshCw,
-  LogOut,
+  LogOut, Headphones,
   Sun, Moon, Monitor, Smartphone,
   Calendar, Database, Copy, Check
 } from 'lucide-react';
@@ -1041,12 +1041,12 @@ function App() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const fileExt = format === "pdf" ? "pdf" : "md";
-      const filePrefix = format === "trace" ? "aria_trace_" : "aria_brief_";
+      const fileExt = format === "pdf" ? "pdf" : format === "audio" ? "mp3" : "md";
+      const filePrefix = format === "trace" ? "aria_trace_" : format === "audio" ? "aria_audio_" : "aria_brief_";
       a.download = `${filePrefix}${selectedSessionId}.${fileExt}`;
       document.body.appendChild(a);
       a.click();
-      a.remove();
+      document.body.removeChild(a);a.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
       setError(err.message || `Failed to download ${format.toUpperCase()} report.`);
@@ -2194,6 +2194,12 @@ function App() {
                           <Download size={11} /> PDF
                         </button>
                         <button
+                          onClick={() => downloadReport("audio")}
+                          className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-accent/10 hover:bg-aria-accent/25 border border-aria-accent/25 rounded text-aria-accent font-semibold flex items-center gap-1 transition-colors"
+                        >
+                          <Headphones size={11} /> Audio
+                        </button>
+                        <button
                           onClick={() => downloadReport("md")}
                           className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface hover:bg-aria-border border border-aria-border rounded text-aria-text font-semibold flex items-center gap-1 transition-colors"
                         >
@@ -2215,6 +2221,13 @@ function App() {
                           className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
                         >
                           <Download size={11} /> PDF
+                        </button>
+                        <button
+                          type="button"
+                          disabled
+                          className="flex-1 sm:flex-initial justify-center px-2.5 py-1 text-[10px] bg-aria-surface border border-aria-border rounded text-aria-text/40 font-semibold flex items-center gap-1 cursor-not-allowed opacity-50"
+                        >
+                          <Headphones size={11} /> Audio
                         </button>
                         <button
                           type="button"
