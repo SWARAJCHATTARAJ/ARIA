@@ -76,7 +76,6 @@ from aria.auth import (
     get_user_hash,
     oauth2_scheme,
     verify_password,
-    verify_supabase_token,
 )
 from aria.core import Settings, estimate_tokens, validate_pdf_upload
 from aria.rag import VectorMemory
@@ -330,38 +329,7 @@ async def login(request: LoginRequest):
     access_token = create_access_token(data={"sub": username})
     return {"access_token": access_token, "token_type": "bearer"}  # nosec B105
 
-@app.post("/api/auth/exchange")
-async def exchange_token(request: ExchangeRequest):
-    try:
-        payload = await verify_supabase_token(request.access_token)
-        email = payload.get("email")
-        if not email:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Supabase token claims (missing email)"
-            )
-        
-        # Enforce allowed emails if configured
-        allowed_emails_env = os.getenv("ARIA_ALLOWED_EMAILS")
-        if allowed_emails_env:
-            allowed_emails = [e.strip().lower() for e in allowed_emails_env.split(",") if e.strip()]
-            if allowed_emails and email.lower() not in allowed_emails:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Email not on the allowed list for ARIA."
-                )
-        
-        # Issue ARIA JWT
-        access_token = create_access_token(data={"sub": email})
-        return {"access_token": access_token, "token_type": "bearer", "user_id": email}  # nosec B105
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Could not validate Supabase token: {e}"
-        )
+
 
 @app.post("/api/auth/register")
 async def register(request: RegisterRequest):
