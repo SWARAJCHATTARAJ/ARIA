@@ -69,14 +69,7 @@ logging.basicConfig(
 logger = logging.getLogger("aria.api")
 
 from aria.agent import ResearchAgent, generate_research_diff
-from aria.auth import (
-    create_access_token,
-    create_user,
-    get_current_user,
-    get_user_hash,
-    oauth2_scheme,
-    verify_password,
-)
+from aria.auth import get_current_user, oauth2_scheme
 from aria.core import Settings, estimate_tokens, validate_pdf_upload
 from aria.rag import VectorMemory
 from aria.reports import build_markdown_report, build_pdf_report, build_trace_report
@@ -165,16 +158,6 @@ def result_metrics(result) -> dict[str, int | float | str]:
         "total_output_tokens_est": estimate_tokens(result.answer) + estimate_tokens(result.verification),
     }
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-class RegisterRequest(BaseModel):
-    username: str
-    password: str
-
-class ExchangeRequest(BaseModel):
-    access_token: str
 
 class ResearchRequest(BaseModel):
     question: str
@@ -306,76 +289,6 @@ def fetch_url_text(url: str) -> tuple[str, str]:
     if len(text) < 200:
         raise ValueError("The URL did not return enough readable text to index.")
     return parsed.netloc, text[:80_000]
-
-@app.post("/api/auth/login")
-async def login(request: LoginRequest):
-    username = request.username.strip().lower()
-    db_hash = get_user_hash(username)
-    
-    logger.debug(f"[Auth Debug] Login attempt for username: '{username}'")
-    logger.debug(f"[Auth Debug] Hash found in DB: {'Yes' if db_hash else 'No'}")
-    
-    if db_hash:
-        is_verified = verify_password(request.password, db_hash)
-        logger.debug(f"[Auth Debug] Password verified: {is_verified}")
-        
-    if not db_hash or not verify_password(request.password, db_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    access_token = create_access_token(data={"sub": username})
-    return {"access_token": access_token, "token_type": "bearer"}  # nosec B105
-
-
-
-@app.post("/api/auth/register")
-async def register(request: RegisterRequest):
-    import re
-    username = request.username.strip().lower()
-    if not re.match(r"^[a-zA-Z0-9_\-\.@]+$", username):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username/Email can only contain alphanumeric characters, underscores, hyphens, @, and dots."
-        )
-    if len(username) < 3 or len(username) > 30:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username must be between 3 and 30 characters."
-        )
-    password = request.password
-    if len(password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long."
-        )
-    if not any(c.isalpha() for c in password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one letter."
-        )
-    if not any(c.isdigit() for c in password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one number."
-        )
-    special_chars = set("!@#$%^&*(),.?\":{}|<>-_+=~`[]\\/;:'")
-    if not any(c in special_chars for c in password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one special character."
-        )
-    
-    success = create_user(username, request.password)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username is already taken."
-        )
-    
-    return {"status": "success", "message": "User registered successfully."}
 
 GUEST_LIMITER = {}
 

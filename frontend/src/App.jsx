@@ -144,11 +144,7 @@ function App() {
 
   // Authentication states
   const [token, setToken] = useState(() => localStorage.getItem("aria_auth_token") || "");
-  const [authMode, setAuthMode] = useState("login");
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
-  const [loginSuccess, setLoginSuccess] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const exchangeSupabaseToken = async (supabaseToken) => {
@@ -203,23 +199,6 @@ function App() {
   }, []);
 
 
-  const handleGoogleLogin = async () => {
-    setIsLoggingIn(true);
-    setLoginError("");
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      });
-      if (error) throw error;
-    } catch (err) {
-      setLoginError(err.message);
-      setIsLoggingIn(false);
-    }
-  };
-
   const handleGithubLogin = async () => {
     setIsLoggingIn(true);
     setLoginError("");
@@ -253,103 +232,7 @@ function App() {
     return response;
   };
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setIsLoggingIn(true);
-    setLoginError("");
-    setLoginSuccess("");
-    try {
-      const response = await fetch(`${API_BASE}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: loginUsername, password: loginPassword })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem("aria_auth_token", data.access_token);
-        setToken(data.access_token);
 
-        const lowerUser = loginUsername.trim().toLowerCase();
-        setUserId(lowerUser);
-        localStorage.setItem("aria_user_id", lowerUser);
-
-        setLoginUsername("");
-        setLoginPassword("");
-        setTimeout(() => {
-          fetchSettings();
-          fetchMemoryCount();
-          fetchSessions();
-        }, 100);
-      } else {
-        let errorMsg = "Login failed. Incorrect username or password.";
-        try {
-          const data = await response.json();
-          if (data && data.detail) {
-            errorMsg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
-          }
-        } catch {
-          try {
-            const text = await response.text();
-            if (text) {
-              errorMsg = `Server error (${response.status}): ${text.substring(0, 100)}`;
-            } else {
-              errorMsg = `Server error (${response.status})`;
-            }
-          } catch {
-            errorMsg = `Server error (${response.status})`;
-          }
-        }
-        setLoginError(errorMsg);
-      }
-    } catch (err) {
-      setLoginError(`Could not connect to the authentication server: ${err.message || err}`);
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    setIsLoggingIn(true);
-    setLoginError("");
-    setLoginSuccess("");
-    try {
-      const response = await fetch(`${API_BASE}/api/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: loginUsername, password: loginPassword })
-      });
-      if (response.ok) {
-        setAuthMode("login");
-        setLoginSuccess("Account created successfully! Please log in using your credentials.");
-        setLoginPassword("");
-      } else {
-        let errorMsg = "Registration failed. Username may be taken.";
-        try {
-          const data = await response.json();
-          if (data && data.detail) {
-            errorMsg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
-          }
-        } catch {
-          try {
-            const text = await response.text();
-            if (text) {
-              errorMsg = `Server error (${response.status}): ${text.substring(0, 100)}`;
-            } else {
-              errorMsg = `Server error (${response.status})`;
-            }
-          } catch {
-            errorMsg = `Server error (${response.status})`;
-          }
-        }
-        setLoginError(errorMsg);
-      }
-    } catch (err) {
-      setLoginError(`Could not connect to the registration server: ${err.message || err}`);
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
 
 
 
@@ -1139,22 +1022,15 @@ function App() {
               <ShieldCheck size={28} className="animate-pulse" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight">
-              {authMode === "login" ? "Access Control" : "Create Account"}
+              Access Control
             </h1>
             <p className="text-sm text-aria-muted text-center">
-              {authMode === "login"
-                ? "Please log in to use ARIA"
-                : "Register a new profile to start using your ARIA instance"}
+              Please log in to use ARIA
             </p>
           </div>
 
           <div className="flex flex-col gap-4">
-            {loginSuccess && (
-              <div className="p-3 rounded-lg bg-aria-accent/10 border border-aria-accent/20 text-aria-accent text-xs flex items-center gap-2">
-                <CheckCircle size={14} className="shrink-0" />
-                <span>{loginSuccess}</span>
-              </div>
-            )}
+
 
             {loginError && (
               <div className="p-3 rounded-lg bg-aria-error/10 border border-aria-error/20 text-aria-error text-xs flex items-center gap-2">

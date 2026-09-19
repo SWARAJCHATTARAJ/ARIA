@@ -58,9 +58,6 @@ def init_db():
         try:
             cursor = conn.cursor()
             if is_postgres:
-                cursor.execute(
-                     "CREATE TABLE IF NOT EXISTS users (username VARCHAR(255) PRIMARY KEY, password_hash VARCHAR(255) NOT NULL)"
-                )
                 try:
                     cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 except Exception as e:
@@ -100,9 +97,6 @@ def init_db():
                 )
             else:
                 cursor.execute(
-                    "CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL)"
-                )
-                cursor.execute(
                     """
                     CREATE TABLE IF NOT EXISTS query_cache (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,80 +116,7 @@ def init_db():
 # Initialize DB at startup
 init_db()
 
-def get_auth_settings():
-    username = os.getenv("ARIA_USERNAME")
-    password_hash = os.getenv("ARIA_PASSWORD_HASH")
-    jwt_secret = os.getenv("ARIA_JWT_SECRET")
-    return username, password_hash, jwt_secret
 
-def get_user_hash(username: str) -> str | None:
-    username = username.strip().lower()
-    
-    # First check env variables (master admin account)
-    master_user, master_hash, _ = get_auth_settings()
-    if master_user and username == master_user.strip().lower():
-        return master_hash
-
-    # Check database
-    db_url = os.getenv("DATABASE_URL")
-    is_postgres = db_url and (db_url.startswith(("postgres://", "postgresql://")))
-    
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        if is_postgres:
-            cursor.execute("SELECT password_hash FROM users WHERE username = %s", (username,))
-        else:
-            cursor.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
-        row = cursor.fetchone()
-        return row[0] if row else None
-    finally:
-        conn.close()
-
-def create_user(username: str, password: str) -> bool:
-    username = username.strip().lower()
-    
-    # Check if username conflicts with master admin username
-    master_user, _, _ = get_auth_settings()
-    if master_user and username == master_user.strip().lower():
-        return False
-        
-    hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    
-    db_url = os.getenv("DATABASE_URL")
-    is_postgres = db_url and (db_url.startswith(("postgres://", "postgresql://")))
-    
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        if is_postgres:
-            cursor.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, hashed))
-        else:
-            cursor.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, hashed))
-        conn.commit()
-        return True
-    except Exception:
-        return False
-    finally:
-        conn.close()
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    try:
-        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
-    except Exception:
-        return False
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    _, _, jwt_secret = get_auth_settings()
-    if not jwt_secret:
-        raise ValueError("ARIA_JWT_SECRET environment variable is not configured.")
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(hours=24)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, jwt_secret, algorithm=ALGORITHM)
 # Cache variables for JWKS
 _JWKS_CACHE = None
 _JWKS_CACHE_TIME = 0
@@ -267,17 +188,6 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme)) -> str:
         )
         
     except HTTPException:
-        # If Supabase fails, try to fall back to the old local JWT scheme
-        try:
-            _, _, jwt_secret = get_auth_settings()
-            if jwt_secret:
-                payload = jwt.decode(token, jwt_secret, algorithms=[ALGORITHM])
-                token_username = payload.get("sub")
-                if token_username:
-                    return token_username
-        except JWTError:
-            pass
-            
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
