@@ -1148,7 +1148,7 @@ function App() {
             </p>
           </div>
 
-          <form onSubmit={authMode === "login" ? handleLogin : handleRegister} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4">
             {loginSuccess && (
               <div className="p-3 rounded-lg bg-aria-accent/10 border border-aria-accent/20 text-aria-accent text-xs flex items-center gap-2">
                 <CheckCircle size={14} className="shrink-0" />
@@ -1163,62 +1163,7 @@ function App() {
               </div>
             )}
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-aria-muted uppercase tracking-wider">Email or Username</label>
-              <input
-                type="text"
-                placeholder="Enter username"
-                value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
-                disabled={isLoggingIn}
-                required
-                className="w-full px-4 py-2.5 rounded-lg bg-aria-bg border border-aria-border focus:border-aria-accent focus:outline-none text-sm transition-all"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-aria-muted uppercase tracking-wider">Password</label>
-              <input
-                type="password"
-                placeholder="Enter password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                disabled={isLoggingIn}
-                required
-                className="w-full px-4 py-2.5 rounded-lg bg-aria-bg border border-aria-border focus:border-aria-accent focus:outline-none text-sm transition-all"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoggingIn}
-              className="mt-2 w-full py-2.5 bg-aria-accent hover:opacity-90 disabled:opacity-50 text-aria-bg font-bold rounded-lg transition-all flex items-center justify-center gap-2"
-            >
-              {isLoggingIn ? (
-                <>
-                  <RefreshCw size={16} className="animate-spin" />
-                  <span>{authMode === "login" ? "Logging in..." : "Registering..."}</span>
-                </>
-              ) : (
-                <span>{authMode === "login" ? "Access ARIA" : "Register & Login"}</span>
-              )}
-            </button>
-          </form>
-
-          <>
-            <div className="flex items-center gap-4 my-2">
-              <div className="h-px bg-aria-border flex-1"></div>
-              <span className="text-xs text-aria-muted uppercase font-semibold">Or</span>
-              <div className="h-px bg-aria-border flex-1"></div>
-            </div>
             <div className="flex flex-col gap-2">
-              <button
-                onClick={handleGoogleLogin}
-                disabled={isLoggingIn}
-                className="w-full py-2.5 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-bold rounded-lg transition-all flex items-center justify-center gap-2"
-              >
-                Continue with Google
-              </button>
               <button
                 onClick={handleGithubLogin}
                 disabled={isLoggingIn}
@@ -1227,40 +1172,6 @@ function App() {
                 Continue with GitHub
               </button>
             </div>
-          </>
-
-          <div className="text-center text-xs text-aria-muted mt-2 border-t border-aria-border pt-4">
-            {authMode === "login" ? (
-              <span>
-                Don't have an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("register");
-                    setLoginError("");
-                    setLoginSuccess("");
-                  }}
-                  className="text-aria-accent hover:underline font-semibold"
-                >
-                  Register
-                </button>
-              </span>
-            ) : (
-              <span>
-                Already have an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("login");
-                    setLoginError("");
-                    setLoginSuccess("");
-                  }}
-                  className="text-aria-accent hover:underline font-semibold"
-                >
-                  Log In
-                </button>
-              </span>
-            )}
           </div>
         </div>
       </div>
