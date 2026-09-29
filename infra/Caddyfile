@@ -1,0 +1,19 @@
+api.aria.swarajchattaraj.tech {
+    # Reverse proxy to the FastAPI backend
+    reverse_proxy localhost:8000
+
+    # Ensure TLS is handled by Caddy automatically
+    tls {
+        on_demand
+    }
+
+    # Restrict CORS to Vercel domains only
+    @cors_preflight method OPTIONS
+    handle @cors_preflight {
+        header Access-Control-Allow-Origin "https://aria.swarajchattaraj.tech"
+        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        header Access-Control-Allow-Headers "*"
+        header Access-Control-Max-Age "3600"
+        respond "" 204
+    }
+}

@@ -1,0 +1,16 @@
+[Unit]
+Description=Dristi Router FastAPI (V1/V2 Cascade)
+After=network.target
+
+[Service]
+User=aria
+Group=www-data
+WorkingDirectory=/opt/dristi
+Environment="PATH=/opt/aria/venv/bin"
+ExecStart=/opt/aria/venv/bin/uvicorn dristi_app:app --host 127.0.0.1 --port 8001 --workers 2
+
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

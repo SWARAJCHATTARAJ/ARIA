@@ -1,0 +1,13 @@
+[Unit]
+Description=ARIA Retraction Sync Service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=aria
+Group=www-data
+WorkingDirectory=/opt/aria/backend
+Environment="PATH=/opt/aria/venv/bin"
+EnvironmentFile=/opt/aria/backend/.env
+ExecStart=/opt/aria/venv/bin/python /opt/aria/backend/retraction_sync.py

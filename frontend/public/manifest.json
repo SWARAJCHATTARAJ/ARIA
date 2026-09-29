@@ -1,0 +1,16 @@
+{
+  "name": "ARIA - Research Assistant",
+  "short_name": "ARIA",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A0E14",
+  "theme_color": "#0A0E14",
+  "description": "Autonomous Research & Intelligence Assistant",
+  "icons": [
+    {
+      "src": "/aria-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

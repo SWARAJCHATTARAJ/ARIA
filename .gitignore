@@ -1,0 +1,20 @@
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+venv_backup/
+.env
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
