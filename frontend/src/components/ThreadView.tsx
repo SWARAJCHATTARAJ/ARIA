@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, MessageSquareWarning, Maximize2, Minimize2, CheckCircle2 } from 'lucide-react';
+import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, AlertTriangle, Maximize2, Minimize2, CheckCircle2 } from 'lucide-react';
 import ConfidenceDial from './ConfidenceDial';
 
 interface ThreadViewProps {
@@ -243,7 +243,7 @@ export default function ThreadView({ onCitationClick, isFocusMode, onToggleFocus
                       <ThumbsDown size={14} />
                     </button>
                     <button className="text-ink-muted hover:text-tier-live transition-colors flex items-center gap-1 text-[10px] font-mono" title="Report Conflict">
-                      <MessageSquareWarning size={12} /> Flag Conflict
+                      <AlertTriangle size={12} /> Flag Conflict
                     </button>
                   </div>
                 </div>
