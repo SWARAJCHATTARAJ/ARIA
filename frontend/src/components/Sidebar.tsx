@@ -14,6 +14,7 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
       </div>
       
       <div className="flex-1 space-y-1">
+        <NavItem icon={<Search size={18} />} label="Home" active={activeTab === 'home'} onClick={() => onTabChange('home')} />
         <NavItem icon={<Search size={18} />} label="New Query" active={activeTab === 'query'} onClick={() => onTabChange('query')} />
         <NavItem icon={<Clock size={18} />} label="History" active={activeTab === 'history'} onClick={() => onTabChange('history')} />
         <NavItem icon={<FolderGit2 size={18} />} label="Collections" active={activeTab === 'collections'} onClick={() => onTabChange('collections')} />

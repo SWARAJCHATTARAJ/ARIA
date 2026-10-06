@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, MessageSquareWarning, Maximize2, Minimize2 } from 'lucide-react';
+import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, MessageSquareWarning, Maximize2, Minimize2, CheckCircle2 } from 'lucide-react';
+import ConfidenceDial from './ConfidenceDial';
 
 interface ThreadViewProps {
   onCitationClick: (source: any) => void;
   isFocusMode: boolean;
   onToggleFocus: () => void;
+  onQueryStateChange?: (hasQuery: boolean) => void;
 }
 
 interface Message {
@@ -14,16 +16,57 @@ interface Message {
   isStreaming?: boolean;
 }
 
-export default function ThreadView({ onCitationClick, isFocusMode, onToggleFocus }: ThreadViewProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'aria',
-      content: 'I am ARIA. How can I assist with your research today?',
-    }
-  ]);
+export default function ThreadView({ onCitationClick, isFocusMode, onToggleFocus, onQueryStateChange }: ThreadViewProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isCompareMode, setIsCompareMode] = useState(false);
+
+  React.useEffect(() => {
+    if (onQueryStateChange) {
+      onQueryStateChange(messages.length > 0);
+    }
+  }, [messages.length, onQueryStateChange]);
+
+  // Typewriter placeholder logic
+  const [placeholder, setPlaceholder] = useState('');
+  useEffect(() => {
+    const prompts = [
+      "Analyze the structural integrity of carbon nanotubes...",
+      "Summarize recent papers on autonomous multi-agent systems...",
+      "What is the impact of prompt engineering on LLM reasoning?"
+    ];
+    let pIdx = 0;
+    let cIdx = 0;
+    let isDeleting = false;
+    
+    const tick = () => {
+      const currentPrompt = prompts[pIdx];
+      if (isDeleting) {
+        setPlaceholder(currentPrompt.substring(0, cIdx - 1));
+        cIdx--;
+      } else {
+        setPlaceholder(currentPrompt.substring(0, cIdx + 1));
+        cIdx++;
+      }
+      
+      let nextSpeed = isDeleting ? 30 : 50;
+      
+      if (!isDeleting && cIdx === currentPrompt.length) {
+        nextSpeed = 2000;
+        isDeleting = true;
+      } else if (isDeleting && cIdx === 0) {
+        isDeleting = false;
+        pIdx = (pIdx + 1) % prompts.length;
+        nextSpeed = 500;
+      }
+      
+      setTimeout(tick, nextSpeed);
+    };
+    
+    const timerId = setTimeout(tick, 500);
+    return () => clearTimeout(timerId);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,6 +177,17 @@ export default function ThreadView({ onCitationClick, isFocusMode, onToggleFocus
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8">
+        {messages.length === 0 && (
+          <div className="flex-1 flex flex-col items-center justify-center h-full mt-12">
+            <div className="w-full max-w-2xl bg-ink-surface/10 rounded-md p-8 relative overflow-hidden min-h-[300px]">
+              {/* Ruled lines texture */}
+              <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'repeating-linear-gradient(transparent, transparent 27px, #fff 28px)', backgroundPosition: '0 -1px' }} />
+              <div className="relative z-10 font-mono text-ink-muted/50 text-sm flex items-start gap-2">
+                <span className="text-tier-okf mt-0.5 animate-pulse">_</span> Start a new research thread...
+              </div>
+            </div>
+          </div>
+        )}
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'flex-col gap-2 max-w-[90%]'}`}>
             {msg.role === 'user' ? (
@@ -142,13 +196,29 @@ export default function ThreadView({ onCitationClick, isFocusMode, onToggleFocus
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-3 text-xs font-mono text-ink-muted mb-2">
-                  <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-tier-okf" /> OKF</span>
-                  <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full border border-tier-rag" /> RAG</span>
-                  <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-tier-live" /> LIVE</span>
+                <div className="flex items-center gap-4 text-xs font-mono text-ink-muted mb-2">
+                  <div className="flex items-center gap-2 border border-ink-surface px-2 py-1 rounded bg-ink-base">
+                    <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-tier-okf animate-pulse" /> OKF</span>
+                    <span className="text-ink-surface">|</span>
+                    <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-tier-rag" /> RAG</span>
+                    <span className="text-ink-surface">|</span>
+                    <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-tier-live" /> LIVE</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase">Confidence</span>
+                    <ConfidenceDial level="high" />
+                  </div>
                 </div>
-                <div className="prose prose-invert prose-p:leading-relaxed prose-sm max-w-none">
+                <div className="prose prose-invert prose-p:leading-relaxed prose-sm max-w-none relative">
                   <p>{msg.content}</p>
+                  
+                  {/* Verified Stamp Overlay (Audit step) */}
+                  <div className="absolute -right-4 -top-4 opacity-80 pointer-events-none">
+                    <span className="text-[10px] font-mono text-tier-okf flex items-center gap-1 border border-tier-okf/30 px-2 py-1 rounded bg-tier-okf/10 animate-stamp shadow-sm transform rotate-12">
+                      <CheckCircle2 size={12} /> VERIFIED
+                    </span>
+                  </div>
+
                   {msg.citations && msg.citations.map((cit, cIdx) => (
                     <button key={cIdx} onClick={() => onCitationClick(cit)} className="inline-flex items-center justify-center px-1 py-0.5 ml-1 text-[10px] font-mono text-tier-okf bg-tier-okf/10 hover:bg-tier-okf/20 rounded border border-tier-okf/30 transition-colors">
                       [{cit.source}]
@@ -201,7 +271,7 @@ export default function ThreadView({ onCitationClick, isFocusMode, onToggleFocus
               }
             }}
             className="w-full bg-ink-surface border border-ink-surface rounded-lg pl-4 pr-12 py-3 text-sm text-gray-200 placeholder-ink-muted focus:outline-none focus:border-tier-okf/50 focus:ring-1 focus:ring-tier-okf/50 resize-none h-14"
-            placeholder="Follow up on this thread... (Press Enter to send)"
+            placeholder={placeholder}
           />
           <button type="submit" disabled={!input.trim() || isLoading} className="absolute right-3 top-3 text-ink-muted hover:text-white transition-colors disabled:opacity-50">
             <Send size={18} />
