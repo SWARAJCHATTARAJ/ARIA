@@ -97,12 +97,69 @@ ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.okf_docs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.threads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.source_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.query_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.retractions ENABLE ROW LEVEL SECURITY;
 
--- (Basic policies: users can only see their own stuff)
-CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Users can view own api keys" ON public.api_keys FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can view shared or own okf docs" ON public.okf_docs FOR SELECT USING (user_id IS NULL OR auth.uid() = user_id);
-CREATE POLICY "Users can view own threads" ON public.threads FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can view own collections" ON public.collections FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can view own query logs" ON public.query_logs FOR SELECT USING (auth.uid() = user_id);
+-- Policies: only authenticated users can view their own data; anon role denied on all tables
+CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT TO authenticated USING (auth.uid() = id);
+CREATE POLICY "Users can view own api keys" ON public.api_keys FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own okf docs" ON public.okf_docs FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own threads" ON public.threads FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own collections" ON public.collections FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own query logs" ON public.query_logs FOR SELECT TO authenticated USING (auth.uid() = user_id);
+-- Note: source_snapshots, retractions, and feedback have RLS enabled with zero public/anon policies;
+-- access is restricted exclusively to server-side operations via the service_role key.
+
+-- Vector Similarity Search RPC for pgvector
+CREATE OR REPLACE FUNCTION match_okf_docs (
+  query_embedding VECTOR(384),
+  match_threshold FLOAT DEFAULT 0.4,
+  match_count INT DEFAULT 5
+)
+RETURNS TABLE (
+  id UUID,
+  file_path TEXT,
+  type TEXT,
+  topic TEXT,
+  source TEXT,
+  content TEXT,
+  similarity FLOAT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    okf_docs.id,
+    okf_docs.file_path,
+    okf_docs.type,
+    okf_docs.topic,
+    okf_docs.source,
+    okf_docs.content,
+    1 - (okf_docs.embedding <=> query_embedding) AS similarity
+  FROM okf_docs
+  WHERE okf_docs.embedding IS NOT NULL
+    AND 1 - (okf_docs.embedding <=> query_embedding) > match_threshold
+  ORDER BY okf_docs.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+-- Revoke execute from public, anon, and authenticated (service_role only)
+REVOKE EXECUTE ON FUNCTION public.match_okf_docs(vector, float, int) FROM PUBLIC, anon, authenticated;
+
+-- Feedback table (accuracy tracking and routing evaluation)
+CREATE TABLE public.feedback (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    thread_id TEXT,
+    message_id TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    query TEXT,
+    tiers JSONB DEFAULT '[]'::jsonb,
+    route_engine TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+ALTER TABLE public.feedback ENABLE ROW LEVEL SECURITY;
+-- No policies granted to anon or authenticated; feedback is inserted exclusively via backend service_role key.

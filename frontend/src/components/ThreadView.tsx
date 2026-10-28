@@ -1,45 +1,176 @@
-import React, { useState } from 'react';
-import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, AlertTriangle, Maximize2, Minimize2, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, AlertTriangle, Maximize2, Minimize2, Check, Sparkles, StopCircle, Network, FileText, CheckCircle2 } from 'lucide-react';
 import ConfidenceDial from './ConfidenceDial';
+import MarkdownRenderer, { getTierGlyph, getTierColorClass } from './MarkdownRenderer';
+import CitationGraph from './CitationGraph';
+import VisualConceptCard from './VisualConceptCard';
+import { streamQuery } from '../utils/sseClient';
+import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim } from '../types';
+import { API_BASE_URL } from '../config';
+
+const EXAMPLE_QUERIES = [
+  {
+    id: 'okf',
+    label: 'OKF Resolvable: Autonomous Systems Taxonomy',
+    query: 'What is the definition and taxonomy of autonomous systems in artificial intelligence?',
+    recordedDate: 'October 16, 2026',
+  },
+  {
+    id: 'rag',
+    label: 'RAG Dense Vector Retrieval: CRISPR Mitigation',
+    query: 'What are the off-target mitigation strategies for CRISPR gene editing?',
+    recordedDate: 'October 16, 2026',
+  },
+  {
+    id: 'live',
+    label: 'LIVE Multi-Source Academic: JWST 2024',
+    query: 'What were the latest discoveries of the James Webb Space Telescope in 2024?',
+    recordedDate: 'October 16, 2026',
+  },
+  {
+    id: 'retraction',
+    label: 'Test Fixture: Retraction Watch Alert (Fictional)',
+    query: 'Is ambient hyperconductivity confirmed in synthesized phosphor-apatite? (test fixture)',
+  },
+  {
+    id: 'conflict',
+    label: 'Test Fixture: Cross-Tier Conflict (Fictional)',
+    query: 'Do synthetic neural networks demonstrate discontinuous capability jumps? (test fixture)',
+  },
+];
 
 interface ThreadViewProps {
-  onCitationClick: (source: any) => void;
+  onCitationClick: (citation: Citation) => void;
   isFocusMode: boolean;
   onToggleFocus: () => void;
   onQueryStateChange?: (hasQuery: boolean) => void;
+  onUpdateActiveTelemetry?: (telemetry: MessageTelemetry | undefined) => void;
+  onUpdateActiveCitations?: (citations: Citation[]) => void;
+  onMockStateChange?: (isMock: boolean) => void;
+  activeTelemetry?: MessageTelemetry;
+  activeCitations?: Citation[];
+  isMockActive?: boolean;
 }
 
-interface Message {
-  role: 'user' | 'aria';
-  content: string;
-  citations?: any[];
-  isStreaming?: boolean;
-}
-
-export default function ThreadView({ onCitationClick, isFocusMode, onToggleFocus, onQueryStateChange }: ThreadViewProps) {
+export default function ThreadView({
+  onCitationClick,
+  isFocusMode,
+  onToggleFocus,
+  onQueryStateChange,
+  onUpdateActiveTelemetry,
+  onUpdateActiveCitations,
+  onMockStateChange,
+  isMockActive = false,
+}: ThreadViewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isCompareMode, setIsCompareMode] = useState(false);
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [feedbackSent, setFeedbackSent] = useState<Record<string, 'positive' | 'negative' | 'flagged'>>({});
+  const [isBackendReachable, setIsBackendReachable] = useState<boolean>(false);
+  const [isCitationGraphOpen, setIsCitationGraphOpen] = useState<Record<string, boolean>>({});
+  const [isExportingPdf, setIsExportingPdf] = useState<Record<string, boolean>>({});
 
-  React.useEffect(() => {
+  const handleDownloadPdf = async (msg: Message) => {
+    try {
+      setIsExportingPdf((prev) => ({ ...prev, [msg.id]: true }));
+      const payload = {
+        query: msg.query || 'Research Overview',
+        answer_final: msg.content,
+        confidence: msg.telemetry?.audit?.confidence ?? 0.85,
+        tiers: msg.telemetry?.retrieval?.tiers || ['OKF'],
+        claims: msg.telemetry?.audit?.claims || [],
+        sources: msg.citations || [],
+      };
+      const res = await fetch(`${API_BASE_URL}/api/export/pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('PDF export failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `aria-research-paper.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('PDF export error:', err);
+    } finally {
+      setIsExportingPdf((prev) => ({ ...prev, [msg.id]: false }));
+    }
+  };
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Probe backend health to hide thumbs if unreachable
+  useEffect(() => {
+    let mounted = true;
+    const checkHealth = async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(`${API_BASE_URL}/health`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (mounted && res.ok) setIsBackendReachable(true);
+      } catch {
+        if (mounted) setIsBackendReachable(false);
+      }
+    };
+    checkHealth();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Check if ?mock=1 is present in URL
+  const isMockUrl = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mock') === '1';
+  // Allow fixture replay only if ?mock=1 or running in dev mode
+  const canReplayFixtures = isMockUrl || import.meta.env.DEV;
+
+  // Inform parent when queries exist
+  useEffect(() => {
     if (onQueryStateChange) {
       onQueryStateChange(messages.length > 0);
     }
   }, [messages.length, onQueryStateChange]);
 
+  // Clean up in-flight requests on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Scroll to bottom
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
   // Typewriter placeholder logic
   const [placeholder, setPlaceholder] = useState('');
   useEffect(() => {
     const prompts = [
-      "Analyze the structural integrity of carbon nanotubes...",
-      "Summarize recent papers on autonomous multi-agent systems...",
-      "What is the impact of prompt engineering on LLM reasoning?"
+      'Analyze the structural taxonomy of autonomous systems...',
+      'What are the off-target mitigation strategies for CRISPR Cas9?',
+      'Latest astronomical discoveries of the James Webb Telescope...',
+      'Is ambient hyperconductivity confirmed in synthesized phosphor-apatite?',
     ];
     let pIdx = 0;
     let cIdx = 0;
     let isDeleting = false;
-    
+
     const tick = () => {
       const currentPrompt = prompts[pIdx];
       if (isDeleting) {
@@ -49,219 +180,733 @@ export default function ThreadView({ onCitationClick, isFocusMode, onToggleFocus
         setPlaceholder(currentPrompt.substring(0, cIdx + 1));
         cIdx++;
       }
-      
-      let nextSpeed = isDeleting ? 30 : 50;
-      
+
+      let nextSpeed = isDeleting ? 25 : 45;
+
       if (!isDeleting && cIdx === currentPrompt.length) {
-        nextSpeed = 2000;
+        nextSpeed = 2200;
         isDeleting = true;
       } else if (isDeleting && cIdx === 0) {
         isDeleting = false;
         pIdx = (pIdx + 1) % prompts.length;
         nextSpeed = 500;
       }
-      
+
       setTimeout(tick, nextSpeed);
     };
-    
+
     const timerId = setTimeout(tick, 500);
     return () => clearTimeout(timerId);
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+      setMessages((prev) =>
+        prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+      );
+    }
+  };
 
-    const userMsg = input.trim();
-    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+  const executeQuery = (queryText: string, mockKey?: string, recordedDate?: string) => {
+    if (!queryText.trim() || isLoading) return;
+
+    // Abort previous in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    const userMsgId = `user-${Date.now()}`;
+    const ariaMsgId = `aria-${Date.now()}`;
+
+    const userMessage: Message = {
+      id: userMsgId,
+      role: 'user',
+      content: queryText.trim(),
+      timestamp: Date.now(),
+    };
+
+    const initialAriaMessage: Message = {
+      id: ariaMsgId,
+      role: 'aria',
+      content: '',
+      query: queryText.trim(),
+      citations: [],
+      telemetry: { stage: 'routing' },
+      isStreaming: true,
+      timestamp: Date.now(),
+      recordedDate: recordedDate,
+    };
+
+    setMessages((prev) => [...prev, userMessage, initialAriaMessage]);
     setInput('');
     setIsLoading(true);
 
-    // Real backend connection
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-    const apiKey = import.meta.env.VITE_API_KEY || '';
+    let collectedCitations: Citation[] = [];
+    let currentTelemetry: MessageTelemetry = { stage: 'routing' };
 
-    fetch(`${apiUrl}/api/query`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey
+    if (onUpdateActiveCitations) onUpdateActiveCitations([]);
+    if (onUpdateActiveTelemetry) onUpdateActiveTelemetry(currentTelemetry);
+
+    // Replay recorded example card if mockKey provided; live queries typed by users pass mockKey = undefined
+    const effectiveMockKey = mockKey;
+
+    streamQuery({
+      query: queryText.trim(),
+      compareMode: isCompareMode,
+      signal: abortController.signal,
+      mockFixtureKey: effectiveMockKey,
+      onMockState: (isMock) => {
+        if (onMockStateChange) onMockStateChange(isMock);
       },
-      body: JSON.stringify({ query: userMsg, compare_mode: isCompareMode })
-    })
-    .then(async (res) => {
-      if (!res.ok) throw new Error('API Error');
-      // For now, since streaming requires complex async iteration in React, 
-      // we'll handle the basic response or mock if endpoint isn't up
-      setMessages(prev => [...prev, {
-        role: 'aria',
-        content: `Backend connected! (Streaming integration pending) \n\nYou asked: "${userMsg}"`,
-        citations: []
-      }]);
-    })
-    .catch((err) => {
-      console.warn("Backend not reachable, falling back to mock:", err);
-      setMessages(prev => [...prev, {
-        role: 'aria',
-        content: `Failed to connect to backend at ${apiUrl}. \n\nMake sure the FastAPI server is running!`,
-        citations: []
-      }]);
-    })
-    .finally(() => {
-      setIsLoading(false);
+      onEvent: (evt) => {
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg.id !== ariaMsgId) return msg;
+
+            const updatedTelemetry = { ...(msg.telemetry || currentTelemetry) };
+            let updatedContent = msg.content;
+            let updatedCitations = msg.citations ? [...msg.citations] : [];
+            let updatedQueuePosition = msg.queuePosition;
+
+            switch (evt.event) {
+              case 'queued':
+                updatedQueuePosition = evt.position ?? 1;
+                break;
+
+              case 'start':
+                updatedTelemetry.stage = 'routing';
+                break;
+
+              case 'route':
+                updatedTelemetry.stage = 'retrieving';
+                updatedTelemetry.route = {
+                  route_decision: evt.route_decision || 'cascade',
+                };
+                break;
+
+              case 'retrieve':
+                updatedTelemetry.stage = 'streaming';
+                updatedTelemetry.retrieval = {
+                  tiers: evt.tiers,
+                  okf_node_paths: evt.okf_node_paths,
+                  rag_scores: evt.rag_scores,
+                  sources: evt.sources,
+                };
+                break;
+
+              case 'citation': {
+                const newCit: Citation = {
+                  id: evt.id,
+                  title: evt.title,
+                  path: evt.path,
+                  url: evt.url,
+                  authors: evt.authors,
+                  year: evt.year,
+                  venue: evt.venue,
+                  snippet: evt.snippet,
+                  source_type: evt.source_type,
+                  tier: evt.tier,
+                  doi: evt.doi,
+                  arxiv_id: evt.arxiv_id,
+                  is_retracted: evt.is_retracted,
+                  review_status: evt.review_status,
+                };
+                if (!updatedCitations.some((c) => c.id === newCit.id)) {
+                  updatedCitations.push(newCit);
+                  collectedCitations = updatedCitations;
+                  if (onUpdateActiveCitations) onUpdateActiveCitations(updatedCitations);
+                }
+                break;
+              }
+
+              case 'token':
+                if (evt.delta) {
+                  updatedContent += evt.delta;
+                }
+                updatedQueuePosition = null; // remove queued event when stream starts
+                break;
+
+              case 'audit':
+                updatedTelemetry.stage = 'auditing';
+                updatedTelemetry.audit = {
+                  claims: evt.claims,
+                  removed_claims: evt.removed_claims,
+                  conflicts: evt.conflicts_found || evt.conflicts,
+                  retractions: evt.retractions_found || evt.retractions,
+                  confidence: evt.confidence,
+                  tier_agreement: evt.tier_agreement,
+                  answer_final: evt.answer_final,
+                  repaired: evt.repaired ?? false,
+                };
+                if (evt.sources) {
+                  updatedTelemetry.retrieval = {
+                    ...updatedTelemetry.retrieval,
+                    sources: evt.sources,
+                  };
+                }
+                if (evt.answer_final) {
+                  updatedContent = evt.answer_final;
+                }
+                break;
+
+              case 'done':
+                updatedTelemetry.stage = 'complete';
+                return {
+                  ...msg,
+                  content: updatedContent,
+                  citations: updatedCitations,
+                  telemetry: updatedTelemetry,
+                  queuePosition: null,
+                  isStreaming: false,
+                };
+
+              case 'error':
+                updatedTelemetry.stage = 'error';
+                return {
+                  ...msg,
+                  content: updatedContent,
+                  citations: updatedCitations,
+                  telemetry: updatedTelemetry,
+                  queuePosition: null,
+                  isStreaming: false,
+                  error: evt.message || 'Stream connection error',
+                };
+            }
+
+            currentTelemetry = updatedTelemetry;
+            if (onUpdateActiveTelemetry) onUpdateActiveTelemetry(updatedTelemetry);
+
+            return {
+              ...msg,
+              content: updatedContent,
+              citations: updatedCitations,
+              telemetry: updatedTelemetry,
+              queuePosition: updatedQueuePosition,
+            };
+          })
+        );
+      },
+      onError: (err) => {
+        setIsLoading(false);
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === ariaMsgId
+              ? {
+                  ...msg,
+                  isStreaming: false,
+                  error: err.message || 'Failed to connect to backend',
+                }
+              : msg
+          )
+        );
+      },
+      onDone: () => {
+        setIsLoading(false);
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === ariaMsgId ? { ...msg, isStreaming: false } : msg))
+        );
+      },
     });
   };
 
-  const [selection, setSelection] = useState<{text: string, x: number, y: number} | null>(null);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeQuery(input);
+  };
 
-  React.useEffect(() => {
-    const handleMouseUp = () => {
-      const sel = window.getSelection();
-      if (sel && sel.toString().trim().length > 0) {
-        const range = sel.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        setSelection({
-          text: sel.toString().trim(),
-          x: rect.left + rect.width / 2,
-          y: rect.top - 10
-        });
-      } else {
-        setSelection(null);
+  const handleCopy = (msgId: string, content: string) => {
+    navigator.clipboard.writeText(content);
+    setCopiedMsgId(msgId);
+    setTimeout(() => setCopiedMsgId(null), 2000);
+  };
+
+  const handleDownloadBibtex = (citations: Citation[] = []) => {
+    if (citations.length === 0) return;
+    const bibContent = citations
+      .map((cit) => {
+        const key = (cit.authors?.split(' ')[0] || 'source').replace(/[^a-zA-Z]/g, '') + (cit.year || '2026');
+        return `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${cit.authors || 'Unknown'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
+      })
+      .join('\n\n');
+
+    const blob = new Blob([bibContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'aria-citations.bib';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFeedback = async (msg: Message, type: 'positive' | 'negative' | 'flagged') => {
+    // Never send feedback for mock replays or when backend is unreachable
+    if (isMockActive || !isBackendReachable) return;
+
+    // Find previous user query if any
+    const msgIdx = messages.findIndex((m) => m.id === msg.id);
+    let userQuery = '';
+    for (let i = msgIdx - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        userQuery = messages[i].content;
+        break;
       }
-    };
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, []);
+    }
 
-  const handleAddToOKF = () => {
-    if (selection) {
-      alert(`Saved to personal OKF:\n"${selection.text}"`);
-      setSelection(null);
-      window.getSelection()?.removeAllRanges();
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message_id: msg.id,
+          verdict: type,
+          query: userQuery || undefined,
+          tiers: msg.telemetry?.retrieval?.tiers || [],
+          route_engine: null,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        // Show saved tick only on success
+        if (data.status === 'stored') {
+          setFeedbackSent((prev) => ({ ...prev, [msg.id]: type }));
+        }
+      }
+    } catch {
+      // Quiet failure if unreachable
+    }
+  };
+
+  const getStageLabel = (stage?: PipelineStage) => {
+    switch (stage) {
+      case 'routing':
+        return 'Planning...';
+      case 'retrieving':
+        return 'Retrieving sources...';
+      case 'streaming':
+        return 'Writing answer...';
+      case 'auditing':
+        return 'Checking claims...';
+      case 'complete':
+        return 'Done';
+      case 'error':
+        return 'Error';
+      default:
+        return 'Thinking...';
     }
   };
 
   return (
-    <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative">
+    <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative h-full overflow-hidden select-text">
       {/* Thread Header */}
-      <div className="px-4 md:px-8 py-4 border-b border-ink-surface flex justify-between items-center bg-ink-base/80 backdrop-blur-sm z-10 sticky top-0">
-        <div>
-          <h2 className="text-sm font-semibold text-white truncate max-w-[200px] md:max-w-md">Autonomous Intelligence Maturity</h2>
-          <div className="text-[10px] font-mono text-ink-muted mt-0.5">Collection: Thesis Lit Review • 14 mins ago</div>
+      <div className="px-4 md:px-8 py-3.5 border-b border-ink-surface flex justify-between items-center bg-ink-base/90 backdrop-blur-md z-10 shrink-0">
+        <div className="flex items-center gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs font-mono font-bold text-white tracking-wider uppercase">
+                New question
+              </h2>
+              {isMockActive && (
+                <span className="font-mono text-[9px] px-1.5 py-0.2 uppercase tracking-wider bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold flex items-center gap-1">
+                  <AlertTriangle size={10} /> MOCK DATA
+                </span>
+              )}
+            </div>
+          </div>
         </div>
-        <button 
-          onClick={onToggleFocus}
-          className="text-ink-muted hover:text-white transition-colors flex items-center gap-2 text-xs font-mono shrink-0"
-          title="Toggle Focus Mode"
-        >
-          {isFocusMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          <span className="hidden md:inline">{isFocusMode ? 'Exit Focus' : 'Focus'}</span>
-        </button>
-      </div>
 
-      {/* Quick Capture Toolbar */}
-      {selection && (
-        <div 
-          className="fixed z-50 bg-ink-surface border border-ink-muted/30 shadow-lg rounded-md flex items-center p-1 -translate-x-1/2 -translate-y-full"
-          style={{ left: selection.x, top: selection.y }}
-        >
-          <button 
-            onClick={handleAddToOKF}
-            className="px-3 py-1.5 text-xs font-mono text-tier-okf hover:bg-tier-okf/10 rounded transition-colors flex items-center gap-2 whitespace-nowrap"
+        <div className="flex items-center gap-2">
+          {isLoading && (
+            <button
+              onClick={handleStopGeneration}
+              className="text-xs font-mono text-warning hover:bg-warning/10 border border-warning/40 px-2 py-1 rounded-none flex items-center gap-1.5 transition-colors"
+              title="Stop streaming"
+            >
+              <StopCircle size={14} /> Stop
+            </button>
+          )}
+
+          <button
+            onClick={onToggleFocus}
+            className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-xs font-mono px-2 py-1 rounded-none border border-ink-surface hover:border-gray-600"
+            title="Toggle Focus Mode"
           >
-            <div className="w-2 h-2 rounded-full bg-tier-okf" />
-            Save to OKF
+            {isFocusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            <span className="hidden md:inline">{isFocusMode ? 'Exit Focus' : 'Focus'}</span>
           </button>
         </div>
-      )}
+      </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 select-text">
         {messages.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center h-full mt-12">
-            <div className="w-full max-w-2xl bg-ink-surface/10 rounded-md p-8 relative overflow-hidden min-h-[300px]">
-              {/* Ruled lines texture */}
-              <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'repeating-linear-gradient(transparent, transparent 27px, #fff 28px)', backgroundPosition: '0 -1px' }} />
-              <div className="relative z-10 font-mono text-ink-muted/50 text-sm flex items-start gap-2">
-                <span className="text-tier-okf mt-0.5 animate-pulse">_</span> Start a new research thread...
+          <div className="flex-1 flex flex-col items-center justify-center py-8">
+            <div className="w-full max-w-2xl bg-ink-surface/20 rounded-none p-6 border border-ink-surface relative overflow-hidden">
+              <div
+                className="absolute inset-0 opacity-[0.03]"
+                style={{
+                  backgroundImage: 'repeating-linear-gradient(transparent, transparent 27px, #fff 28px)',
+                  backgroundPosition: '0 -1px',
+                }}
+              />
+              <div className="relative z-10 space-y-4">
+                <div className="font-mono text-xs uppercase tracking-widest text-tier-okf flex items-center gap-2">
+                  <Sparkles size={14} /> Try one of these, or type your own.
+                </div>
+
+                {/* Example buttons: in production replay real recorded okf, rag, live answers with zero tokens; test fixtures stay dev-only */}
+                <div className="grid grid-cols-1 gap-2 pt-2">
+                  {(canReplayFixtures
+                    ? EXAMPLE_QUERIES
+                    : EXAMPLE_QUERIES.filter((q) => q.id === 'okf' || q.id === 'rag' || q.id === 'live')
+                  ).map((fixture) => (
+                    <button
+                      key={fixture.id}
+                      onClick={() => executeQuery(fixture.query, fixture.id, fixture.recordedDate)}
+                      className="text-left p-3 bg-ink-base/80 hover:bg-ink-surface border border-ink-surface hover:border-tier-okf/50 transition-colors text-xs group"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-tier-okf font-mono font-medium">
+                          {fixture.recordedDate
+                            ? `Recorded answer, ${fixture.recordedDate}, no live query`
+                            : fixture.label}
+                        </span>
+                        {canReplayFixtures && (fixture.id === 'retraction' || fixture.id === 'conflict') && (
+                          <span className="text-[9px] text-amber-400/80 uppercase border border-amber-400/30 px-1 py-0.2 font-mono">
+                            test fixture
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-gray-300 group-hover:text-white font-sans text-xs leading-relaxed block">
+                        "{fixture.query}"
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         )}
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'flex-col gap-2 max-w-[90%]'}`}>
+
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`flex ${msg.role === 'user' ? 'justify-end' : 'flex-col gap-2 max-w-[95%]'}`}
+          >
             {msg.role === 'user' ? (
-              <div className="bg-ink-surface px-4 py-3 rounded-lg max-w-[80%] text-sm">
+              <div className="bg-ink-surface px-4 py-3 rounded-none border border-ink-surface/80 max-w-[85%] text-xs font-sans text-gray-100">
                 {msg.content}
               </div>
             ) : (
-              <>
-                <div className="flex items-center gap-4 text-xs font-mono text-ink-muted mb-2">
-                  <div className="flex items-center gap-2 border border-ink-surface px-2 py-1 rounded bg-ink-base">
-                    <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-tier-okf animate-pulse" /> OKF</span>
-                    <span className="text-ink-surface">|</span>
-                    <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-tier-rag" /> RAG</span>
-                    <span className="text-ink-surface">|</span>
-                    <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-tier-live" /> LIVE</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase">Confidence</span>
-                    <ConfidenceDial level="high" />
-                  </div>
-                </div>
-                <div className="prose prose-invert prose-p:leading-relaxed prose-sm max-w-none relative">
-                  <p>{msg.content}</p>
-                  
-                  {/* Verified Stamp Overlay (Audit step) */}
-                  <div className="absolute -right-4 -top-4 opacity-80 pointer-events-none">
-                    <span className="text-[10px] font-mono text-tier-okf flex items-center gap-1 border border-tier-okf/30 px-2 py-1 rounded bg-tier-okf/10 animate-stamp shadow-sm transform rotate-12">
-                      <CheckCircle2 size={12} /> VERIFIED
-                    </span>
+              <div className="space-y-3">
+                {/* Top Verification & Action Bar (Google AI Overview / Deep Research Style) */}
+                <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-ink-muted pb-2 border-b border-ink-surface/50">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {/* Fired Tiers with glyphs */}
+                    <div className="flex items-center gap-1.5 border border-ink-surface px-2 py-0.5 rounded-none bg-ink-base">
+                      {(['OKF', 'RAG', 'LIVE'] as const).map((t) => {
+                        const glyph = getTierGlyph(t);
+                        const isFired = msg.telemetry?.retrieval?.tiers?.includes(t) || msg.citations?.some((c) => c.tier === t);
+                        return (
+                          <span
+                            key={t}
+                            className={`flex items-center gap-1 text-[10px] ${
+                              isFired ? 'opacity-100 font-bold' : 'opacity-30'
+                            }`}
+                          >
+                            <span className={getTierColorClass(t).split(' ')[0]}>{glyph}</span>
+                            <span>{t}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    {/* Verification Status Badge */}
+                    {msg.telemetry?.audit?.confidence !== undefined && (
+                      <div className="flex items-center gap-1 text-emerald-400 font-mono text-[10px] bg-emerald-950/50 border border-emerald-500/40 px-2 py-0.5">
+                        <CheckCircle2 size={11} className="text-emerald-400" />
+                        <span>{Math.round((msg.telemetry.audit.confidence ?? 0.85) * 100)}% Source-Verified</span>
+                      </div>
+                    )}
+
+                    {/* Verified Claims Count */}
+                    {msg.telemetry?.audit?.claims && msg.telemetry.audit.claims.length > 0 && (
+                      <span className="text-[10px] text-gray-300 font-mono bg-ink-surface/50 border border-ink-surface px-1.5 py-0.5">
+                        {msg.telemetry.audit.claims.filter((c) => typeof c !== 'string' && c.status === 'supported').length} / {msg.telemetry.audit.claims.length} Claims Verified
+                      </span>
+                    )}
+
+                    {/* Confidence Dial */}
+                    <div className="flex items-center gap-1.5">
+                      <ConfidenceDial
+                        confidence={msg.telemetry?.audit?.confidence ?? 0.85}
+                        tierAgreement={msg.telemetry?.audit?.tier_agreement}
+                        size="sm"
+                      />
+                    </div>
+
+                    {/* Status Indicator */}
+                    {msg.isStreaming && (
+                      <div className="flex items-center gap-1.5 text-tier-okf text-[10px] animate-pulse">
+                        <Loader2 size={12} className="animate-spin" />
+                        <span>{getStageLabel(msg.telemetry?.stage)}</span>
+                      </div>
+                    )}
+
+                    {/* Mock badge on message if mock active */}
+                    {isMockActive && (
+                      <span className="font-mono text-[9px] px-1 py-0.2 bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold">
+                        MOCK
+                      </span>
+                    )}
                   </div>
 
-                  {msg.citations && msg.citations.map((cit, cIdx) => (
-                    <button key={cIdx} onClick={() => onCitationClick(cit)} className="inline-flex items-center justify-center px-1 py-0.5 ml-1 text-[10px] font-mono text-tier-okf bg-tier-okf/10 hover:bg-tier-okf/20 rounded border border-tier-okf/30 transition-colors">
-                      [{cit.source}]
-                    </button>
-                  ))}
+                  {/* Top Action Buttons: Citation Graph & PDF Report */}
+                  {!msg.isStreaming && msg.content && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setIsCitationGraphOpen(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
+                        className={`px-2 py-1 text-[11px] font-mono flex items-center gap-1.5 border transition-all ${
+                          isCitationGraphOpen[msg.id]
+                            ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300 shadow-sm'
+                            : 'bg-ink-base border-ink-surface hover:border-gray-500 text-gray-300 hover:text-white'
+                        }`}
+                        title="Toggle Interactive Citation Graph"
+                      >
+                        <Network size={12} className={isCitationGraphOpen[msg.id] ? 'text-emerald-400 animate-pulse' : ''} />
+                        <span>Citation Graph</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleDownloadPdf(msg)}
+                        disabled={isExportingPdf[msg.id]}
+                        className="px-2.5 py-1 text-[11px] font-mono flex items-center gap-1.5 bg-tier-okf/15 hover:bg-tier-okf/25 border border-tier-okf/40 hover:border-tier-okf text-tier-okf hover:text-emerald-300 transition-all disabled:opacity-50"
+                        title="Download IEEE / arXiv Two-Column Academic Research Paper (PDF)"
+                      >
+                        {isExportingPdf[msg.id] ? (
+                          <>
+                            <Loader2 size={12} className="animate-spin" />
+                            <span>Exporting Paper...</span>
+                          </>
+                        ) : (
+                          <>
+                            <FileText size={12} />
+                            <span>Download Research Paper (PDF)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {/* Action Bar (Export & Feedback) */}
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-ink-surface/50">
-                  <div className="flex gap-3">
-                    <button className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase" title="Copy Markdown">
-                      <Copy size={12} /> Copy
-                    </button>
-                    <button className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase" title="Download .bib">
-                      <Download size={12} /> .BIB
-                    </button>
+
+                {/* Inline Interactive Citation Graph Drawer */}
+                {isCitationGraphOpen[msg.id] && (
+                  <CitationGraph
+                    query={msg.query || ''}
+                    citations={msg.citations}
+                    claims={msg.telemetry?.audit?.claims?.filter((c): c is AuditClaim => typeof c === 'object')}
+                    onCitationClick={onCitationClick}
+                    onClose={() => setIsCitationGraphOpen(prev => ({ ...prev, [msg.id]: false }))}
+                  />
+                )}
+
+                {/* Key Takeaways & Visual Concept Card (Top Overview Split Panel) */}
+                {!msg.isStreaming && msg.content && (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 my-3 p-3.5 bg-ink-surface/20 border border-ink-surface/70 rounded-none">
+                    {/* Left: Key Verified Findings */}
+                    <div className="lg:col-span-7 flex flex-col justify-between space-y-2.5">
+                      <div>
+                        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-tier-okf font-semibold mb-2">
+                          <Sparkles size={12} /> Key Research Takeaways
+                        </div>
+                        <div className="space-y-2">
+                          {msg.telemetry?.audit?.claims && msg.telemetry.audit.claims.length > 0 ? (
+                            msg.telemetry.audit.claims
+                              .filter((c): c is AuditClaim => typeof c === 'object' && c !== null && c.status === 'supported')
+                              .slice(0, 3)
+                              .map((c, idx) => {
+                                const cov = Math.round((c.coverage ?? 1.0) * 100);
+                                return (
+                                  <div
+                                    key={idx}
+                                    className="flex items-start gap-2 text-xs font-sans text-gray-200 group cursor-pointer hover:text-white"
+                                    onClick={() => {
+                                      if (c.citation_ids && c.citation_ids.length > 0) {
+                                        const targetCit = msg.citations?.find(cit => cit.id === c.citation_ids![0]);
+                                        if (targetCit) onCitationClick(targetCit);
+                                      }
+                                    }}
+                                  >
+                                    <span className="font-mono text-[9px] px-1 py-0.2 bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 font-bold shrink-0 mt-0.5">
+                                      {cov}%
+                                    </span>
+                                    <span className="leading-snug">
+                                      {c.text}
+                                      {c.citation_ids && c.citation_ids.length > 0 && (
+                                        <span className="font-mono text-[10px] text-tier-okf ml-1 opacity-70 group-hover:opacity-100">
+                                          [[c:{c.citation_ids[0]}]]
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                );
+                              })
+                          ) : (
+                            <div className="text-xs font-sans text-gray-400 italic">
+                              Verified key findings extracted from authoritative academic literature and structured graph notes.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="pt-2 text-[10px] font-mono text-ink-muted flex items-center gap-2">
+                        <span>Verified against {msg.citations?.length || 1} cited primary sources</span>
+                      </div>
+                    </div>
+
+                    {/* Right: Visual Concept / Diagram Card */}
+                    <div className="lg:col-span-5 flex items-center">
+                      <VisualConceptCard query={msg.query || ''} />
+                    </div>
                   </div>
-                  <div className="flex gap-3">
-                    <button className="text-ink-muted hover:text-tier-okf transition-colors" title="Accurate (Train Dristi)">
-                      <ThumbsUp size={14} />
-                    </button>
-                    <button className="text-ink-muted hover:text-warning transition-colors" title="Inaccurate">
-                      <ThumbsDown size={14} />
-                    </button>
-                    <button className="text-ink-muted hover:text-tier-live transition-colors flex items-center gap-1 text-[10px] font-mono" title="Report Conflict">
-                      <AlertTriangle size={12} /> Flag Conflict
-                    </button>
+                )}
+
+                {/* Error Banner */}
+                {msg.error && (
+                  <div className="p-3 bg-warning/10 border border-warning/40 text-warning text-xs font-mono rounded-none">
+                    Error: {msg.error}
                   </div>
+                )}
+
+                {/* Markdown Rendered Content with split-buffered citations, GFM tables & claim audit pass */}
+                <div className="text-[15px] text-gray-200 leading-[1.65] font-sans max-w-[68ch]">
+                  {msg.recordedDate && (
+                    <div className="mb-3 px-2.5 py-1 text-[11px] font-mono bg-tier-okf/10 border border-tier-okf/40 text-tier-okf flex items-center gap-1.5">
+                      <span>Recorded answer, {msg.recordedDate}, no live query</span>
+                    </div>
+                  )}
+                  {msg.content ? (
+                    <MarkdownRenderer
+                      content={msg.content}
+                      citations={msg.citations}
+                      onCitationClick={onCitationClick}
+                      isStreaming={msg.isStreaming}
+                      auditClaims={msg.telemetry?.audit?.claims?.filter((c): c is AuditClaim => typeof c === 'object' && c !== null)}
+                      answerFinal={msg.telemetry?.audit?.answer_final}
+                    />
+                  ) : msg.queuePosition ? (
+                    <div className="font-mono text-xs text-amber-300 flex items-center gap-2 py-2">
+                      <Loader2 size={14} className="animate-spin text-amber-300" />
+                      <span>{msg.queuePosition} ahead of you, your question starts soon</span>
+                    </div>
+                  ) : msg.isStreaming ? (
+                    <div className="font-mono text-xs text-ink-muted flex items-center gap-2 py-2">
+                      <Loader2 size={14} className="animate-spin text-white" />
+                      <span>Retrieving knowledge and synthesizing response...</span>
+                    </div>
+                  ) : null}
+
+                  {/* Removed Sentences Notice */}
+                  {!msg.isStreaming && msg.telemetry?.audit?.removed_claims && msg.telemetry.audit.removed_claims.length > 0 && (
+                    <details className="mt-3 text-xs bg-ink-surface/40 border border-ink-surface rounded px-3 py-2 text-ink-muted">
+                      <summary className="cursor-pointer font-mono text-[11px] text-warning/90 hover:text-warning select-none">
+                        {msg.telemetry.audit.removed_claims.length} sentence{msg.telemetry.audit.removed_claims.length > 1 ? 's' : ''} removed because the sources did not support {msg.telemetry.audit.removed_claims.length > 1 ? 'them' : 'it'}
+                      </summary>
+                      <div className="mt-2 space-y-1.5 pl-2 border-l border-warning/30">
+                        {msg.telemetry.audit.removed_claims.map((rc, idx) => (
+                          <div key={idx} className="font-sans text-[12px] text-gray-300">
+                            <span className="line-through text-gray-400">"{rc.text}"</span>
+                            {rc.reason && <span className="block font-mono text-[10px] text-warning/80 mt-0.5">Reason: {rc.reason}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                 </div>
-              </>
+
+                {/* Action Bar */}
+                {!msg.isStreaming && msg.content && (
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-ink-surface/50">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => handleCopy(msg.id, msg.content)}
+                        className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase"
+                        title="Copy Markdown text"
+                      >
+                        {copiedMsgId === msg.id ? (
+                          <>
+                            <Check size={12} className="text-emerald-400" />
+                            <span className="text-emerald-400">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={12} />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => handleDownloadBibtex(msg.citations)}
+                        disabled={!msg.citations || msg.citations.length === 0}
+                        className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase disabled:opacity-30"
+                        title="Download .bib bibliography"
+                      >
+                        <Download size={12} /> .BIB
+                      </button>
+                    </div>
+
+                    {/* Hide thumbs when backend is unreachable or in mock mode; show saved tick only on success */}
+                    {isBackendReachable && !isMockActive && (
+                      <div className="flex items-center gap-2.5">
+                        {feedbackSent[msg.id] ? (
+                          <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 select-none">
+                            <Check size={12} /> Saved
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleFeedback(msg, 'positive')}
+                              className="text-ink-muted hover:text-white transition-colors p-1"
+                              title="Accurate synthesis"
+                            >
+                              <ThumbsUp size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleFeedback(msg, 'negative')}
+                              className="text-ink-muted hover:text-warning transition-colors p-1"
+                              title="Inaccurate / Hallucination"
+                            >
+                              <ThumbsDown size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleFeedback(msg, 'flagged')}
+                              className="text-ink-muted hover:text-warning transition-colors flex items-center gap-1 text-[10px] font-mono px-1 py-0.5"
+                              title="Flag Tier Conflict"
+                            >
+                              <AlertTriangle size={11} /> Flag Conflict
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         ))}
-        {isLoading && (
-          <div className="flex items-center gap-2 text-ink-muted text-sm">
-            <Loader2 className="animate-spin" size={16} /> Thinking...
-          </div>
-        )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
-      <form onSubmit={handleSubmit} className="p-4 bg-ink-base border-t border-ink-surface">
+      <form onSubmit={handleSubmit} className="p-4 bg-ink-base border-t border-ink-surface shrink-0">
         <div className="relative">
-          <textarea 
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -270,25 +915,32 @@ export default function ThreadView({ onCitationClick, isFocusMode, onToggleFocus
                 handleSubmit(e);
               }
             }}
-            className="w-full bg-ink-surface border border-ink-surface rounded-lg pl-4 pr-12 py-3 text-sm text-gray-200 placeholder-ink-muted focus:outline-none focus:border-tier-okf/50 focus:ring-1 focus:ring-tier-okf/50 resize-none h-14"
+            className="w-full bg-ink-surface border border-ink-surface rounded-none pl-4 pr-12 py-3 text-xs font-sans text-gray-200 placeholder-ink-muted focus:outline-none focus:border-tier-okf/50 focus:ring-1 focus:ring-tier-okf/50 resize-none h-14"
             placeholder={placeholder}
           />
-          <button type="submit" disabled={!input.trim() || isLoading} className="absolute right-3 top-3 text-ink-muted hover:text-white transition-colors disabled:opacity-50">
-            <Send size={18} />
+          <button
+            type="submit"
+            disabled={!input.trim() || isLoading}
+            className="absolute right-3 top-3 text-ink-muted hover:text-white transition-colors disabled:opacity-40 p-1"
+            aria-label="Send query"
+          >
+            <Send size={16} />
           </button>
         </div>
+
         <div className="flex justify-between items-center mt-2 px-1">
           <div className="flex gap-4 text-xs font-mono text-ink-muted">
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={() => setIsCompareMode(!isCompareMode)}
-              className={`transition-colors ${isCompareMode ? 'text-tier-live font-bold' : 'hover:text-white'}`}
+              className={`transition-colors text-[11px] ${
+                isCompareMode ? 'text-tier-live font-bold' : 'hover:text-white'
+              }`}
             >
               Compare Tiers [{isCompareMode ? 'On' : 'Off'}]
             </button>
-            <span className="opacity-50">Focus Mode [Off]</span>
           </div>
-          <span className="text-xs font-mono text-ink-muted">Cmd+K for actions</span>
+          <span className="text-[10px] font-mono text-ink-muted">Press Enter to stream</span>
         </div>
       </form>
     </div>

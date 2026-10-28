@@ -1,0 +1,492 @@
+data: {"event": "start", "thread_id": "479ea7d6-3b65-42b9-8f0c-80ed46afd5ab"}
+
+data: {"event": "route", "route_decision": "cascade"}
+
+data: {"event": "retrieve", "tiers": ["OKF"], "okf_node_paths": ["autonomous_systems.md", "multi_agent_consensus.md"], "rag_scores": [], "sources": [{"source": "ARIA seed note (draft)", "source_type": "okf_graph", "tier": "OKF", "similarity": null, "is_retracted": false, "rank": null, "published": null, "cited": false}, {"source": "Linked via Taxonomy of Autonomous Systems and Operational Boundaries", "source_type": "okf_graph", "tier": "OKF", "similarity": null, "is_retracted": false, "rank": null, "published": null, "cited": false}]}
+
+data: {"event": "citation", "id": 0, "title": "Taxonomy of Autonomous Systems and Operational Boundaries", "path": "autonomous_systems.md", "url": null, "authors": null, "year": 2026, "venue": "ARIA seed note (draft)", "snippet": "An autonomous system is a computational or physical entity capable of perceiving its environment, formulating goal-directed plans, and executing actions over extended operational horizons without continuous human intervention.\n\nTaxonomy of Autonomy Levels (adapted from SAE J3016 and NIST ALFUS):\n- Level 0 (No Automation): System provides warnings or momentary intervention; human controls all execution.\n- Level 1 (Driver / Operator Assistance): Execution of either steering or acceleration/deceleration using environmental information.\n- Level 2 (Partial Automation): Simultaneous execution of multiple sub-tasks with human monitoring and immediate fallback readiness.\n- Level 3 (Conditional Automation): System handles all aspects of dynamic performance within an Operational Design Domain (ODD); human intervenes upon request.\n- Level 4 (High Automation): System sustains complete dynamic performance and automated fallback within defined ODD even if human fails to intervene.\n- Level 5 (Full Automation): Unconditional automated performance across all environmental and operational conditions manageable by human operators.\n\nArchitectural Models:\n1. Sense-Plan-Act (SPA): Classical hierarchical planning through centralized state representations.\n2. Subsumption Architecture: Layered reactive behaviors without centralized world models (Brooks, 1986).\n3. Hybrid Cognitive Architectures: Coupling fast reflex loops with asynchronous symbolic deliberation.\n\nReferences:\n1. SAE International (2021). \"Taxonomy and Definitions for Terms Related to Driving Automation Systems for On-Road Motor Vehicles\", Standard J3016_202104. [verified]\n2. Brooks, R. (1986). \"A robust layered control system for a mobile robot\", IEEE Journal on Robotics and Automation, 2(1), 14-23. [verified]\n3. Huang, H. M., et al. (2005). \"Autonomy Levels for Unmanned Systems (ALFUS) Framework Volume I: Terminology\", NIST Special Publication 1011. [verified]", "source_type": "okf_graph", "tier": "OKF", "doi": null, "arxiv_id": null, "is_retracted": false, "review_status": "draft", "cited": false, "rank": null, "published": null}
+
+data: {"event": "citation", "id": 1, "title": "Byzantine Fault Tolerant Consensus in Multi-Agent Reasoning", "path": "multi_agent_consensus.md", "url": null, "authors": null, "year": 2026, "venue": "ARIA seed note (draft)", "snippet": "Consensus in decentralized multi-agent systems requires establishing agreement on shared state variables despite message delays, network partitions, and adversarial or arbitrary (Byzantine) node failures.\n\nFoundational Protocols and Bounds:\n1. Byzantine Generals Problem: In synchronous systems with unauthenticated messages, consensus is impossible unless more than two-thirds of nodes are non-faulty: $n \\ge 3f + 1$, where $f$ denotes the maximum number of Byzantine failures (Lamport, Shostak, & Pease, 1982).\n2. FLP Impossibility Result: Deterministic asynchronous consensus cannot guarantee liveness in the presence of even a single unannounced crash failure (Fischer, Lynch, & Paterson, 1985).\n3. Practical Byzantine Fault Tolerance (PBFT): Provides safety and liveness under partial synchrony using three-phase message exchanges (Pre-prepare, Prepare, Commit) with polynomial complexity $O(n^2)$ (Castro & Liskov, 1999).\n\nApplication to Multi-Agent Reasoning Pipelines:\n- Hypotheses proposed by individual agents require quorum verification ($2f + 1$ matching endorsements) prior to commitment into verified shared memory.\n- In conflicting evidence regimes, agents isolate irreconcilable assertions into auditable dispute logs rather than averaging probabilities into an invalid compromise.\n\nReferences:\n1. Lamport, L., Shostak, R., & Pease, M. (1982). \"The Byzantine Generals Problem\", ACM Transactions on Programming Languages and Systems, 4(3), 382-401. [verified]\n2. Fischer, M. J., Lynch, N. A., & Paterson, M. S. (1985). \"Impossibility of Distributed Consensus with One Faulty Process\", Journal of the ACM, 32(2), 374-382. [verified]\n3. Castro, M., & Liskov, B. (1999). \"Practical Byzantine Fault Tolerance\", In Proceedings of the Third USENIX Symposium on Operating Systems Design and Implementation (OSDI '99), pp. 173-186; extended in ACM Transactions on Computer Systems (TOCS), 20(4), 398-461 (2002). [verified]", "source_type": "okf_graph", "tier": "OKF", "doi": null, "arxiv_id": null, "is_retracted": false, "review_status": "draft", "cited": false, "rank": null, "published": null}
+
+data: {"event": "token", "delta": "**"}
+
+data: {"event": "token", "delta": "Definition"}
+
+data: {"event": "token", "delta": "**"}
+
+data: {"event": "token", "delta": "  \n"}
+
+data: {"event": "token", "delta": "An"}
+
+data: {"event": "token", "delta": " autonomous"}
+
+data: {"event": "token", "delta": " system"}
+
+data: {"event": "token", "delta": " is"}
+
+data: {"event": "token", "delta": " a"}
+
+data: {"event": "token", "delta": " computational"}
+
+data: {"event": "token", "delta": " or"}
+
+data: {"event": "token", "delta": " physical"}
+
+data: {"event": "token", "delta": " entity"}
+
+data: {"event": "token", "delta": " that"}
+
+data: {"event": "token", "delta": " can"}
+
+data: {"event": "token", "delta": " perceive"}
+
+data: {"event": "token", "delta": " its"}
+
+data: {"event": "token", "delta": " environment"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " formulate"}
+
+data: {"event": "token", "delta": " goal"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "direct"}
+
+data: {"event": "token", "delta": "ed"}
+
+data: {"event": "token", "delta": " plans"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " and"}
+
+data: {"event": "token", "delta": " execute"}
+
+data: {"event": "token", "delta": " actions"}
+
+data: {"event": "token", "delta": " over"}
+
+data: {"event": "token", "delta": " extended"}
+
+data: {"event": "token", "delta": " operational"}
+
+data: {"event": "token", "delta": " horizons"}
+
+data: {"event": "token", "delta": " without"}
+
+data: {"event": "token", "delta": " continuous"}
+
+data: {"event": "token", "delta": " human"}
+
+data: {"event": "token", "delta": " intervention"}
+
+data: {"event": "token", "delta": " [["}
+
+data: {"event": "token", "delta": "c"}
+
+data: {"event": "token", "delta": ":"}
+
+data: {"event": "token", "delta": "0"}
+
+data: {"event": "token", "delta": "]]"}
+
+data: {"event": "token", "delta": ".\n\n"}
+
+data: {"event": "token", "delta": "**"}
+
+data: {"event": "token", "delta": "Tax"}
+
+data: {"event": "token", "delta": "onomy"}
+
+data: {"event": "token", "delta": " of"}
+
+data: {"event": "token", "delta": " Aut"}
+
+data: {"event": "token", "delta": "onomy"}
+
+data: {"event": "token", "delta": " Levels"}
+
+data: {"event": "token", "delta": "**"}
+
+data: {"event": "token", "delta": "  \n\n"}
+
+data: {"event": "token", "delta": "|"}
+
+data: {"event": "token", "delta": " Level"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Design"}
+
+data: {"event": "token", "delta": "ation"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Core"}
+
+data: {"event": "token", "delta": " Capability"}
+
+data: {"event": "token", "delta": " |\n"}
+
+data: {"event": "token", "delta": "|"}
+
+data: {"event": "token", "delta": "-------"}
+
+data: {"event": "token", "delta": "|"}
+
+data: {"event": "token", "delta": "-------------"}
+
+data: {"event": "token", "delta": "|"}
+
+data: {"event": "token", "delta": "----------------"}
+
+data: {"event": "token", "delta": "-"}
+
+data: {"event": "token", "delta": "|\n"}
+
+data: {"event": "token", "delta": "|"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "0"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " No"}
+
+data: {"event": "token", "delta": " Automation"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " System"}
+
+data: {"event": "token", "delta": " only"}
+
+data: {"event": "token", "delta": " provides"}
+
+data: {"event": "token", "delta": " warnings"}
+
+data: {"event": "token", "delta": " or"}
+
+data: {"event": "token", "delta": " moment"}
+
+data: {"event": "token", "delta": "ary"}
+
+data: {"event": "token", "delta": " intervention"}
+
+data: {"event": "token", "delta": ";"}
+
+data: {"event": "token", "delta": " human"}
+
+data: {"event": "token", "delta": " controls"}
+
+data: {"event": "token", "delta": " all"}
+
+data: {"event": "token", "delta": " execution"}
+
+data: {"event": "token", "delta": "."}
+
+data: {"event": "token", "delta": " |\n"}
+
+data: {"event": "token", "delta": "|"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "1"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Driver"}
+
+data: {"event": "token", "delta": "/"}
+
+data: {"event": "token", "delta": "Operator"}
+
+data: {"event": "token", "delta": " Assistance"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Executes"}
+
+data: {"event": "token", "delta": " either"}
+
+data: {"event": "token", "delta": " steering"}
+
+data: {"event": "token", "delta": " or"}
+
+data: {"event": "token", "delta": " acceleration"}
+
+data: {"event": "token", "delta": "/de"}
+
+data: {"event": "token", "delta": "celer"}
+
+data: {"event": "token", "delta": "ation"}
+
+data: {"event": "token", "delta": " using"}
+
+data: {"event": "token", "delta": " environmental"}
+
+data: {"event": "token", "delta": " information"}
+
+data: {"event": "token", "delta": "."}
+
+data: {"event": "token", "delta": " |\n"}
+
+data: {"event": "token", "delta": "|"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "2"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Partial"}
+
+data: {"event": "token", "delta": " Automation"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Sim"}
+
+data: {"event": "token", "delta": "ult"}
+
+data: {"event": "token", "delta": "aneously"}
+
+data: {"event": "token", "delta": " executes"}
+
+data: {"event": "token", "delta": " multiple"}
+
+data: {"event": "token", "delta": " sub"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "tasks"}
+
+data: {"event": "token", "delta": " while"}
+
+data: {"event": "token", "delta": " human"}
+
+data: {"event": "token", "delta": " monitors"}
+
+data: {"event": "token", "delta": " and"}
+
+data: {"event": "token", "delta": " remains"}
+
+data: {"event": "token", "delta": " ready"}
+
+data: {"event": "token", "delta": " to"}
+
+data: {"event": "token", "delta": " take"}
+
+data: {"event": "token", "delta": " over"}
+
+data: {"event": "token", "delta": "."}
+
+data: {"event": "token", "delta": " |\n"}
+
+data: {"event": "token", "delta": "|"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "3"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Conditional"}
+
+data: {"event": "token", "delta": " Automation"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Handles"}
+
+data: {"event": "token", "delta": " all"}
+
+data: {"event": "token", "delta": " dynamic"}
+
+data: {"event": "token", "delta": " performance"}
+
+data: {"event": "token", "delta": " within"}
+
+data: {"event": "token", "delta": " a"}
+
+data: {"event": "token", "delta": " defined"}
+
+data: {"event": "token", "delta": " Operational"}
+
+data: {"event": "token", "delta": " Design"}
+
+data: {"event": "token", "delta": " Domain"}
+
+data: {"event": "token", "delta": " ("}
+
+data: {"event": "token", "delta": "OD"}
+
+data: {"event": "token", "delta": "D"}
+
+data: {"event": "token", "delta": ");"}
+
+data: {"event": "token", "delta": " human"}
+
+data: {"event": "token", "delta": " interven"}
+
+data: {"event": "token", "delta": "es"}
+
+data: {"event": "token", "delta": " on"}
+
+data: {"event": "token", "delta": " request"}
+
+data: {"event": "token", "delta": "."}
+
+data: {"event": "token", "delta": " |\n"}
+
+data: {"event": "token", "delta": "|"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "4"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " High"}
+
+data: {"event": "token", "delta": " Automation"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Sust"}
+
+data: {"event": "token", "delta": "ains"}
+
+data: {"event": "token", "delta": " complete"}
+
+data: {"event": "token", "delta": " dynamic"}
+
+data: {"event": "token", "delta": " performance"}
+
+data: {"event": "token", "delta": " and"}
+
+data: {"event": "token", "delta": " automated"}
+
+data: {"event": "token", "delta": " fallback"}
+
+data: {"event": "token", "delta": " within"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " O"}
+
+data: {"event": "token", "delta": "DD"}
+
+data: {"event": "token", "delta": " even"}
+
+data: {"event": "token", "delta": " if"}
+
+data: {"event": "token", "delta": " human"}
+
+data: {"event": "token", "delta": " fails"}
+
+data: {"event": "token", "delta": " to"}
+
+data: {"event": "token", "delta": " intervene"}
+
+data: {"event": "token", "delta": "."}
+
+data: {"event": "token", "delta": " |\n"}
+
+data: {"event": "token", "delta": "|"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "5"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Full"}
+
+data: {"event": "token", "delta": " Automation"}
+
+data: {"event": "token", "delta": " |"}
+
+data: {"event": "token", "delta": " Provides"}
+
+data: {"event": "token", "delta": " unconditional"}
+
+data: {"event": "token", "delta": " automated"}
+
+data: {"event": "token", "delta": " performance"}
+
+data: {"event": "token", "delta": " across"}
+
+data: {"event": "token", "delta": " all"}
+
+data: {"event": "token", "delta": " environmental"}
+
+data: {"event": "token", "delta": " and"}
+
+data: {"event": "token", "delta": " operational"}
+
+data: {"event": "token", "delta": " conditions"}
+
+data: {"event": "token", "delta": " manageable"}
+
+data: {"event": "token", "delta": " by"}
+
+data: {"event": "token", "delta": " humans"}
+
+data: {"event": "token", "delta": "."}
+
+data: {"event": "token", "delta": " |\n\n"}
+
+data: {"event": "token", "delta": "The"}
+
+data: {"event": "token", "delta": " taxonomy"}
+
+data: {"event": "token", "delta": " adap"}
+
+data: {"event": "token", "delta": "ts"}
+
+data: {"event": "token", "delta": " SAE"}
+
+data: {"event": "token", "delta": " J"}
+
+data: {"event": "token", "delta": "301"}
+
+data: {"event": "token", "delta": "6"}
+
+data: {"event": "token", "delta": " and"}
+
+data: {"event": "token", "delta": " N"}
+
+data: {"event": "token", "delta": "IST"}
+
+data: {"event": "token", "delta": " AL"}
+
+data: {"event": "token", "delta": "F"}
+
+data: {"event": "token", "delta": "US"}
+
+data: {"event": "token", "delta": " definitions"}
+
+data: {"event": "token", "delta": " of"}
+
+data: {"event": "token", "delta": " autonomy"}
+
+data: {"event": "token", "delta": " levels"}
+
+data: {"event": "token", "delta": " [["}
+
+data: {"event": "token", "delta": "c"}
+
+data: {"event": "token", "delta": ":"}
+
+data: {"event": "token", "delta": "0"}
+
+data: {"event": "token", "delta": "]]."}
+
+data: {"event": "audit", "answer_final": "**Definition**  \nAn autonomous system is a computational or physical entity capable of perceiving its environment, formulating goal‑directed plans, and executing actions over extended operational horizons without continuous human intervention [[c:0]].\n\n**Taxonomy of Autonomy Levels**  \n\n| Level | Designation | Core Capability (as defined in the sources) |\n|-------|-------------|---------------------------------------------|\n| 0 | No Automation | System provides warnings or momentary intervention; human controls all execution [[c:0]]. |\n| 1 | Driver/Operator Assistance | Executes either steering or acceleration/deceleration using environmental information [[c:0]]. |\n| 2 | Partial Automation | Simultaneously executes multiple sub‑tasks while the human monitors and remains ready to take over [[c:0]]. |\n| 3 | Conditional Automation | Handles all dynamic performance within a defined Operational Design Domain (ODD); human intervenes on request [[c:0]]. |\n| 4 | High Automation | Sustains complete dynamic performance and automated fallback within the ODD even if the human fails to intervene [[c:0]]. |\n| 5 | Full Automation | Provides unconditional automated performance across all environmental and operational conditions manageable by humans [[c:0]]. |\n\n**Architectural Models**  \nCommon architectures for autonomous systems include the Sense‑Plan‑Act (SPA) hierarchy, the subsumption architecture of layered reactive behaviors, and hybrid cognitive architectures that combine fast reflex loops with asynchronous symbolic deliberation [[c:0]].", "claims": [{"claim_id": 0, "text": "An autonomous system is a computational or physical entity capable of perceiving its environment, formulating goal‑directed plans, and executing actions over extended operational horizons without continuous human intervention.", "citation_ids": [0], "evidence": "An autonomous system is a computational or physical entity capable of perceiving its environment, formulating goal-directed plans, and executing actions over extended operational horizons without continuous human intervention.", "note": "Fully supported: Verified by verbatim evidence quote and entity check.", "supported": true, "status": "supported", "coverage": 1.0, "start": 17, "end": 251}, {"claim_id": 1, "text": "System provides warnings or momentary intervention; human controls all execution.", "citation_ids": [0], "evidence": "System provides warnings or momentary intervention; human controls all execution.", "note": "Fully supported: Verified by verbatim evidence quote and entity check.", "supported": true, "status": "supported", "coverage": 1.0, "start": 450, "end": 539}, {"claim_id": 2, "text": "Executes either steering or acceleration/deceleration using environmental information.", "citation_ids": [0], "evidence": "Execution of either steering or acceleration/deceleration using environmental information.", "note": "Audit flagged: unverified entities: Executes.", "supported": false, "status": "partially_supported", "coverage": 0.857, "start": 577, "end": 671}, {"claim_id": 3, "text": "Simultaneously executes multiple sub‑tasks while the human monitors and remains ready to take over.", "citation_ids": [0], "evidence": "Simultaneous execution of multiple sub-tasks with human monitoring and immediate fallback readiness.", "note": "Audit flagged: insufficient quote coverage (36.4% < 60%); unverified entities: Simultaneously.", "supported": false, "status": "partially_supported", "coverage": 0.364, "start": 701, "end": 808}, {"claim_id": 4, "text": "Handles all dynamic performance within a defined Operational Design Domain (ODD); human intervenes on request.", "citation_ids": [0], "evidence": "System handles all aspects of dynamic performance within an Operational Design Domain (ODD); human intervenes upon request.", "note": "Fully supported: Verified by verbatim evidence quote and entity check.", "supported": true, "status": "supported", "coverage": 0.917, "start": 842, "end": 960}, {"claim_id": 5, "text": "Sustains complete dynamic performance and automated fallback within the ODD even if the human fails to intervene.", "citation_ids": [0], "evidence": "System sustains complete dynamic performance and automated fallback within defined ODD even if human fails to intervene.", "note": "Fully supported: Verified by verbatim evidence quote and entity check.", "supported": true, "status": "supported", "coverage": 1.0, "start": 987, "end": 1108}, {"claim_id": 6, "text": "Provides unconditional automated performance across all environmental and operational conditions manageable by humans.", "citation_ids": [0], "evidence": "Unconditional automated performance across all environmental and operational conditions manageable by human operators.", "note": "Fully supported: Verified by verbatim evidence quote and entity check.", "supported": true, "status": "supported", "coverage": 0.8, "start": 1135, "end": 1261}, {"claim_id": 7, "text": "Common architectures for autonomous systems include the Sense‑Plan‑Act (SPA) hierarchy, the subsumption architecture of layered reactive behaviors, and hybrid cognitive architectures that combine fast reflex loops with asynchronous symbolic deliberation.", "citation_ids": [0], "evidence": "1. Sense-Plan-Act (SPA): Classical hierarchical planning through centralized state representations.; 3. Hybrid Cognitive Architectures: Coupling fast reflex loops with asynchronous symbolic deliberation.", "note": "Audit flagged: unverified entities: Common.", "supported": false, "status": "partially_supported", "coverage": 0.625, "start": 1292, "end": 1554}], "removed_claims": [], "conflicts": [], "retractions": [], "confidence": 0.69, "tier_agreement": null, "repaired": true, "sources": [{"source": "ARIA seed note (draft)", "source_type": "okf_graph", "tier": "OKF", "similarity": null, "is_retracted": false, "rank": null, "published": null, "cited": true}, {"source": "Linked via Taxonomy of Autonomous Systems and Operational Boundaries", "source_type": "okf_graph", "tier": "OKF", "similarity": null, "is_retracted": false, "rank": null, "published": null, "cited": false}]}
+
+data: {"event": "done"}
+

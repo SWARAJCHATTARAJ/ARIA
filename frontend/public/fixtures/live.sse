@@ -1,0 +1,478 @@
+data: {"event": "start", "thread_id": "a6f6f441-4cf1-4565-bedf-7e6e5a88a2cb"}
+
+data: {"event": "route", "route_decision": "cascade"}
+
+data: {"event": "retrieve", "tiers": ["LIVE"], "okf_node_paths": [], "rag_scores": [], "sources": [{"source": "https://doi.org/10.1117/1.jatis.10.1.011208", "source_type": "openalex", "tier": "LIVE", "similarity": null, "is_retracted": false, "rank": 1, "published": "2024-02-05", "cited": false}, {"source": "https://doi.org/10.3847/1538-3881/ad890d", "source_type": "openalex", "tier": "LIVE", "similarity": null, "is_retracted": false, "rank": 2, "published": "2024-12-10", "cited": false}, {"source": "https://blog.jameswebbdiscovery.com/2024/03/james-webb-space-telescope-discoveries.html", "source_type": "duckduckgo", "tier": "LIVE", "similarity": null, "is_retracted": false, "rank": 3, "published": "2024", "cited": false}, {"source": "https://doi.org/10.33140/ssj.01.02.10", "source_type": "openalex", "tier": "LIVE", "similarity": null, "is_retracted": false, "rank": 4, "published": "2024-08-02", "cited": false}, {"source": "https://blog.jaseph.com/top-5-james-webb-telescope-discoveries-in-2024/8934/", "source_type": "duckduckgo", "tier": "LIVE", "similarity": null, "is_retracted": false, "rank": 5, "published": "2024", "cited": false}]}
+
+data: {"event": "citation", "id": 0, "title": "Lessons learned from systems engineering on the James Webb Space Telescope", "path": null, "url": "https://doi.org/10.1117/1.jatis.10.1.011208", "authors": ["Michael Menzel", "Keith Parrish", "Lee D. Feinberg", "Paul H. Geithner", "Julie Van Campen", "Michael W. McElwain", "Sandra Irish"], "year": 2024, "venue": "Journal of Astronomical Telescopes Instruments and Systems", "snippet": "The James Webb Space Telescope is NASA’s flagship mission and successor to the highly successful Hubble Space Telescope. It is an infrared observatory featuring a cryogenic 6.6 m aperture, deployable optical telescope element with a payload of four science instruments assembled into an integrated science instrument module that provide imagery and spectroscopy in the near infrared band between 0.6 and 5 μm and in the mid-infrared band between 5 and 28 μm. JWST was successfully launched on December 25, 2021, aboard an Ariane 5 launch vehicle. All 50 major deployments were successfully completed by January 8, 2022. The observatory performed all mid-course correction maneuvers and achieved its operational mission orbit around the Sun-Earth second Lagrange Point. All commissioning and calibration activities have been completed and JWST has begun its science mission. Its present performance meets or out-performs all requirements. Launching over 20 years after its mission concept review, the JWST", "source_type": "openalex", "tier": "LIVE", "doi": "10.1117/1.jatis.10.1.011208", "arxiv_id": null, "is_retracted": false, "review_status": "scholarly", "cited": false, "rank": 1, "published": "2024-02-05"}
+
+data: {"event": "citation", "id": 1, "title": "Searching for Planets Orbiting Vega with the James Webb Space Telescope", "path": null, "url": "https://doi.org/10.3847/1538-3881/ad890d", "authors": ["Charles Beichman", "G. Bryden", "Jorge D. Llop-Sayson", "Marie Ygouf", "Alexandra Z. Greenbaum", "Jarron Leisenring", "Andras Gáspár", "John Krist", "George H. Rieke", "Schuyler Grace Wolff", "Kate Y. L. Su", "K. W. Hodapp", "Michael R. Meyer", "Doug Kelly", "Martha L. Boyer", "Doug Johnstone", "Scott Horner", "Marcia J. Rieke"], "year": 2024, "venue": "The Astronomical Journal", "snippet": "Abstract The most prominent of the IRAS debris disk systems, α Lyrae (Vega), at a distance of 7.7 pc, has been observed by both the NIRCam and MIRI instruments on the James Webb Space Telescope. This paper describes NIRCam coronagraphic observations, which have achieved F444W contrast levels of 3 × 10−7 at 1″ (7.7 au), 1 × 10−7 at 2″ (15 au), and a few × 10−8 beyond 5″ (38 au), corresponding to masses of <3, 2, and 0.5 M J for a system age of 700 Myr. Two F444W objects are identified in the outer MIRI debris disk, around 48 au. One of these is detected by MIRI and appears to be extended with a spectral energy distribution similar to those of distant extragalactic sources. The second one also appears extended in the NIRCam data suggestive of an extragalactic nature. The NIRCam limits within the inner disk (1″–10″) correspond", "source_type": "openalex", "tier": "LIVE", "doi": "10.3847/1538-3881/ad890d", "arxiv_id": null, "is_retracted": false, "review_status": "scholarly", "cited": false, "rank": 2, "published": "2024-12-10"}
+
+data: {"event": "citation", "id": 2, "title": "James Webb Space Telescope Discoveries Tracker", "path": null, "url": "https://blog.jameswebbdiscovery.com/2024/03/james-webb-space-telescope-discoveries.html", "authors": null, "year": 2024, "venue": "DuckDuckGo", "snippet": "Mar 19, 2024 · James Webb Telescope Unlocks the Universe's Secrets: March 2024 Discoveries The James Webb Space Telescope (JWST), humanity's most powerful observatory, continues to revolutionize our understanding of the cosmos.", "source_type": "duckduckgo", "tier": "LIVE", "doi": null, "arxiv_id": null, "is_retracted": false, "review_status": "unreviewed_web", "cited": false, "rank": 3, "published": "2024"}
+
+data: {"event": "citation", "id": 3, "title": "The James Webb Space Telescope (JWST) Anomalies Resolved", "path": null, "url": "https://doi.org/10.33140/ssj.01.02.10", "authors": ["James R. Arnold"], "year": 2024, "venue": "Space science journal.", "snippet": "A model of the universe is offered that can derive the Hubble Constant independent of empirical measurement, using just a midline estimate of the age of the universe and simple arithmetic calculations. It can explain the JWST discoveries of apparent anomalous early galaxy formations without need of substantial revisions to established astrophysical theories, as the new findings have seemed to require. Concepts of “Dark energy”, cosmic flatness, cosmic inflation, and an accelerating expansion of the universe are rendered unnecessary or at least partly misinterpreted.", "source_type": "openalex", "tier": "LIVE", "doi": "10.33140/ssj.01.02.10", "arxiv_id": null, "is_retracted": false, "review_status": "scholarly", "cited": false, "rank": 4, "published": "2024-08-02"}
+
+data: {"event": "citation", "id": 4, "title": "Top 5 James Webb Telescope Discoveries in 2024: Exoplanets ...", "path": null, "url": "https://blog.jaseph.com/top-5-james-webb-telescope-discoveries-in-2024/8934/", "authors": null, "year": 2024, "venue": "DuckDuckGo", "snippet": "Sep 27, 2024 · The top James Webb Space Telescope discoveries of 2024, including exoplanet breakthroughs, deep space images, and insights into star formation. Learn how JWST is transforming our understanding of the universe.", "source_type": "duckduckgo", "tier": "LIVE", "doi": null, "arxiv_id": null, "is_retracted": false, "review_status": "unreviewed_web", "cited": false, "rank": 5, "published": "2024"}
+
+data: {"event": "token", "delta": "In"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "202"}
+
+data: {"event": "token", "delta": "4"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " James"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "Web"}
+
+data: {"event": "token", "delta": "b"}
+
+data: {"event": "token", "delta": " Space"}
+
+data: {"event": "token", "delta": " Telescope"}
+
+data: {"event": "token", "delta": " was"}
+
+data: {"event": "token", "delta": " used"}
+
+data: {"event": "token", "delta": " to"}
+
+data: {"event": "token", "delta": " obtain"}
+
+data: {"event": "token", "delta": " very"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "high"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "contrast"}
+
+data: {"event": "token", "delta": " N"}
+
+data: {"event": "token", "delta": "IR"}
+
+data: {"event": "token", "delta": "Cam"}
+
+data: {"event": "token", "delta": " and"}
+
+data: {"event": "token", "delta": " M"}
+
+data: {"event": "token", "delta": "IRI"}
+
+data: {"event": "token", "delta": " images"}
+
+data: {"event": "token", "delta": " of"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " nearby"}
+
+data: {"event": "token", "delta": " star"}
+
+data: {"event": "token", "delta": " Vega"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " reaching"}
+
+data: {"event": "token", "delta": " contrast"}
+
+data: {"event": "token", "delta": " levels"}
+
+data: {"event": "token", "delta": " of"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "3"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "×"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "10"}
+
+data: {"event": "token", "delta": "⁻"}
+
+data: {"event": "token", "delta": "⁷"}
+
+data: {"event": "token", "delta": " at"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "1"}
+
+data: {"event": "token", "delta": "″"}
+
+data: {"event": "token", "delta": " and"}
+
+data: {"event": "token", "delta": " revealing"}
+
+data: {"event": "token", "delta": " two"}
+
+data: {"event": "token", "delta": " faint"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " extended"}
+
+data: {"event": "token", "delta": " objects"}
+
+data: {"event": "token", "delta": " in"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " outer"}
+
+data: {"event": "token", "delta": " debris"}
+
+data: {"event": "token", "delta": " disk"}
+
+data: {"event": "token", "delta": " that"}
+
+data: {"event": "token", "delta": " appear"}
+
+data: {"event": "token", "delta": " consistent"}
+
+data: {"event": "token", "delta": " with"}
+
+data: {"event": "token", "delta": " distant"}
+
+data: {"event": "token", "delta": " extr"}
+
+data: {"event": "token", "delta": "agal"}
+
+data: {"event": "token", "delta": "actic"}
+
+data: {"event": "token", "delta": " sources"}
+
+data: {"event": "token", "delta": " [["}
+
+data: {"event": "token", "delta": "c"}
+
+data: {"event": "token", "delta": ":"}
+
+data: {"event": "token", "delta": "1"}
+
+data: {"event": "token", "delta": "]]"}
+
+data: {"event": "token", "delta": ".\n\n"}
+
+data: {"event": "token", "delta": "The"}
+
+data: {"event": "token", "delta": " telescope"}
+
+data: {"event": "token", "delta": " also"}
+
+data: {"event": "token", "delta": " reported"}
+
+data: {"event": "token", "delta": " observations"}
+
+data: {"event": "token", "delta": " of"}
+
+data: {"event": "token", "delta": " apparently"}
+
+data: {"event": "token", "delta": " “"}
+
+data: {"event": "token", "delta": "an"}
+
+data: {"event": "token", "delta": "omal"}
+
+data: {"event": "token", "delta": "ous"}
+
+data: {"event": "token", "delta": "”"}
+
+data: {"event": "token", "delta": " early"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "forming"}
+
+data: {"event": "token", "delta": " galaxies"}
+
+data: {"event": "token", "delta": " that"}
+
+data: {"event": "token", "delta": " challenge"}
+
+data: {"event": "token", "delta": " standard"}
+
+data: {"event": "token", "delta": " expectations"}
+
+data: {"event": "token", "delta": " for"}
+
+data: {"event": "token", "delta": " galaxy"}
+
+data: {"event": "token", "delta": " growth"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " prompting"}
+
+data: {"event": "token", "delta": " theoretical"}
+
+data: {"event": "token", "delta": " work"}
+
+data: {"event": "token", "delta": " that"}
+
+data: {"event": "token", "delta": " seeks"}
+
+data: {"event": "token", "delta": " to"}
+
+data: {"event": "token", "delta": " explain"}
+
+data: {"event": "token", "delta": " these"}
+
+data: {"event": "token", "delta": " findings"}
+
+data: {"event": "token", "delta": " without"}
+
+data: {"event": "token", "delta": " revis"}
+
+data: {"event": "token", "delta": "ing"}
+
+data: {"event": "token", "delta": " established"}
+
+data: {"event": "token", "delta": " cosm"}
+
+data: {"event": "token", "delta": "ology"}
+
+data: {"event": "token", "delta": " [["}
+
+data: {"event": "token", "delta": "c"}
+
+data: {"event": "token", "delta": ":"}
+
+data: {"event": "token", "delta": "3"}
+
+data: {"event": "token", "delta": "]]"}
+
+data: {"event": "token", "delta": ".\n\n"}
+
+data: {"event": "token", "delta": "A"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "“"}
+
+data: {"event": "token", "delta": "Discover"}
+
+data: {"event": "token", "delta": "ies"}
+
+data: {"event": "token", "delta": " Tracker"}
+
+data: {"event": "token", "delta": "”"}
+
+data: {"event": "token", "delta": " entry"}
+
+data: {"event": "token", "delta": " notes"}
+
+data: {"event": "token", "delta": " that"}
+
+data: {"event": "token", "delta": " JW"}
+
+data: {"event": "token", "delta": "ST"}
+
+data: {"event": "token", "delta": " continued"}
+
+data: {"event": "token", "delta": " to"}
+
+data: {"event": "token", "delta": " unlock"}
+
+data: {"event": "token", "delta": " new"}
+
+data: {"event": "token", "delta": " insights"}
+
+data: {"event": "token", "delta": " throughout"}
+
+data: {"event": "token", "delta": " March"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "202"}
+
+data: {"event": "token", "delta": "4"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " though"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " source"}
+
+data: {"event": "token", "delta": " does"}
+
+data: {"event": "token", "delta": " not"}
+
+data: {"event": "token", "delta": " list"}
+
+data: {"event": "token", "delta": " specific"}
+
+data: {"event": "token", "delta": " results"}
+
+data: {"event": "token", "delta": " beyond"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " statement"}
+
+data: {"event": "token", "delta": " that"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " observ"}
+
+data: {"event": "token", "delta": "atory"}
+
+data: {"event": "token", "delta": " is"}
+
+data: {"event": "token", "delta": " revolution"}
+
+data: {"event": "token", "delta": "izing"}
+
+data: {"event": "token", "delta": " our"}
+
+data: {"event": "token", "delta": " understanding"}
+
+data: {"event": "token", "delta": " of"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " cosmos"}
+
+data: {"event": "token", "delta": " [["}
+
+data: {"event": "token", "delta": "c"}
+
+data: {"event": "token", "delta": ":"}
+
+data: {"event": "token", "delta": "2"}
+
+data: {"event": "token", "delta": "]]"}
+
+data: {"event": "token", "delta": ".\n\n"}
+
+data: {"event": "token", "delta": "Another"}
+
+data: {"event": "token", "delta": " summary"}
+
+data: {"event": "token", "delta": " of"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " year"}
+
+data: {"event": "token", "delta": "’s"}
+
+data: {"event": "token", "delta": " highlights"}
+
+data: {"event": "token", "delta": " lists"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " “"}
+
+data: {"event": "token", "delta": "top"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "5"}
+
+data: {"event": "token", "delta": "”"}
+
+data: {"event": "token", "delta": " JW"}
+
+data: {"event": "token", "delta": "ST"}
+
+data: {"event": "token", "delta": " discoveries"}
+
+data: {"event": "token", "delta": " of"}
+
+data: {"event": "token", "delta": " "}
+
+data: {"event": "token", "delta": "202"}
+
+data: {"event": "token", "delta": "4"}
+
+data: {"event": "token", "delta": " as"}
+
+data: {"event": "token", "delta": " including"}
+
+data: {"event": "token", "delta": " breakthroughs"}
+
+data: {"event": "token", "delta": " in"}
+
+data: {"event": "token", "delta": " ex"}
+
+data: {"event": "token", "delta": "oplan"}
+
+data: {"event": "token", "delta": "et"}
+
+data: {"event": "token", "delta": " science"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " striking"}
+
+data: {"event": "token", "delta": " deep"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "space"}
+
+data: {"event": "token", "delta": " images"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " and"}
+
+data: {"event": "token", "delta": " new"}
+
+data: {"event": "token", "delta": " information"}
+
+data: {"event": "token", "delta": " on"}
+
+data: {"event": "token", "delta": " star"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "formation"}
+
+data: {"event": "token", "delta": " processes"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " but"}
+
+data: {"event": "token", "delta": " it"}
+
+data: {"event": "token", "delta": " provides"}
+
+data: {"event": "token", "delta": " no"}
+
+data: {"event": "token", "delta": " further"}
+
+data: {"event": "token", "delta": " detail"}
+
+data: {"event": "token", "delta": " [["}
+
+data: {"event": "token", "delta": "c"}
+
+data: {"event": "token", "delta": ":"}
+
+data: {"event": "token", "delta": "4"}
+
+data: {"event": "token", "delta": "]]."}
+
+data: {"event": "audit", "answer_final": "In 2024 JWST used NIRCam and MIRI to image the nearby star Vega, achieving F444W contrast levels of 3 × 10⁻⁷ at 1″, 1 × 10⁻⁷ at 2″, and a few × 10⁻⁸ beyond 5″, and identified two faint, extended objects in the outer debris disk that resemble distant extragalactic sources [[c:1]].\n\nA Discoveries Tracker entry dated 19 March 2024 notes that JWST continued to unlock new insights throughout that month, emphasizing the observatory’s ongoing impact on our understanding of the cosmos [[c:2]].\n\nA September 2024 summary lists the top five JWST discoveries of the year, highlighting breakthroughs in exoplanet science, striking deep‑space images, and new information on star‑formation processes [[c:4]].", "claims": [{"claim_id": 0, "text": "In 2024 JWST used NIRCam and MIRI to image the nearby star Vega, achieving F444W contrast levels of 3 × 10⁻⁷ at 1″, 1 × 10⁻⁷ at 2″, and a few × 10⁻⁸ beyond 5″, and identified two faint, extended objects in the outer debris disk that resemble distant extragalactic sources.", "citation_ids": [1], "evidence": "achieved F444W contrast levels of 3 × 10−7 at 1″ (7.7 au), 1 × 10−7 at 2″ (15 au), and a few × 10−8 beyond 5″ (38 au), corresponding to masses of <3, 2, and 0.5 M J for a system age of 700 Myr.; Two F444W objects are identified in the outer MIRI debris disk, around 48 au. One of these is detected by MIRI and appears to be extended with a spectral energy distribution similar to those of distant extragalactic sources.", "note": "Audit flagged: unverified numbers: 2024; unverified entities: 2024.", "supported": false, "status": "partially_supported", "coverage": 0.667, "start": 0, "end": 272}, {"claim_id": 1, "text": "A Discoveries Tracker entry dated 19 March 2024 notes that JWST continued to unlock new insights throughout that month, emphasizing the observatory’s ongoing impact on our understanding of the cosmos.", "citation_ids": [2], "evidence": "Mar 19, 2024 · James Webb Telescope Unlocks the Universe's Secrets: March 2024 Discoveries; The James Webb Space Telescope (JWST), humanity's most powerful observatory, continues to revolutionize our understanding of the cosmos.", "note": "Audit flagged: insufficient quote coverage (40.0% < 60%).", "supported": false, "status": "partially_supported", "coverage": 0.4, "start": 282, "end": 482}, {"claim_id": 2, "text": "A September 2024 summary lists the top five JWST discoveries of the year, highlighting breakthroughs in exoplanet science, striking deep‑space images, and new information on star‑formation processes.", "citation_ids": [4], "evidence": "Sep 27, 2024 · The top James Webb Space Telescope discoveries of 2024, including exoplanet breakthroughs, deep space images, and insights into star formation.", "note": "Audit flagged: insufficient quote coverage (42.1% < 60%); unverified entities: September.", "supported": false, "status": "partially_supported", "coverage": 0.421, "start": 741, "end": 948}], "removed_claims": [{"text": "JWST observations have also revealed apparently “anomalous” early‑forming galaxies whose masses challenge standard expectations for galaxy growth, prompting theoretical work to explain these findings without revising established cosmology.", "reason": "Source quote coverage below 30% (0.0%)"}], "conflicts": [], "retractions": [], "confidence": 0.39, "tier_agreement": null, "repaired": true, "sources": [{"source": "https://doi.org/10.1117/1.jatis.10.1.011208", "source_type": "openalex", "tier": "LIVE", "similarity": null, "is_retracted": false, "rank": 1, "published": "2024-02-05", "cited": false}, {"source": "https://doi.org/10.3847/1538-3881/ad890d", "source_type": "openalex", "tier": "LIVE", "similarity": null, "is_retracted": false, "rank": 2, "published": "2024-12-10", "cited": true}, {"source": "https://blog.jameswebbdiscovery.com/2024/03/james-webb-space-telescope-discoveries.html", "source_type": "duckduckgo", "tier": "LIVE", "similarity": null, "is_retracted": false, "rank": 3, "published": "2024", "cited": true}, {"source": "https://doi.org/10.33140/ssj.01.02.10", "source_type": "openalex", "tier": "LIVE", "similarity": null, "is_retracted": false, "rank": 4, "published": "2024-08-02", "cited": false}, {"source": "https://blog.jaseph.com/top-5-james-webb-telescope-discoveries-in-2024/8934/", "source_type": "duckduckgo", "tier": "LIVE", "similarity": null, "is_retracted": false, "rank": 5, "published": "2024", "cited": true}]}
+
+data: {"event": "done"}
+

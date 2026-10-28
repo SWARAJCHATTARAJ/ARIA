@@ -1,0 +1,288 @@
+data: {"event": "start", "thread_id": "19e99c75-5e4e-4a1f-aed5-7e9727f3af18"}
+
+data: {"event": "route", "route_decision": "cascade"}
+
+data: {"event": "retrieve", "tiers": ["RAG"], "okf_node_paths": [], "rag_scores": [0.8404], "sources": [{"source": "ARIA Molecular Biology Synthesis", "source_type": "pgvector", "tier": "RAG", "similarity": 0.8404, "is_retracted": false, "rank": null, "published": null, "cited": false}]}
+
+data: {"event": "citation", "id": 0, "title": "CRISPR Cas9 off-target mitigation", "path": "okf/crispr_cas9_mechanisms.md", "url": null, "authors": null, "year": 2026, "venue": "ARIA Molecular Biology Synthesis", "snippet": "Off-target cleavage during CRISPR-Cas9 genome editing presents substantial challenges for therapeutic translation. Key mitigation strategies include:\n1. High-fidelity engineered Cas9 nucleases (such as SpCas9-HF1, eSpCas9, and HypaCas9) featuring mutated contact residues that destabilize non-target strand binding.\n2. Paired nickase configurations (Cas9n D10A) creating adjacent single-strand breaks on opposing strands, requiring dual guide RNA recognition.\n3. Prime editing systems and transient delivery via ribonucleoprotein (RNP) complexes, restricting nuclease exposure duration to diminish off-target accumulation.\n\nReferences:\n1. Kleinstiver, B. P., et al. (2016). \"High-fidelity CRISPR–Cas9 nucleases with no detectable genome-wide off-target effects\", Nature, 529(7587), 490-495. [verified]\n2. Ran, F. A., et al. (2013). \"Double nicking by RNA-guided CRISPR Cas9 for enhanced genome editing specificity\", Cell, 154(6), 1380-1389. [verified]\n3. Anzalone, A. V., et al. (2019). \"Search-and-replace genome editing without double-strand breaks or donor DNA\", Nature, 576(7785), 149-157. [verified]", "source_type": "pgvector", "tier": "RAG", "doi": null, "arxiv_id": null, "is_retracted": false, "review_status": "verified", "cited": false, "rank": null, "published": null}
+
+data: {"event": "token", "delta": "-"}
+
+data: {"event": "token", "delta": " Use"}
+
+data: {"event": "token", "delta": " high"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "f"}
+
+data: {"event": "token", "delta": "idelity"}
+
+data: {"event": "token", "delta": " engineered"}
+
+data: {"event": "token", "delta": " Cas"}
+
+data: {"event": "token", "delta": "9"}
+
+data: {"event": "token", "delta": " variants"}
+
+data: {"event": "token", "delta": " ("}
+
+data: {"event": "token", "delta": "e"}
+
+data: {"event": "token", "delta": ".g"}
+
+data: {"event": "token", "delta": ".,"}
+
+data: {"event": "token", "delta": " Sp"}
+
+data: {"event": "token", "delta": "Cas"}
+
+data: {"event": "token", "delta": "9"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "HF"}
+
+data: {"event": "token", "delta": "1"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " e"}
+
+data: {"event": "token", "delta": "Sp"}
+
+data: {"event": "token", "delta": "Cas"}
+
+data: {"event": "token", "delta": "9"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " Hyp"}
+
+data: {"event": "token", "delta": "a"}
+
+data: {"event": "token", "delta": "Cas"}
+
+data: {"event": "token", "delta": "9"}
+
+data: {"event": "token", "delta": ")"}
+
+data: {"event": "token", "delta": " that"}
+
+data: {"event": "token", "delta": " contain"}
+
+data: {"event": "token", "delta": " mutations"}
+
+data: {"event": "token", "delta": " weakening"}
+
+data: {"event": "token", "delta": " non"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "target"}
+
+data: {"event": "token", "delta": " strand"}
+
+data: {"event": "token", "delta": " interactions"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " thereby"}
+
+data: {"event": "token", "delta": " reducing"}
+
+data: {"event": "token", "delta": " off"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "target"}
+
+data: {"event": "token", "delta": " cleavage"}
+
+data: {"event": "token", "delta": " [["}
+
+data: {"event": "token", "delta": "c"}
+
+data: {"event": "token", "delta": ":"}
+
+data: {"event": "token", "delta": "0"}
+
+data: {"event": "token", "delta": "]]"}
+
+data: {"event": "token", "delta": ".\n\n"}
+
+data: {"event": "token", "delta": "-"}
+
+data: {"event": "token", "delta": " Apply"}
+
+data: {"event": "token", "delta": " paired"}
+
+data: {"event": "token", "delta": " nick"}
+
+data: {"event": "token", "delta": "ase"}
+
+data: {"event": "token", "delta": " strategy"}
+
+data: {"event": "token", "delta": " ("}
+
+data: {"event": "token", "delta": "Cas"}
+
+data: {"event": "token", "delta": "9"}
+
+data: {"event": "token", "delta": "n"}
+
+data: {"event": "token", "delta": " D"}
+
+data: {"event": "token", "delta": "10"}
+
+data: {"event": "token", "delta": "A"}
+
+data: {"event": "token", "delta": ")"}
+
+data: {"event": "token", "delta": " that"}
+
+data: {"event": "token", "delta": " creates"}
+
+data: {"event": "token", "delta": " two"}
+
+data: {"event": "token", "delta": " adjacent"}
+
+data: {"event": "token", "delta": " single"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "strand"}
+
+data: {"event": "token", "delta": " n"}
+
+data: {"event": "token", "delta": "icks"}
+
+data: {"event": "token", "delta": " only"}
+
+data: {"event": "token", "delta": " when"}
+
+data: {"event": "token", "delta": " two"}
+
+data: {"event": "token", "delta": " guide"}
+
+data: {"event": "token", "delta": " RN"}
+
+data: {"event": "token", "delta": "As"}
+
+data: {"event": "token", "delta": " bind"}
+
+data: {"event": "token", "delta": " correctly"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " increasing"}
+
+data: {"event": "token", "delta": " specificity"}
+
+data: {"event": "token", "delta": " [["}
+
+data: {"event": "token", "delta": "c"}
+
+data: {"event": "token", "delta": ":"}
+
+data: {"event": "token", "delta": "0"}
+
+data: {"event": "token", "delta": "]]"}
+
+data: {"event": "token", "delta": ".\n\n"}
+
+data: {"event": "token", "delta": "-"}
+
+data: {"event": "token", "delta": " Employ"}
+
+data: {"event": "token", "delta": " prime"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "editing"}
+
+data: {"event": "token", "delta": " systems"}
+
+data: {"event": "token", "delta": " and"}
+
+data: {"event": "token", "delta": " deliver"}
+
+data: {"event": "token", "delta": " Cas"}
+
+data: {"event": "token", "delta": "9"}
+
+data: {"event": "token", "delta": " as"}
+
+data: {"event": "token", "delta": " rib"}
+
+data: {"event": "token", "delta": "on"}
+
+data: {"event": "token", "delta": "ucle"}
+
+data: {"event": "token", "delta": "oprote"}
+
+data: {"event": "token", "delta": "in"}
+
+data: {"event": "token", "delta": " ("}
+
+data: {"event": "token", "delta": "R"}
+
+data: {"event": "token", "delta": "NP"}
+
+data: {"event": "token", "delta": ")"}
+
+data: {"event": "token", "delta": " complexes"}
+
+data: {"event": "token", "delta": " for"}
+
+data: {"event": "token", "delta": " transient"}
+
+data: {"event": "token", "delta": " activity"}
+
+data: {"event": "token", "delta": ","}
+
+data: {"event": "token", "delta": " limiting"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " time"}
+
+data: {"event": "token", "delta": " the"}
+
+data: {"event": "token", "delta": " nuc"}
+
+data: {"event": "token", "delta": "lease"}
+
+data: {"event": "token", "delta": " is"}
+
+data: {"event": "token", "delta": " present"}
+
+data: {"event": "token", "delta": " and"}
+
+data: {"event": "token", "delta": " cur"}
+
+data: {"event": "token", "delta": "bing"}
+
+data: {"event": "token", "delta": " off"}
+
+data: {"event": "token", "delta": "‑"}
+
+data: {"event": "token", "delta": "target"}
+
+data: {"event": "token", "delta": " events"}
+
+data: {"event": "token", "delta": " [["}
+
+data: {"event": "token", "delta": "c"}
+
+data: {"event": "token", "delta": ":"}
+
+data: {"event": "token", "delta": "0"}
+
+data: {"event": "token", "delta": "]]."}
+
+data: {"event": "audit", "answer_final": "- High‑fidelity engineered Cas9 nucleases such as SpCas9‑HF1, eSpCas9, and HypaCas9 contain mutated contact residues that destabilize non‑target strand binding, reducing off‑target cleavage [[c:0]].\n\n- Paired nickase configurations using the Cas9n D10A mutant create adjacent single‑strand breaks on opposite DNA strands, requiring two guide RNAs and thereby increasing specificity [[c:0]].\n\n- Prime‑editing systems and delivery of Cas9 as ribonucleoprotein (RNP) complexes provide transient nuclease activity, limiting off‑target accumulation [[c:0]].", "claims": [{"claim_id": 0, "text": "High‑fidelity engineered Cas9 nucleases such as SpCas9‑HF1, eSpCas9, and HypaCas9 contain mutated contact residues that destabilize non‑target strand binding, reducing off‑target cleavage.", "citation_ids": [0], "evidence": "High-fidelity engineered Cas9 nucleases (such as SpCas9-HF1, eSpCas9, and HypaCas9) featuring mutated contact residues that destabilize non-target strand binding.", "note": "Fully supported: Verified by verbatim evidence quote and entity check.", "supported": true, "status": "supported", "coverage": 0.842, "start": 0, "end": 198}, {"claim_id": 1, "text": "Paired nickase configurations using the Cas9n D10A mutant create adjacent single‑strand breaks on opposite DNA strands, requiring two guide RNAs and thereby increasing specificity.", "citation_ids": [0], "evidence": "Paired nickase configurations (Cas9n D10A) creating adjacent single-strand breaks on opposing strands, requiring dual guide RNA recognition.", "note": "Audit flagged: insufficient quote coverage (56.2% < 60%).", "supported": false, "status": "partially_supported", "coverage": 0.562, "start": 200, "end": 390}, {"claim_id": 2, "text": "Prime‑editing systems and delivery of Cas9 as ribonucleoprotein (RNP) complexes provide transient nuclease activity, limiting off‑target accumulation.", "citation_ids": [0], "evidence": "Prime editing systems and transient delivery via ribonucleoprotein (RNP) complexes, restricting nuclease exposure duration to diminish off-target accumulation.", "note": "Fully supported: Verified by verbatim evidence quote and entity check.", "supported": true, "status": "supported", "coverage": 0.727, "start": 392, "end": 552}], "removed_claims": [], "conflicts": [], "retractions": [], "confidence": 0.7, "tier_agreement": null, "repaired": true, "sources": [{"source": "ARIA Molecular Biology Synthesis", "source_type": "pgvector", "tier": "RAG", "similarity": 0.8404, "is_retracted": false, "rank": null, "published": null, "cited": true}]}
+
+data: {"event": "done"}
+

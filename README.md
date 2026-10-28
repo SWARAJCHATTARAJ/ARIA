@@ -38,7 +38,7 @@ flowchart TD
     LIVE --> Synthesize
     end
     
-    Synthesize[Llama-3 Synthesis] --> Audit{Conflict Auditor}
+    Synthesize[Writer Synthesis (openai/gpt-oss-120b)] --> Audit{Claim Auditor (openai/gpt-oss-120b)}
     
     Audit -- Compare Mode ON --> Detect[Flag Disagreements]
     Audit -- Normal Mode --> Output[Final Answer + Citations]

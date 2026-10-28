@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 from pipeline.state import AgentState
 from pipeline.nodes import route_query, plan_retrieval, retrieve_cascade, synthesize_answer, audit_answer
 
@@ -22,6 +23,7 @@ def build_graph():
     workflow.add_edge("synthesize", "audit")
     workflow.add_edge("audit", END)
     
-    return workflow.compile()
+    memory = MemorySaver()
+    return workflow.compile(checkpointer=memory)
 
 app_graph = build_graph()

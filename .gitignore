@@ -1,20 +1,39 @@
-# Node
-node_modules/
-dist/
-dist-ssr/
-*.local
+# Environments & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.ppk
+*.key
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 venv/
-venv_backup/
-.env
+.venv/
+backend/venv/
+.fastembed_cache/
+.onnx_cache/
+.cache/
 
-# OS
+# Frontend / Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+.pnpm-store/
+
+# Temp, Logs, Scratch, Browsers & Generated Test PDFs
+scratch/
+edge_profile/
+*.log
+*.pdf
 .DS_Store
-
-# IDE
-.idea/
+Thumbs.db
 .vscode/
+.idea/
+
+# Internal Session History
+SESSION_MEMORY.md

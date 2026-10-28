@@ -1,0 +1,282 @@
+[
+  {
+    "id": 1,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "An autonomous system is a computational or physical entity capable of perceiving its environment, formulating goal-directed plans, and executing actions over extended operational horizons without continuous human intervention. Level 4 (High Automation): System sustains complete dynamic performance and automated fallback within defined ODD even if human fails to intervene.",
+    "claim": "An autonomous system can execute actions over extended operational horizons without continuous human intervention."
+  },
+  {
+    "id": 2,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Level 0 (No Automation): System provides warnings or momentary intervention; human controls all execution. Level 1 (Driver / Operator Assistance): Execution of either steering or acceleration/deceleration using environmental information.",
+    "claim": "In Level 0 autonomy, the system provides warnings or momentary intervention while the human controls all execution."
+  },
+  {
+    "id": 3,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Level 4 (High Automation): System sustains complete dynamic performance and automated fallback within defined ODD even if human fails to intervene. Level 5 (Full Automation): Unconditional automated performance across all environmental and operational conditions manageable by human operators.",
+    "claim": "Level 4 high automation sustains automated fallback within its defined ODD even if a human fails to intervene."
+  },
+  {
+    "id": 4,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Subsumption Architecture: Layered reactive behaviors without centralized world models (Brooks, 1986).",
+    "claim": "Brooks introduced the subsumption architecture featuring layered reactive behaviors without centralized world models."
+  },
+  {
+    "id": 5,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Taxonomy of Autonomy Levels (adapted from SAE J3016 and NIST ALFUS): Level 2 (Partial Automation): Simultaneous execution of multiple sub-tasks with human monitoring and immediate fallback readiness.",
+    "claim": "Level 2 partial automation requires human monitoring and immediate fallback readiness."
+  },
+  {
+    "id": 6,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Level 3 (Conditional Automation): System handles all aspects of dynamic performance within an Operational Design Domain (ODD); human intervenes upon request.",
+    "claim": "Under conditional automation (Level 3), the human driver intervenes upon request from the system."
+  },
+  {
+    "id": 7,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "In synchronous systems with unauthenticated messages, consensus is impossible unless more than two-thirds of nodes are non-faulty: n >= 3f + 1, where f denotes the maximum number of Byzantine failures (Lamport, Shostak, & Pease, 1982).",
+    "claim": "Byzantine consensus in unauthenticated synchronous systems requires at least 3f + 1 total nodes to tolerate f failures."
+  },
+  {
+    "id": 8,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "FLP Impossibility Result: Deterministic asynchronous consensus cannot guarantee liveness in the presence of even a single unannounced crash failure (Fischer, Lynch, & Paterson, 1985).",
+    "claim": "The FLP impossibility theorem proves that deterministic asynchronous consensus cannot guarantee liveness with even a single crash failure."
+  },
+  {
+    "id": 9,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Practical Byzantine Fault Tolerance (PBFT): Provides safety and liveness under partial synchrony using three-phase message exchanges (Pre-prepare, Prepare, Commit) with polynomial complexity O(n^2).",
+    "claim": "PBFT achieves safety and liveness under partial synchrony using Pre-prepare, Prepare, and Commit message phases."
+  },
+  {
+    "id": 10,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Application to Multi-Agent Reasoning Pipelines: Hypotheses proposed by individual agents require quorum verification (2f + 1 matching endorsements) prior to commitment into verified shared memory.",
+    "claim": "Multi-agent reasoning pipelines require 2f + 1 matching endorsements before committing hypotheses to verified memory."
+  },
+  {
+    "id": 11,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "High-fidelity engineered Cas9 nucleases (such as SpCas9-HF1, eSpCas9, and HypaCas9) featuring mutated contact residues that destabilize non-target strand binding.",
+    "claim": "Engineered Cas9 nucleases like SpCas9-HF1 feature mutated contact residues that destabilize non-target binding."
+  },
+  {
+    "id": 12,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Paired nickase configurations (Cas9n D10A) creating adjacent single-strand breaks on opposing strands, requiring dual guide RNA recognition.",
+    "claim": "Paired nickase configurations using Cas9n D10A create adjacent single-strand breaks on opposing strands."
+  },
+  {
+    "id": 13,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Prime editing systems and transient delivery via ribonucleoprotein (RNP) complexes, restricting nuclease exposure duration to diminish off-target accumulation.",
+    "claim": "Transient delivery of Cas9 via ribonucleoprotein complexes restricts nuclease exposure duration."
+  },
+  {
+    "id": 14,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Engineered SpCas9-HF1 achieves high genome-wide specificity by altering contact residues with the DNA phosphate backbone.",
+    "claim": "SpCas9-HF1 alters contact residues with the DNA phosphate backbone to improve target specificity."
+  },
+  {
+    "id": 15,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Cas9n D10A paired nickases require dual guide RNA recognition at offset genomic sites to generate a double-strand break.",
+    "claim": "Paired Cas9 nickases require dual guide RNA recognition at offset genomic sites."
+  },
+  {
+    "id": 16,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "The James Webb Space Telescope (JWST) confirmed the discovery of galaxy JADES-GS-z14-0 at redshift z = 14.32, corresponding to approximately 290 million years after the Big Bang.",
+    "claim": "JWST observed galaxy JADES-GS-z14-0 at redshift z = 14.32."
+  },
+  {
+    "id": 17,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Spectroscopic measurements with NIRSpec confirmed the Lyman break and high intrinsic luminosity of galaxy JADES-GS-z14-0.",
+    "claim": "NIRSpec spectroscopic measurements confirmed the Lyman break for JADES-GS-z14-0."
+  },
+  {
+    "id": 18,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "Observations of exoplanet LHS 1140 b revealed evidence of a nitrogen-dominated atmosphere and potential water ice mantle.",
+    "claim": "JWST observations of exoplanet LHS 1140 b showed evidence of a nitrogen-dominated atmosphere."
+  },
+  {
+    "id": 19,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "JWST Mid-Infrared Instrument (MIRI) resolved warm dust structures and rings within the debris disk of the Vega star system.",
+    "claim": "The MIRI instrument resolved warm dust structures within the debris disk around Vega."
+  },
+  {
+    "id": 20,
+    "type": "supported",
+    "ground_truth": true,
+    "passage": "JADES-GS-z14-0 existed approximately 290 million years post-Big Bang, exhibiting unexpected brightness and stellar mass.",
+    "claim": "JADES-GS-z14-0 existed roughly 290 million years after the Big Bang."
+  },
+  {
+    "id": 21,
+    "type": "unsupported_reversed_relation",
+    "ground_truth": false,
+    "passage": "Paired nickase configurations (Cas9n D10A) creating adjacent single-strand breaks on opposing strands, requiring dual guide RNA recognition.",
+    "claim": "Cas9n D10A creates double-strand breaks directly without requiring paired guide RNAs."
+  },
+  {
+    "id": 22,
+    "type": "unsupported_reversed_relation",
+    "ground_truth": false,
+    "passage": "Subsumption Architecture: Layered reactive behaviors without centralized world models (Brooks, 1986).",
+    "claim": "The subsumption architecture requires a centralized world model to coordinate layered reactive behaviors."
+  },
+  {
+    "id": 23,
+    "type": "unsupported_reversed_relation",
+    "ground_truth": false,
+    "passage": "Level 4 (High Automation): System sustains complete dynamic performance and automated fallback within defined ODD even if human fails to intervene.",
+    "claim": "Level 4 high automation requires continuous human intervention to execute automated fallback routines."
+  },
+  {
+    "id": 24,
+    "type": "unsupported_reversed_relation",
+    "ground_truth": false,
+    "passage": "High-fidelity engineered Cas9 nucleases (such as SpCas9-HF1, eSpCas9, and HypaCas9) featuring mutated contact residues that destabilize non-target strand binding.",
+    "claim": "SpCas9-HF1 stabilizes non-target strand binding to increase off-target cleavage efficiency."
+  },
+  {
+    "id": 25,
+    "type": "unsupported_reversed_relation",
+    "ground_truth": false,
+    "passage": "Deterministic asynchronous consensus cannot guarantee liveness in the presence of even a single unannounced crash failure (Fischer, Lynch, & Paterson, 1985).",
+    "claim": "The FLP impossibility theorem proves that asynchronous deterministic consensus guarantees liveness despite crash failures."
+  },
+  {
+    "id": 26,
+    "type": "unsupported_wrong_number",
+    "ground_truth": false,
+    "passage": "The James Webb Space Telescope (JWST) confirmed the discovery of galaxy JADES-GS-z14-0 at redshift z = 14.32, corresponding to approximately 290 million years after the Big Bang.",
+    "claim": "JWST confirmed the discovery of galaxy JADES-GS-z14-0 at redshift z = 7.15."
+  },
+  {
+    "id": 27,
+    "type": "unsupported_wrong_number",
+    "ground_truth": false,
+    "passage": "JADES-GS-z14-0 existed approximately 290 million years post-Big Bang, exhibiting unexpected brightness and stellar mass.",
+    "claim": "JADES-GS-z14-0 existed 950 million years after the Big Bang."
+  },
+  {
+    "id": 28,
+    "type": "unsupported_wrong_number",
+    "ground_truth": false,
+    "passage": "Taxonomy of Autonomy Levels (adapted from SAE J3016 and NIST ALFUS): Levels range from Level 0 to Level 5.",
+    "claim": "The SAE J3016 standard defines an autonomy taxonomy ranging across nine distinct operational levels from Level 1 to Level 9."
+  },
+  {
+    "id": 29,
+    "type": "unsupported_wrong_number",
+    "ground_truth": false,
+    "passage": "Consensus is impossible unless more than two-thirds of nodes are non-faulty: n >= 3f + 1, where f denotes the maximum number of Byzantine failures.",
+    "claim": "Byzantine fault tolerance requires a supermajority of at least n >= 7f + 3 non-faulty nodes."
+  },
+  {
+    "id": 30,
+    "type": "unsupported_wrong_number",
+    "ground_truth": false,
+    "passage": "Practical Byzantine Fault Tolerance (PBFT) provides polynomial communication complexity O(n^2).",
+    "claim": "Practical Byzantine Fault Tolerance scales with exponential message complexity O(2^n)."
+  },
+  {
+    "id": 31,
+    "type": "unsupported_unmentioned_mechanism",
+    "ground_truth": false,
+    "passage": "Off-target cleavage during CRISPR-Cas9 genome editing presents substantial challenges for therapeutic translation. Key mitigation strategies include high-fidelity engineered nucleases and paired nickases.",
+    "claim": "CRISPR off-target cleavage is mitigated by incorporating magnetic nanoparticle resonance to guide Cas9 cleavage."
+  },
+  {
+    "id": 32,
+    "type": "unsupported_unmentioned_mechanism",
+    "ground_truth": false,
+    "passage": "High-fidelity engineered Cas9 nucleases (such as SpCas9-HF1, eSpCas9, and HypaCas9) featuring mutated contact residues that destabilize non-target strand binding.",
+    "claim": "SpCas9-HF1 employs zinc-finger fusion domains to enforce strand proofreading."
+  },
+  {
+    "id": 33,
+    "type": "unsupported_unmentioned_mechanism",
+    "ground_truth": false,
+    "passage": "Observations of exoplanet LHS 1140 b revealed evidence of a nitrogen-dominated atmosphere and potential water ice mantle.",
+    "claim": "LHS 1140 b possesses active technological radio beacons detected by the MIRI spectrometer."
+  },
+  {
+    "id": 34,
+    "type": "unsupported_unmentioned_mechanism",
+    "ground_truth": false,
+    "passage": "An autonomous system is a computational or physical entity capable of perceiving its environment, formulating goal-directed plans, and executing actions over extended operational horizons.",
+    "claim": "Autonomous artificial intelligence agents maintain goal coherence through quantum entanglement synchronization."
+  },
+  {
+    "id": 35,
+    "type": "unsupported_unmentioned_mechanism",
+    "ground_truth": false,
+    "passage": "PBFT uses three-phase message exchanges (Pre-prepare, Prepare, Commit) under partial synchrony.",
+    "claim": "PBFT secures agreement across nodes using proof-of-work cryptographic hashing puzzles."
+  },
+  {
+    "id": 36,
+    "type": "unsupported_unrelated_claim",
+    "ground_truth": false,
+    "passage": "The James Webb Space Telescope (JWST) confirmed the discovery of galaxy JADES-GS-z14-0 at redshift z = 14.32.",
+    "claim": "High-temperature copper-oxide superconductors demonstrate zero electrical resistance below 135 Kelvin."
+  },
+  {
+    "id": 37,
+    "type": "unsupported_unrelated_claim",
+    "ground_truth": false,
+    "passage": "Paired nickase configurations (Cas9n D10A) creating adjacent single-strand breaks on opposing strands, requiring dual guide RNA recognition.",
+    "claim": "Ancient Roman marine concrete gains compressive strength over millennia through aluminum tobermorite crystallization."
+  },
+  {
+    "id": 38,
+    "type": "unsupported_unrelated_claim",
+    "ground_truth": false,
+    "passage": "Consensus in decentralized multi-agent systems requires establishing agreement on shared state variables despite network partitions.",
+    "claim": "Photosynthetic light-harvesting complexes utilize exciton coherence to transfer excitation energy to reaction centers."
+  },
+  {
+    "id": 39,
+    "type": "unsupported_unrelated_claim",
+    "ground_truth": false,
+    "passage": "Subsumption Architecture: Layered reactive behaviors without centralized world models (Brooks, 1986).",
+    "claim": "The Navier-Stokes equations describe the motion of viscous fluid substances through partial differential equations."
+  },
+  {
+    "id": 40,
+    "type": "unsupported_unrelated_claim",
+    "ground_truth": false,
+    "passage": "JWST Mid-Infrared Instrument (MIRI) resolved warm dust structures and rings within the debris disk of the Vega star system.",
+    "claim": "Mitochondrial oxidative phosphorylation generates adenosine triphosphate across the inner cristae membrane."
+  }
+]
