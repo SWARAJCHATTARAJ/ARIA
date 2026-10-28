@@ -54,11 +54,12 @@ async def security_and_limits_middleware(request: Request, call_next):
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
 
-    # Check request body size (cap at 8 KB)
+    # Check request body size (cap at 8 KB, or 1 MB for PDF export)
+    max_bytes = 1024 * 1024 if request.url.path == "/api/export/pdf" else MAX_BODY_SIZE_BYTES
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_BODY_SIZE_BYTES:
+    if content_length and int(content_length) > max_bytes:
         return Response(
-            content=f"Request body exceeds {MAX_BODY_SIZE_BYTES // 1024} KB limit.",
+            content=f"Request body exceeds {max_bytes // 1024} KB limit.",
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             media_type="text/plain",
             headers={"X-Content-Type-Options": "nosniff", "X-Request-ID": request_id}

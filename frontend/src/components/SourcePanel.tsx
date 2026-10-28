@@ -136,8 +136,9 @@ export default function SourcePanel({
   }, [selectedCitationId]);
 
   const handleCopyBibtex = (cit: Citation) => {
-    const key = (cit.authors?.split(' ')[0] || 'source').replace(/[^a-zA-Z]/g, '') + (cit.year || '2026');
-    const bib = `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${cit.authors || 'Unknown'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
+    const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
+    const key = (authorsStr.split(' ')[0] || 'source').replace(/[^a-zA-Z]/g, '') + (cit.year || '2026');
+    const bib = `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${authorsStr || 'Unknown'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
     navigator.clipboard.writeText(bib);
     setCopiedId(cit.id);
     setTimeout(() => setCopiedId(null), 2000);

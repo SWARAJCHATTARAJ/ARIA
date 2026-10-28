@@ -59,7 +59,7 @@ export interface Citation {
   path?: string | null;
   url?: string | null;
   source?: string | null;
-  authors?: string | null;
+  authors?: string | string[] | null;
   year?: string | number | null;
   venue?: string | null;
   snippet?: string | null;
