@@ -80,7 +80,7 @@ export default function App() {
         {activeTab !== 'query' && activeTab !== 'home' && (
           <div className="flex-1 flex items-center justify-center text-ink-muted flex-col gap-4 p-8 text-center">
             <h2 className="text-xl font-mono uppercase tracking-widest">{activeTab} View</h2>
-            <p className="text-sm font-sans">Under development.</p>
+            <p className="text-sm font-sans">This is coming soon.</p>
           </div>
         )}
       </main>
