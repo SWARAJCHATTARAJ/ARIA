@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, AlertTriangle, Maximize2, Minimize2, Check, Sparkles, StopCircle, Network, FileText, CheckCircle2, Menu, Bookmark, BookmarkCheck } from 'lucide-react';
+import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, AlertTriangle, Maximize2, Minimize2, Check, Sparkles, StopCircle, Network, FileText, CheckCircle2, Menu, Bookmark, BookmarkCheck, ChevronDown, ChevronUp, KeyRound, Eraser } from 'lucide-react';
 import ConfidenceDial from './ConfidenceDial';
 import MarkdownRenderer, { getTierGlyph, getTierColorClass } from './MarkdownRenderer';
 import CitationGraph from './CitationGraph';
@@ -8,7 +8,8 @@ import PipelineSpine from './PipelineSpine';
 import { streamQuery } from '../utils/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim } from '../types';
 import { API_BASE_URL } from '../config';
-import { addHistoryEntry, addToCollection, isInCollection, getCompareDefault } from '../utils/storage';
+import { addHistoryEntry, addToCollection, isInCollection, getCompareDefault, getSettings, saveSettings, getByokKey, getByokProvider, setByokKey, clearByok, getCustomContext } from '../utils/storage';
+import { ResearchMode, RESEARCH_MODE_OPTIONS, DISCIPLINE_OPTIONS } from '../types';
 
 const EXAMPLE_QUERIES = [
   {
@@ -58,6 +59,8 @@ interface ThreadViewProps {
   pendingQuery?: string | null;
   /** parent clears the pending query after consumption */
   onPendingQueryConsumed?: () => void;
+  /** parent toggles the sources drawer (used for auto-expansion on audit completion) */
+  onSourcesExpand?: () => void;
 }
 
 export default function ThreadView({
@@ -72,6 +75,7 @@ export default function ThreadView({
   onToggleSidebar,
   pendingQuery,
   onPendingQueryConsumed,
+  onSourcesExpand,
 }: ThreadViewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -84,6 +88,18 @@ export default function ThreadView({
   const [isExportingPdf, setIsExportingPdf] = useState<Record<string, boolean>>({});
   const [bookmarkedQueries, setBookmarkedQueries] = useState<Record<string, boolean>>({});
   const [elapsedMs, setElapsedMs] = useState(0);
+
+  // v3 Part 2: flexible research configuration from the Control Center / dock
+  const initialSettings = getSettings();
+  const [researchMode, setResearchMode] = useState<ResearchMode>(initialSettings.researchMode);
+  const [discipline, setDiscipline] = useState<string>(initialSettings.discipline || 'auto');
+  const [customContext, setCustomContext] = useState<string>(getCustomContext);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [byokProvider, setByokProvider] = useState<string>(getByokProvider());
+  const [byokKey, setByokKeyState] = useState<string>(getByokKey());
+  const [showByokKey, setShowByokKey] = useState(false);
+  const customContextRef = useRef(customContext);
+  customContextRef.current = customContext;
 
   const handleDownloadPdf = async (msg: Message) => {
     try {
@@ -166,6 +182,15 @@ export default function ThreadView({
       onQueryStateChange(messages.length > 0);
     }
   }, [messages.length, onQueryStateChange]);
+
+  // v3 Part 3.3: auto-expand sources drawer when audit completes
+  useEffect(() => {
+    const lastAria = [...messages].reverse().find((m) => m.role === 'aria');
+    if (lastAria && !lastAria.isStreaming && lastAria.telemetry?.audit) {
+      if (onSourcesExpand) onSourcesExpand();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length, isLoading]);
 
   // Clean up in-flight requests on unmount
   useEffect(() => {
@@ -284,6 +309,12 @@ export default function ThreadView({
     if (onUpdateActiveCitations) onUpdateActiveCitations([]);
     if (onUpdateActiveTelemetry) onUpdateActiveTelemetry(currentTelemetry);
 
+    // v3 Part 2.3: BYOK headers passed through to the backend
+    const byokActive = Boolean(byokKey && byokProvider);
+    const customHeaders: Record<string, string> = {
+      ...(byokActive ? { 'X-Custom-API-Key': byokKey, 'X-Custom-Provider': byokProvider } : {}),
+    };
+
     // Replay recorded example card if mockKey provided; live queries typed by users pass mockKey = undefined
     const effectiveMockKey = mockKey;
 
@@ -292,6 +323,10 @@ export default function ThreadView({
       compareMode: isCompareMode,
       signal: abortController.signal,
       mockFixtureKey: effectiveMockKey,
+      researchMode,
+      discipline,
+      customContext: customContextRef.current,
+      customHeaders,
       onMockState: (isMock) => {
         if (onMockStateChange) onMockStateChange(isMock);
       },
@@ -889,7 +924,7 @@ export default function ThreadView({
                 )}
 
                 {/* Markdown Rendered Content with split-buffered citations, GFM tables & claim audit pass */}
-                <div className="text-[15px] text-gray-200 leading-[1.65] font-sans max-w-[68ch]">
+                <div className={`thread-content font-sans text-gray-200 max-w-[68ch] density-${initialSettings.fontDensity} leading-[1.65]`}>
                   {msg.recordedDate && (
                     <div className="mb-3 px-2.5 py-1 text-[11px] font-mono bg-tier-okf/10 border border-tier-okf/40 text-tier-okf flex items-center gap-1.5">
                       <span>Recorded answer, {msg.recordedDate}, no live query</span>
@@ -1042,6 +1077,148 @@ export default function ThreadView({
           </div>
         ))}
         <div ref={messagesEndRef} />
+      </div>
+
+      {/* v3 Part 2: Flexible Research Controls dock (mode, discipline, custom context / BYOK) */}
+      <div className="px-4 md:px-8 pt-3 pb-2 border-t border-ink-surface shrink-0 bg-ink-base/90 z-10">
+        {/* Research Mode Selector */}
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          <span className="font-mono text-[9px] uppercase tracking-wider text-ink-muted mr-1">Research Mode</span>
+          {RESEARCH_MODE_OPTIONS.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setResearchMode(m.id)}
+              title={m.hint}
+              className={`font-mono text-[10px] px-2 py-1 border transition-all hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 ${
+                researchMode === m.id
+                  ? 'bg-tier-okf/15 border-tier-okf/50 text-tier-okf'
+                  : 'bg-ink-base border-ink-surface text-ink-muted hover:text-gray-200'
+              }`}
+            >
+              <span className="mr-1">{m.glyph}</span>
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Multi-Discipline Branch Filter */}
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          <span className="font-mono text-[9px] uppercase tracking-wider text-ink-muted mr-1">Discipline Branch</span>
+          {DISCIPLINE_OPTIONS.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => setDiscipline(d.id)}
+              className={`font-mono text-[10px] px-2 py-1 border transition-all hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 ${
+                discipline === d.id
+                  ? 'bg-tier-live/15 border-tier-live/50 text-tier-live'
+                  : 'bg-ink-base border-ink-surface text-ink-muted hover:text-gray-200'
+              }`}
+            >
+              <span className="mr-1">{d.glyph}</span>
+              {d.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Advanced Research Parameters: custom context + BYOK key injector */}
+        <div className="mb-2">
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-2 py-1.5 bg-ink-base border border-ink-surface text-ink-muted hover:text-gray-200 hover:border-sky-500/50 transition-all hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 font-mono text-[10px] uppercase tracking-wider"
+          >
+            <span className="flex items-center gap-1.5">
+              <ChevronDown size={12} className={advancedOpen ? 'rotate-180 transition-transform' : 'transition-transform'} /> + Inject Custom Context / Notes / Links / API Key
+            </span>
+            <span className="text-[9px] text-ink-muted">{advancedOpen ? 'COLLAPSE' : 'EXPAND'}</span>
+          </button>
+
+          {advancedOpen && (
+            <div className="mt-2 p-3 bg-ink-surface/40 border border-ink-surface space-y-3 animate-view-in">
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-wider text-gray-200 mb-1.5">
+                  Custom Research Context / Notes / Reference Links
+                </div>
+                <textarea
+                  value={customContext}
+                  onChange={(e) => setCustomContext(e.target.value)}
+                  placeholder="Paste lecture notes, paper excerpts, raw data, or specific URLs. Injected as authoritative user context ahead of retrieved literature."
+                  className="w-full h-24 bg-ink-base border border-ink-surface p-2 text-[11px] font-sans text-gray-200 placeholder-ink-muted focus:outline-none focus:border-tier-okf/50 resize-none"
+                />
+                <div className="mt-1.5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setCustomContext('')}
+                    className="text-[9px] font-mono px-2 py-1 border border-ink-surface text-ink-muted hover:text-warning hover:border-warning/50 transition-colors"
+                  >
+                    <span className="flex items-center gap-1"><Eraser size={10} /> Clear context</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomContext(customContext)}
+                    disabled={!customContext.trim()}
+                    className="text-[9px] font-mono px-2 py-1 ml-1 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf hover:bg-tier-okf/25 transition-colors disabled:opacity-40"
+                  >
+                    <span className="flex items-center gap-1"><ChevronUp size={10} /> Set Context</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-ink-surface/70">
+                <div className="font-mono text-[10px] uppercase tracking-wider text-gray-200 mb-1.5 flex items-center gap-1.5">
+                  <KeyRound size={11} className="text-tier-okf" /> Custom BYOK API Key (Groq / OpenAI / Anthropic / Gemini)
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={byokProvider}
+                    onChange={(e) => setByokProvider(e.target.value)}
+                    className="bg-ink-base border border-ink-surface text-[11px] font-mono text-gray-200 px-2 py-1 outline-none focus:border-tier-okf/50"
+                  >
+                    <option value="">Default Engine</option>
+                    <option value="groq">Groq</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="gemini">Gemini</option>
+                  </select>
+                  <div className="flex-1 relative">
+                    <input
+                      type={showByokKey ? 'text' : 'password'}
+                      value={byokKey}
+                      onChange={(e) => setByokKeyState(e.target.value)}
+                      placeholder="sk-..."
+                      className="w-full bg-ink-base border border-ink-surface text-[11px] font-mono text-gray-200 px-2 py-1.5 pr-8 outline-none focus:border-tier-okf/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowByokKey((v) => !v)}
+                      className="absolute right-1.5 top-1.5 text-ink-muted hover:text-white"
+                    >
+                      {showByokKey ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { if (byokProvider && byokKey) setByokKey(byokProvider, byokKey); }}                    className="text-[10px] font-mono px-2.5 py-1 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf hover:bg-tier-okf/25 transition-colors disabled:opacity-40"
+                    disabled={!byokProvider || !byokKey}
+                  >
+                    <span className="flex items-center gap-1"><KeyRound size={10} /> Save Key</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { clearByok(); setByokProvider(''); setByokKeyState(''); }}
+                    className="text-[10px] font-mono px-2.5 py-1 bg-ink-base border border-ink-surface text-ink-muted hover:text-warning hover:border-warning/50 transition-colors"
+                  >
+                    <span className="flex items-center gap-1"><Eraser size={10} /> Clear Key</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Input Area */}

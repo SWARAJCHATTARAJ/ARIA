@@ -284,16 +284,17 @@ export default function SourcePanel({
                 </div>
 
                 <div className="space-y-2">
-                  {normalizedClaims.map((claim) => (
+                  {normalizedClaims.map((claim, idx) => (
                     <div
                       key={claim.claim_id}
-                      className={`p-2.5 bg-ink-base border text-xs font-sans rounded-none transition-colors ${
+                      className={`p-2.5 bg-ink-base border text-xs font-sans rounded-none transition-colors animate-stagger ${
                         claim.status === 'unsupported'
                           ? 'border-warning/50 bg-warning/5'
                           : claim.status === 'partially_supported' || claim.status === 'audit_incomplete'
                           ? 'border-amber-500/40 bg-amber-500/5'
                           : 'border-ink-surface/70'
                       }`}
+                      style={{ animationDelay: `${Math.min(idx * 70, 350)}ms` }}
                     >
                       <div className="flex items-start justify-between gap-2 mb-1.5">
                         <span className="text-[11px] text-gray-200 leading-snug">
@@ -360,7 +361,7 @@ export default function SourcePanel({
                   Retrieving verified sources...
                 </div>
               ) : (
-                citations.map((cit) => {
+                citations.map((cit, idx) => {
                   const isSelected = selectedCitationId === cit.id;
                   const glyph = getTierGlyph(cit.tier);
                   const colorClass = getTierColorClass(cit.tier);
@@ -378,7 +379,8 @@ export default function SourcePanel({
                       id={`citation-card-${cit.id}`}
                       ref={(el) => (cardRefs.current[cit.id] = el)}
                       onClick={() => onSelectCitation && onSelectCitation(cit.id)}
-                      className={`p-3 border rounded-none relative transition-all cursor-pointer clipped-source-card ${cardBorder}`}
+                      className={`p-3 border rounded-none relative transition-all cursor-pointer clipped-source-card animate-stagger ${cardBorder}`}
+                      style={{ animationDelay: `${Math.min(idx * 70, 350)}ms` }}
                     >
                       {/* 1. Mono Metadata Line with 13px mono metadata type scale */}
                       <div className="font-mono text-[13px] text-ink-muted flex items-center justify-between mb-1.5">

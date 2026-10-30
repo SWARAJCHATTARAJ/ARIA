@@ -270,3 +270,119 @@
   animation: hudScan calc(6s * var(--motion-scale, 1)) ease-in-out infinite;
   pointer-events: none;
 }
+
+/* ======================================================================
+   KINETIC ENTRANCE / TRANSITION (v3 Part 4.2, 4.3)
+   ====================================================================== */
+
+/* Staggered entrance: fade + soft Y rise (hero typography, cards, hubs) */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-rise-in {
+  animation: riseIn calc(0.55s * var(--motion-scale, 1)) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* View transition: fade + subtle Y slide on workspace surfaces */
+@keyframes viewIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-view-in {
+  animation: viewIn calc(0.35s * var(--motion-scale, 1)) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Floating ambient spotlight gradients for hero */
+@keyframes spotlightDrift {
+  0%, 100% { transform: translate3d(-12%, -8%, 0) scale(1); opacity: 0.55; }
+  50% { transform: translate3d(10%, 12%, 0) scale(1.08); opacity: 0.7; }
+}
+
+.animate-spotlight {
+  animation: spotlightDrift calc(9s * var(--motion-scale, 1)) ease-in-out infinite;
+}
+
+/* Orbital ring slow spin for hero */
+@keyframes orbitSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-orbit-spin {
+  animation: orbitSpin calc(14s * var(--motion-scale, 1)) linear infinite;
+}
+
+/* Data packets flowing along an SVG path */
+@keyframes packetFlow {
+  0% { offset-path: path('M 0 0 L 100 40 L 200 20'); offset-distance: 0%; }
+  100% { offset-path: path('M 0 0 L 100 40 L 200 20'); offset-distance: 100%; }
+}
+@supports (offset-path: path('M 0 0 L 10 10')) {
+  .animate-packet-flow {
+    animation: packetFlow calc(2.2s * var(--motion-scale, 1)) linear infinite;
+  }
+}
+
+/* Stagger helper: children with increasing delay */
+@keyframes staggerIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-stagger {
+  animation: staggerIn calc(0.5s * var(--motion-scale, 1)) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* ======================================================================
+   THEME PRESETS (v3 Part 3.2): data-theme overrides on top of Cyber Obsidian
+   ====================================================================== */
+html[data-theme='cyber_obsidian'] {
+  --aria-hud-accent: #5B8DB8;
+  --aria-hud-glow: rgba(91, 141, 184, 0.14);
+  --aria-hud-bg: #0A0E14;
+  --aria-hud-grid: rgba(91, 141, 184, 0.055);
+  --aria-hud-grid-major: rgba(91, 141, 184, 0.09);
+}
+
+html[data-theme='quantum_indigo'] {
+  --aria-hud-accent: #7C6BD9;
+  --aria-hud-glow: rgba(124, 107, 217, 0.16);
+  --aria-hud-bg: #0A0A18;
+  --aria-hud-grid: rgba(124, 107, 217, 0.06);
+  --aria-hud-grid-major: rgba(124, 107, 217, 0.10);
+}
+
+html[data-theme='emerald_matrix'] {
+  --aria-hud-accent: #34D399;
+  --aria-hud-glow: rgba(52, 211, 153, 0.13);
+  --aria-hud-bg: #060F0B;
+  --aria-hud-grid: rgba(52, 211, 153, 0.055);
+  --aria-hud-grid-major: rgba(52, 211, 153, 0.09);
+}
+
+html[data-theme='solar_amber'] {
+  --aria-hud-accent: #D9A441;
+  --aria-hud-glow: rgba(217, 164, 65, 0.14);
+  --aria-hud-bg: #0E0A05;
+  --aria-hud-grid: rgba(217, 164, 65, 0.05);
+  --aria-hud-grid-major: rgba(217, 164, 65, 0.09);
+}
+
+html[data-theme='high_contrast'] {
+  --aria-hud-accent: #5B8DB8;
+  --aria-hud-glow: rgba(91, 141, 184, 0.22);
+  --aria-hud-bg: #05080C;
+  --aria-hud-grid: rgba(91, 141, 184, 0.14);
+  --aria-hud-grid-major: rgba(91, 141, 184, 0.22);
+}
+
+/* Theme-aware HUD surface tokens (re-declare on the html element) */
+html[data-theme] body {
+  background-color: var(--aria-hud-bg);
+}
+
+/* Reading density overrides for the thread content container */
+.thread-content.density-compact { font-size: 13px; line-height: 1.55; }
+.thread-content.density-standard { font-size: 15px; line-height: 1.65; }
+.thread-content.density-comfortable { font-size: 16.5px; line-height: 1.8; }

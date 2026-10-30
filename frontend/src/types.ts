@@ -71,6 +71,79 @@ export interface CollectionEntry {
   timestamp: number;
 }
 
+export type ResearchMode = 'fast_brief' | 'deep_academic' | 'critique' | 'quantitative' | 'first_principles';
+
+export const RESEARCH_MODE_OPTIONS: Array<{ id: ResearchMode; label: string; glyph: string; hint: string }> = [
+  { id: 'fast_brief', label: 'Fast Executive Brief', glyph: '⚡', hint: 'Concise takeaways & rapid verification, lowest latency.' },
+  { id: 'deep_academic', label: 'Deep Academic Paper', glyph: '🔬', hint: 'Comprehensive multi-section literature review (default).' },
+  { id: 'critique', label: 'Literature Debate & Critique', glyph: '⚖️', hint: 'Contrasting methodologies & contradiction evaluation.' },
+  { id: 'quantitative', label: 'Quantitative & Data Extraction', glyph: '🧮', hint: 'Equations, statistical benchmarks & parameter tables.' },
+  { id: 'first_principles', label: 'First-Principles Explainer', glyph: '🌱', hint: 'Axioms-first breakdown up to graduate level.' },
+];
+
+export interface DisciplineOption {
+  id: string;
+  label: string;
+  glyph: string;
+}
+
+export const DISCIPLINE_OPTIONS: DisciplineOption[] = [
+  { id: 'auto', label: 'All Disciplines (Auto)', glyph: '🌐' },
+  { id: 'science', label: 'General Science & Tech', glyph: '🔬' },
+  { id: 'cs', label: 'Computer Science & AI', glyph: '🤖' },
+  { id: 'physics', label: 'Physics & Engineering', glyph: '⚛️' },
+  { id: 'chemistry', label: 'Chemistry & Materials', glyph: '⚗️' },
+  { id: 'life', label: 'Botany & Life Sciences', glyph: '🧬' },
+  { id: 'medicine', label: 'Medicine & Clinical', glyph: '🩺' },
+  { id: 'humanities', label: 'Arts & Humanities', glyph: '📜' },
+  { id: 'music', label: 'Music & Acoustics', glyph: '🎵' },
+  { id: 'law', label: 'Law & Public Policy', glyph: '⚖️' },
+  { id: 'economics', label: 'Economics & Finance', glyph: '📈' },
+];
+
+export type ThemePreset = 'cyber_obsidian' | 'quantum_indigo' | 'emerald_matrix' | 'solar_amber' | 'high_contrast';
+export type AnimationIntensity = 'full_kinetic' | 'subtle_smooth' | 'reduced_motion';
+export type CitationFormat = 'ieee' | 'apa' | 'nature';
+export type FontDensity = 'compact' | 'standard' | 'comfortable';
+
+export interface AriaSettings {
+  researchMode: ResearchMode;
+  discipline: string;
+  sourceCount: number;
+  retrievalStrictness: 'strict_peer' | 'include_web';
+  compareDefault: boolean;
+  themePreset: ThemePreset;
+  animationIntensity: AnimationIntensity;
+  gridOverlay: boolean;
+  fontDensity: FontDensity;
+  citationFormat: CitationFormat;
+  auditThreshold: number;
+  autoExpandAudit: boolean;
+  pdfFullLedger: boolean;
+  clickableUrls: boolean;
+  byokProvider: string;
+  byokApiKey: string;
+}
+
+export const DEFAULT_SETTINGS: AriaSettings = {
+  researchMode: 'deep_academic',
+  discipline: 'auto',
+  sourceCount: 8,
+  retrievalStrictness: 'strict_peer',
+  compareDefault: false,
+  themePreset: 'cyber_obsidian',
+  animationIntensity: 'full_kinetic',
+  gridOverlay: true,
+  fontDensity: 'standard',
+  citationFormat: 'ieee',
+  auditThreshold: 0.5,
+  autoExpandAudit: true,
+  pdfFullLedger: true,
+  clickableUrls: true,
+  byokProvider: '',
+  byokApiKey: '',
+};
+
 export interface RouteTelemetry {
   dristi_available?: boolean;
   dristi_engine?: 'V1' | 'V2' | string;

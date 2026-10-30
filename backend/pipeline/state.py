@@ -11,7 +11,12 @@ class AgentState(TypedDict):
     thread_id: Optional[str]
     user_id: Optional[str]
     compare_mode: bool
-    
+
+    # Research customization (v3)
+    research_mode: Optional[str]      # fast_brief | deep_academic | critique | quantitative | first_principles
+    discipline: Optional[str]         # discipline key: auto | science | cs | ...
+    custom_context: Optional[str]     # user-pasted notes / transcripts / links
+
     # History
     chat_history: Annotated[List[Dict[str, Any]], append_to_list]
     

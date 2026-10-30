@@ -1,11 +1,12 @@
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState, Suspense, lazy, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ThreadView from './components/ThreadView';
 import SourcePanel from './components/SourcePanel';
 import Landing from './components/Landing';
 import PipelineSpine from './components/PipelineSpine';
 import { HistoryView, CollectionsView, OkfSpaceView, SettingsView } from './components/HubViews';
-import { Citation, MessageTelemetry } from './types';
+import { Citation, MessageTelemetry, AriaSettings, ThemePreset, AnimationIntensity } from './types';
+import { getSettings, saveSettings } from './utils/storage';
 
 const MarkdownTestHarness = lazy(() => import('./components/MarkdownTestHarness'));
 
@@ -34,6 +35,43 @@ function AppShell() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   // Query handed over from History -> New question
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
+
+  // v3 Part 3: Research Control Center settings (theme, motion, density)
+  const [settings, setSettings] = useState<AriaSettings>(() => getSettings());
+
+  const applyAppearance = (s: AriaSettings) => {
+    const themeMap: Record<string, ThemePreset> = {
+      cyber_obsidian: 'cyber_obsidian',
+      quantum_indigo: 'quantum_indigo',
+      emerald_matrix: 'emerald_matrix',
+      solar_amber: 'solar_amber',
+      high_contrast: 'high_contrast',
+    };
+    const root = document.documentElement;
+    root.dataset.theme = themeMap[s.themePreset] || 'cyber_obsidian';
+    const motionMap: Record<string, number> = {
+      full_kinetic: 1,
+      subtle_smooth: 0.55,
+      reduced_motion: 0,
+    };
+    root.style.setProperty('--motion-scale', String(motionMap[s.animationIntensity] ?? 1));
+    document.body.classList.remove('density-compact', 'density-standard', 'density-comfortable');
+    document.body.classList.add(`density-${s.fontDensity || 'standard'}`);
+  };
+
+  useEffect(() => {
+    applyAppearance(settings);
+  }, [settings]);
+
+  const handleUpdateSettings = (patch: Partial<AriaSettings>) => {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    saveSettings(next);
+  };
+
+  const handleSourcesExpand = () => {
+    setSourcePanelOpen(true);
+  };
 
   // Active query state shared with SourcePanel
   const [activeCitations, setActiveCitations] = useState<Citation[]>([]);
@@ -90,8 +128,8 @@ function AppShell() {
         </aside>
       )}
 
-      {/* Center Thread Workspace */}
-      <main className="flex-1 flex flex-col h-full md:border-r border-ink-surface bg-ink-base transition-all w-full overflow-hidden">
+      {/* Center Thread Workspace: keyed per-tab for view transitions */}
+      <main key={activeTab} className="flex-1 flex flex-col h-full md:border-r border-ink-surface bg-ink-base transition-all w-full overflow-hidden animate-view-in">
         {activeTab === 'home' && <Landing onStart={() => handleTabChange('query')} />}
         {activeTab === 'query' && (
           <ThreadView
@@ -108,12 +146,15 @@ function AppShell() {
             onToggleSidebar={() => setIsSidebarOpen((v) => !v)}
             pendingQuery={pendingQuery}
             onPendingQueryConsumed={() => setPendingQuery(null)}
+            onSourcesExpand={handleSourcesExpand}
           />
         )}
         {activeTab === 'history' && <HistoryView onOpenQuery={handleOpenQuery} />}
         {activeTab === 'collections' && <CollectionsView />}
         {activeTab === 'okf' && <OkfSpaceView />}
-        {activeTab === 'settings' && <SettingsView />}
+        {activeTab === 'settings' && (
+          <SettingsView settings={settings} onUpdateSettings={handleUpdateSettings} />
+        )}
       </main>
 
       {/* Right Source Panel: hidden until a query starts; slide-over on mobile/tablet, column on lg+ */}

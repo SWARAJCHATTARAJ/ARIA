@@ -5,12 +5,8 @@ import {
   AlertTriangle, ExternalLink, Gauge, Github,
 } from 'lucide-react';
 import { API_BASE_URL } from '../config';
-import { OkfGraphData } from '../types';
-import {
-  getHistory, deleteHistoryEntry, clearHistory,
-  getCollections, removeFromCollection,
-  getCompareDefault, setCompareDefault,
-} from '../utils/storage';
+import { OkfGraphData, RESEARCH_MODE_OPTIONS, DISCIPLINE_OPTIONS, AriaSettings, ThemePreset, AnimationIntensity, CitationFormat } from '../types';
+import { getHistory, deleteHistoryEntry, clearHistory, getCollections, removeFromCollection, getCompareDefault, setCompareDefault, getSettings, saveSettings, exportResearchHistory } from '../utils/storage';
 
 function HubShell({ icon, title, subtitle, toolbar, children }: {
   icon: React.ReactNode;
@@ -385,7 +381,7 @@ export function OkfSpaceView() {
 }
 
 // =====================================================================
-// SETTINGS: engine configuration & live /health latency tester
+// SETTINGS: 4-tab Research Control Center (v3 Part 3)
 // =====================================================================
 interface HealthSample {
   latencyMs: number;
@@ -393,10 +389,32 @@ interface HealthSample {
   version?: string;
 }
 
-export function SettingsView() {
-  const [compareDefault, setCompareDefaultState] = useState(() => getCompareDefault());
+interface SettingsViewProps {
+  settings?: AriaSettings;
+  onUpdateSettings?: (patch: Partial<AriaSettings>) => void;
+}
+
+const TABS = [
+  { id: 'engine', label: 'Engine & Routing' },
+  { id: 'appearance', label: 'Appearance & Motion' },
+  { id: 'verification', label: 'Verification & Export' },
+  { id: 'api', label: 'API Keys & Diagnostics' },
+] as const;
+
+type SettingsTabId = (typeof TABS)[number]['id'];
+
+export function SettingsView({ settings: settingsProp, onUpdateSettings }: SettingsViewProps = {}) {
+  const [local, setLocal] = useState<AriaSettings>(() => settingsProp || getSettings());
+  const settings = settingsProp || local;
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('engine');
   const [samples, setSamples] = useState<HealthSample[]>([]);
   const [pinging, setPinging] = useState(false);
+
+  const update = (patch: Partial<AriaSettings>) => {
+    const next = { ...settings, ...patch };
+    setLocal(next);
+    if (onUpdateSettings) onUpdateSettings(next);
+  };
 
   const runLatencyTest = useCallback(async () => {
     setPinging(true);
@@ -429,129 +447,488 @@ export function SettingsView() {
     : null;
   const backendOnline = samples.length > 0 && samples[samples.length - 1].status === 'ok';
 
+  const handleExportHistory = () => {
+    const blob = new Blob([exportResearchHistory()], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'aria-research-history.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleClearStorage = () => {
+    if (typeof window !== 'undefined') {
+      ['aria-history-v1', 'aria-collections-v1', 'aria-settings-v2', 'aria-byok-key', 'aria-byok-provider', 'aria-user-context'].forEach((k) => {
+        try { window.localStorage.removeItem(k); } catch { /* ignore */ }
+      });
+    }
+    window.location.reload();
+  };
+
+  const themePresets: Array<{ id: ThemePreset; label: string; hex: string }> = [
+    { id: 'cyber_obsidian', label: 'Cyber Obsidian (Default)', hex: '#5B8DB8' },
+    { id: 'quantum_indigo', label: 'Quantum Indigo', hex: '#7C6BD9' },
+    { id: 'emerald_matrix', label: 'Emerald Matrix', hex: '#34D399' },
+    { id: 'solar_amber', label: 'Solar Amber', hex: '#D9A441' },
+    { id: 'high_contrast', label: 'High-Contrast Minimal', hex: '#5B8DB8' },
+  ];
+
+  const intensityOptions: Array<{ id: AnimationIntensity; label: string }> = [
+    { id: 'full_kinetic', label: 'Full Kinetic HUD' },
+    { id: 'subtle_smooth', label: 'Subtle Smooth' },
+    { id: 'reduced_motion', label: 'Reduced Motion' },
+  ];
+
+  const citationFormats: Array<{ id: CitationFormat; label: string }> = [
+    { id: 'ieee', label: 'IEEE [1]' },
+    { id: 'apa', label: 'APA (Author, Year)' },
+    { id: 'nature', label: 'Nature Superscript' },
+  ];
+
   return (
     <HubShell
       icon={<SettingsIcon size={18} />}
       title="Settings"
-      subtitle="Engine configuration and live health diagnostics"
+      subtitle="Research Control Center"
     >
-      <div className="space-y-4">
-        {/* Engine Health */}
-        <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200">
-              <Activity size={13} className="text-tier-okf" /> Backend Engine Health
+      {/* Tab switcher */}
+      <div className="flex flex-wrap items-center gap-1 mb-4">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setActiveTab(t.id)}
+            className={`font-mono text-[10px] uppercase tracking-wider px-2.5 py-1.5 border transition-colors ${
+              activeTab === t.id
+                ? 'bg-tier-okf/15 border-tier-okf/50 text-tier-okf'
+                : 'bg-ink-base border-ink-surface text-ink-muted hover:text-gray-200'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'engine' && (
+        <div className="space-y-3">
+          {/* Default synthesis mode */}
+          <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200 mb-3">
+              <SettingsIcon size={13} className="text-tier-okf" /> Default Synthesis Mode
             </div>
-            <button
-              onClick={runLatencyTest}
-              disabled={pinging}
-              className="text-[10px] font-mono flex items-center gap-1.5 px-2 py-1 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf hover:bg-tier-okf/25 hover:text-emerald-300 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={11} className={pinging ? 'animate-spin' : ''} />
-              {pinging ? 'Testing...' : 'Run latency test'}
-            </button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {RESEARCH_MODE_OPTIONS.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => update({ researchMode: m.id })}
+                  className={`text-left p-2.5 border transition-all hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 ${
+                    settings.researchMode === m.id
+                      ? 'bg-tier-okf/10 border-tier-okf/60 text-gray-100'
+                      : 'bg-ink-base border-ink-surface text-gray-300'
+                  }`}
+                >
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-gray-200">{m.glyph} {m.label}</div>
+                  <div className="font-sans text-[11px] text-ink-muted mt-1">{m.hint}</div>
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="font-mono text-[11px] space-y-1.5">
-            <div className="flex justify-between">
-              <span className="text-gray-400">API base</span>
-              <span className="text-gray-200 truncate max-w-[60%] pl-2">{API_BASE_URL || 'same-origin'}</span>
+          {/* Discipline default */}
+          <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200 mb-3">
+              <SettingsIcon size={13} className="text-tier-okf" /> Default Discipline Branch
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Status</span>
-              <span className={`flex items-center gap-1 ${backendOnline ? 'text-emerald-400' : samples.length ? 'text-warning' : 'text-ink-muted'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${backendOnline ? 'bg-emerald-400' : samples.length ? 'bg-warning' : 'bg-gray-500'}`} />
-                {samples.length === 0 ? 'not tested' : backendOnline ? `healthy${samples[samples.length - 1].version ? ` · v${samples[samples.length - 1].version}` : ''}` : 'unreachable'}
-              </span>
+            <select
+              value={settings.discipline}
+              onChange={(e) => update({ discipline: e.target.value })}
+              className="w-full bg-ink-base border border-ink-surface text-[11px] font-mono text-gray-200 px-2 py-1.5 outline-none focus:border-tier-okf/50"
+            >
+              {DISCIPLINE_OPTIONS.map((d) => (
+                <option key={d.id} value={d.id}>{d.glyph} {d.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Retrieval strictness + source count */}
+          <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200 mb-3">
+              <SettingsIcon size={13} className="text-tier-okf" /> Retrieval Engine Preferences
             </div>
-            {avg !== null && (
+            <label className="flex items-center justify-between cursor-pointer py-1">
+              <div>
+                <p className="text-xs font-sans text-gray-200">Retrieval Strictness</p>
+                <p className="text-[10px] font-mono text-ink-muted mt-0.5">
+                  Strict Peer-Reviewed Only vs Include Verified Web / Wikipedia.
+                </p>
+              </div>
+              <select
+                value={settings.retrievalStrictness}
+                onChange={(e) => update({ retrievalStrictness: e.target.value as AriaSettings['retrievalStrictness'] })}
+                className="bg-ink-base border border-ink-surface text-[11px] font-mono text-gray-200 px-2 py-1 outline-none"
+              >
+                <option value="strict_peer">Strict Peer-Reviewed Only</option>
+                <option value="include_web">Include Verified Web / Wikipedia</option>
+              </select>
+            </label>
+            <div className="mt-3 pt-3 border-t border-ink-surface/70">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-sans text-gray-200">Max Primary Sources</p>
+                  <p className="text-[10px] font-mono text-ink-muted mt-0.5">4 to 12 sources retained by the evidence gate.</p>
+                </div>
+                <input
+                  type="range"
+                  min={4}
+                  max={12}
+                  step={1}
+                  value={settings.sourceCount}
+                  onChange={(e) => update({ sourceCount: Number(e.target.value) })}
+                  className="w-40 accent-tier-okf"
+                />
+                <span className="font-mono text-[11px] text-tier-okf">{settings.sourceCount}</span>
+              </div>
+              <label className="flex items-center justify-between cursor-pointer mt-3 pt-2 border-t border-ink-surface/70">
+                <div>
+                  <p className="text-xs font-sans text-gray-200">Compare Tiers by default</p>
+                  <p className="text-[10px] font-mono text-ink-muted mt-0.5">Forces the OKF, RAG and LIVE retrieval tiers to fire on every new question.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => update({ compareDefault: !settings.compareDefault })}
+                  className={`relative w-9 h-5 shrink-0 border transition-colors ${
+                    settings.compareDefault ? 'bg-tier-okf/40 border-tier-okf' : 'bg-ink-base border-gray-600'
+                  }`}
+                  role="switch"
+                  aria-checked={settings.compareDefault}
+                >
+                  <span
+                    className={`absolute top-0.5 w-3.5 h-3.5 transition-all ${
+                      settings.compareDefault ? 'left-[18px] bg-tier-okf' : 'left-0.5 bg-gray-400'
+                    }`}
+                  />
+                </button>
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'appearance' && (
+        <div className="space-y-3">
+          <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200 mb-3">
+              <SettingsIcon size={13} className="text-tier-okf" /> Visual Theme Preset
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {themePresets.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => update({ themePreset: t.id })}
+                  className={`p-2.5 border text-left transition-all hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 ${
+                    settings.themePreset === t.id
+                      ? 'bg-tier-okf/10 border-tier-okf/60 text-gray-100'
+                      : 'bg-ink-base border-ink-surface text-gray-300'
+                  }`}
+                >
+                  <span className="block font-mono text-[10px] uppercase tracking-wider text-gray-200">{t.label}</span>
+                  <span className="inline-block w-2 h-2 rounded-none mt-1.5" style={{ backgroundColor: t.hex }} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200 mb-3">
+              <SettingsIcon size={13} className="text-tier-okf" /> Animation Intensity
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              {intensityOptions.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => update({ animationIntensity: o.id })}
+                  className={`text-left p-2.5 border transition-all hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 ${
+                    settings.animationIntensity === o.id
+                      ? 'bg-tier-okf/10 border-tier-okf/60 text-gray-100'
+                      : 'bg-ink-base border-ink-surface text-gray-300'
+                  }`}
+                >
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-gray-200">{o.label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200 mb-3">
+              <SettingsIcon size={13} className="text-tier-okf" /> Visual Appearance
+            </div>
+            <label className="flex items-center justify-between cursor-pointer py-1">
+              <div>
+                <p className="text-xs font-sans text-gray-200">Background Grid Overlay</p>
+                <p className="text-[10px] font-mono text-ink-muted mt-0.5">Blueprint grid + ambient glow.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => update({ gridOverlay: !settings.gridOverlay })}
+                className={`relative w-9 h-5 shrink-0 border transition-colors ${
+                  settings.gridOverlay ? 'bg-tier-okf/40 border-tier-okf' : 'bg-ink-base border-gray-600'
+                }`}
+                role="switch"
+                aria-checked={settings.gridOverlay}
+              >
+                <span
+                  className={`absolute top-0.5 w-3.5 h-3.5 transition-all ${
+                    settings.gridOverlay ? 'left-[18px] bg-tier-okf' : 'left-0.5 bg-gray-400'
+                  }`}
+                />
+              </button>
+            </label>
+            <div className="mt-3 pt-2 border-t border-ink-surface/70">
+              <div className="text-[10px] font-mono text-ink-muted uppercase tracking-wider mb-2">Font Density / Reading Size</div>
+              <div className="grid grid-cols-3 gap-2">
+                {(['compact', 'standard', 'comfortable'] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => update({ fontDensity: d })}
+                    className={`font-mono text-[10px] px-2 py-1.5 border transition-colors ${
+                      settings.fontDensity === d
+                        ? 'bg-tier-okf/15 border-tier-okf/50 text-tier-okf'
+                        : 'bg-ink-base border-ink-surface text-ink-muted hover:text-gray-200'
+                    }`}
+                  >
+                    {d[0].toUpperCase() + d.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'verification' && (
+        <div className="space-y-3">
+          <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200 mb-3">
+              <SettingsIcon size={13} className="text-tier-okf" /> Verification & Export
+            </div>
+            <div className="text-[10px] font-mono text-ink-muted uppercase tracking-wider mb-2">Citation Format</div>
+            <div className="grid grid-cols-3 gap-2">
+              {citationFormats.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => update({ citationFormat: c.id })}
+                  className={`text-left p-2.5 border transition-all hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 ${
+                    settings.citationFormat === c.id
+                      ? 'bg-tier-okf/10 border-tier-okf/60 text-gray-100'
+                      : 'bg-ink-base border-ink-surface text-gray-300'
+                  }`}
+                >
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-gray-200">{c.label}</div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 pt-3 border-t border-ink-surface/70">
+              <div className="flex items-center justify-between gap-3 py-1">
+                <div>
+                  <p className="text-xs font-sans text-gray-200">Claim Audit Strictness Threshold</p>
+                  <p className="text-[10px] font-mono text-ink-muted mt-0.5">
+                    Entailment cutoff for supported claims ({settings.auditThreshold * 100}%).
+                  </p>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={0.9}
+                  step={0.05}
+                  value={settings.auditThreshold}
+                  onChange={(e) => update({ auditThreshold: Number(e.target.value) })}
+                  className="w-40 accent-tier-okf"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 py-1">
+                <div>
+                  <p className="text-xs font-sans text-gray-200">Auto-expand Claim Audit Drawer on completion</p>
+                  <p className="text-[10px] font-mono text-ink-muted mt-0.5">Open the sources drawer automatically after each completed audit.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => update({ autoExpandAudit: !settings.autoExpandAudit })}
+                  className={`relative w-9 h-5 shrink-0 border transition-colors ${
+                    settings.autoExpandAudit ? 'bg-tier-okf/40 border-tier-okf' : 'bg-ink-base border-gray-600'
+                  }`}
+                  role="switch"
+                  aria-checked={settings.autoExpandAudit}
+                >
+                  <span
+                    className={`absolute top-0.5 w-3.5 h-3.5 transition-all ${
+                      settings.autoExpandAudit ? 'left-[18px] bg-tier-okf' : 'left-0.5 bg-gray-400'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-1">
+                <div>
+                  <p className="text-xs font-sans text-gray-200">Include Full Audit Ledger & Clickable URLs in PDF Export</p>
+                  <p className="text-[10px] font-mono text-ink-muted mt-0.5">Export the complete ledger and linked reference URLs (default on).</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => update({ pdfFullLedger: !settings.pdfFullLedger })}
+                  className={`relative w-9 h-5 shrink-0 border transition-colors ${
+                    settings.pdfFullLedger ? 'bg-tier-okf/40 border-tier-okf' : 'bg-ink-base border-gray-600'
+                  }`}
+                  role="switch"
+                  aria-checked={settings.pdfFullLedger}
+                >
+                  <span
+                    className={`absolute top-0.5 w-3.5 h-3.5 transition-all ${
+                      settings.pdfFullLedger ? 'left-[18px] bg-tier-okf' : 'left-0.5 bg-gray-400'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-1">
+                <div>
+                  <p className="text-xs font-sans text-gray-200">Include Clickable Source URLs / DOIs in PDF References</p>
+                  <p className="text-[10px] font-mono text-ink-muted mt-0.5">Render each reference URL as a clickable PDF link.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => update({ clickableUrls: !settings.clickableUrls })}
+                  className={`relative w-9 h-5 shrink-0 border transition-colors ${
+                    settings.clickableUrls ? 'bg-tier-okf/40 border-tier-okf' : 'bg-ink-base border-gray-600'
+                  }`}
+                  role="switch"
+                  aria-checked={settings.clickableUrls}
+                >
+                  <span
+                    className={`absolute top-0.5 w-3.5 h-3.5 transition-all ${
+                      settings.clickableUrls ? 'left-[18px] bg-tier-okf' : 'left-0.5 bg-gray-400'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'api' && (
+        <div className="space-y-3">
+          {/* BYOK settings summary */}
+          <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200 mb-3">
+              <SettingsIcon size={13} className="text-tier-okf" /> API Keys & Diagnostics
+            </div>
+            <div className="text-[11px] font-mono text-gray-300 space-y-1.5">
               <div className="flex justify-between">
-                <span className="text-gray-400">Average /health latency</span>
-                <span className={`flex items-center gap-1 ${avg < 80 ? 'text-emerald-400' : avg < 250 ? 'text-tier-live' : 'text-warning'}`}>
-                  <Gauge size={11} /> {avg} ms
+                <span className="text-gray-400">Custom LLM Provider</span>
+                <span className="text-gray-200">{settings.byokProvider ? settings.byokProvider.toUpperCase() : 'Default (server)'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Custom API Key</span>
+                <span className="text-gray-200">{settings.byokApiKey ? '••• stored (local only)' : 'none'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Backend health */}
+          <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200">
+                <Activity size={13} className="text-tier-okf" /> Backend Engine Health
+              </div>
+              <button
+                onClick={runLatencyTest}
+                disabled={pinging}
+                className="text-[10px] font-mono flex items-center gap-1.5 px-2 py-1 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf hover:bg-tier-okf/25 hover:text-emerald-300 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw size={11} className={pinging ? 'animate-spin' : ''} />
+                {pinging ? 'Testing...' : 'Run latency test'}
+              </button>
+            </div>
+
+            <div className="font-mono text-[11px] space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-gray-400">API base</span>
+                <span className="text-gray-200 truncate max-w-[60%] pl-2">{API_BASE_URL || 'same-origin'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Status</span>
+                <span className={`flex items-center gap-1 ${backendOnline ? 'text-emerald-400' : samples.length ? 'text-warning' : 'text-ink-muted'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${backendOnline ? 'bg-emerald-400' : samples.length ? 'bg-warning' : 'bg-gray-500'}`} />
+                  {samples.length === 0 ? 'not tested' : backendOnline ? `healthy${samples[samples.length - 1].version ? ` · v${samples[samples.length - 1].version}` : ''}` : 'unreachable'}
                 </span>
+              </div>
+              {avg !== null && (
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Average /health latency</span>
+                  <span className={`flex items-center gap-1 ${avg < 80 ? 'text-emerald-400' : avg < 250 ? 'text-tier-live' : 'text-warning'}`}>
+                    <Gauge size={11} /> {avg} ms
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {samples.length > 0 && (
+              <div className="flex items-end gap-1.5 h-14 mt-3 pt-3 border-t border-ink-surface/70">
+                {samples.map((s, i) => {
+                  const maxLat = Math.max(...samples.map((x) => x.latencyMs), 1);
+                  const h = Math.max(8, (s.latencyMs / maxLat) * 44);
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${s.latencyMs} ms (${s.status})`}>
+                      <div className={`w-full ${s.status === 'ok' ? 'bg-tier-okf/70' : 'bg-warning/70'}`} style={{ height: h }} />
+                      <span className="text-[8px] font-mono text-ink-muted">{s.latencyMs}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {/* Sample chart strip */}
-          {samples.length > 0 && (
-            <div className="flex items-end gap-1.5 h-14 mt-3 pt-3 border-t border-ink-surface/70">
-              {samples.map((s, i) => {
-                const maxLat = Math.max(...samples.map((x) => x.latencyMs), 1);
-                const h = Math.max(8, (s.latencyMs / maxLat) * 44);
-                return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${s.latencyMs} ms (${s.status})`}>
-                    <div
-                      className={`w-full ${s.status === 'ok' ? 'bg-tier-okf/70' : 'bg-warning/70'}`}
-                      style={{ height: h }}
-                    />
-                    <span className="text-[8px] font-mono text-ink-muted">{s.latencyMs}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Retrieval Engine Preferences */}
-        <div className="p-4 bg-ink-surface/40 border border-ink-surface telemetry-glow">
-          <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-gray-200 mb-3">
-            <SettingsIcon size={13} className="text-tier-okf" /> Retrieval Engine Preferences
-          </div>
-
-          <label className="flex items-center justify-between cursor-pointer py-1">
-            <div>
-              <p className="text-xs font-sans text-gray-200">Compare Tiers by default</p>
-              <p className="text-[10px] font-mono text-ink-muted mt-0.5">
-                Forces the OKF, RAG and LIVE retrieval tiers to fire on every new question.
-              </p>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                const next = !compareDefault;
-                setCompareDefault(next);
-                setCompareDefaultState(next);
-              }}
-              className={`relative w-9 h-5 shrink-0 border transition-colors ${
-                compareDefault ? 'bg-tier-okf/40 border-tier-okf' : 'bg-ink-base border-gray-600'
-              }`}
-              role="switch"
-              aria-checked={compareDefault}
+              onClick={handleExportHistory}
+              className="text-[10px] font-mono flex items-center gap-1.5 px-2.5 py-1.5 bg-ink-base border border-ink-surface text-ink-muted hover:text-white hover:border-gray-500 transition-colors"
             >
-              <span
-                className={`absolute top-0.5 w-3.5 h-3.5 transition-all ${
-                  compareDefault ? 'left-[18px] bg-tier-okf' : 'left-0.5 bg-gray-400'
-                }`}
-              />
+              <FileText size={11} /> Export All Research History (JSON)
             </button>
-          </label>
-
-          <div className="mt-3 pt-3 border-t border-ink-surface/70 font-mono text-[10px] text-ink-muted space-y-1">
-            <p>Tier cascade: OKF (§) → RAG Dense Vector (▲) → LIVE Multi-Source (●)</p>
-            <p>Evidence gate: ≥150-char abstracts · cross-source dedup · top-8 relevance ranking</p>
+            <button
+              type="button"
+              onClick={handleClearStorage}
+              className="text-[10px] font-mono flex items-center gap-1.5 px-2.5 py-1.5 bg-ink-base border border-ink-surface text-ink-muted hover:text-warning hover:border-warning/50 transition-colors"
+            >
+              <Trash2 size={11} /> Clear Local Storage
+            </button>
           </div>
         </div>
+      )}
 
-        {/* About */}
-        <div className="p-4 bg-ink-surface/40 border border-ink-surface flex items-center justify-between">
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-wider text-gray-200">ARIA v2</p>
-            <p className="text-[10px] font-mono text-ink-muted mt-1">
-              Autonomous Research & Intelligence Synthesis Engine
-            </p>
-          </div>
-          <a
-            href="https://github.com/SWARAJCHATTARAJ/ARIA"
-            target="_blank"
-            rel="noreferrer"
-            className="text-ink-muted hover:text-white transition-colors p-1"
-            title="View source on GitHub"
-          >
-            <ExternalLink size={14} />
-          </a>
+      {/* About */}
+      <div className="p-4 bg-ink-surface/40 border border-ink-surface flex items-center justify-between">
+        <div>
+          <p className="font-mono text-[11px] uppercase tracking-wider text-gray-200">ARIA v2</p>
+          <p className="text-[10px] font-mono text-ink-muted mt-1">
+            Autonomous Research & Intelligence Synthesis Engine
+          </p>
         </div>
+        <a
+          href="https://github.com/SWARAJCHATTARAJ/ARIA"
+          target="_blank"
+          rel="noreferrer"
+          className="text-ink-muted hover:text-white transition-colors p-1"
+          title="View source on GitHub"
+        >
+          <ExternalLink size={14} />
+        </a>
       </div>
     </HubShell>
   );
