@@ -1,5 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ARIA Science Engine",
+  "version": "1.0.0",
+  "identifier": "tech.swarajchattaraj.aria",
   "build": {
     "beforeDevCommand": "",
     "devUrl": "http://localhost:5173",
@@ -7,29 +10,7 @@
     "frontendDist": "../frontend/dist",
     "withGlobalTauri": false
   },
-  "package": {
-    "name": "ARIA Science Engine",
-    "version": "1.0.0",
-    "description": "Autonomous Research & Intelligence Synthesis Engine",
-    "identifier": "com.aria.app"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": false
-    },
-    "bundle": {
-      "active": true,
-      "targets": [
-        "nsis"
-      ],
-      "icon": [
-        "icons/icon.png",
-        "icons/icon.ico",
-        "icons/icon.icns"
-      ],
-      "resources": [],
-      "identifier": "tech.swarajchattaraj.aria"
-    },
+  "app": {
     "windows": [
       {
         "title": "ARIA Science Engine",
@@ -41,6 +22,21 @@
         "minHeight": 600,
         "backgroundColor": "#050811"
       }
-    ]
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "resources": []
   }
 }

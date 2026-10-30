@@ -11,5 +11,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "aria"
+rootProject.name = "app"
 include ":app"
+include ":capacitor"
+project(':capacitor').projectDir = new File('../node_modules/@capacitor/android/capacitor')
