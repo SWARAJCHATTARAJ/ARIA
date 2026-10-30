@@ -70,7 +70,7 @@ jobs:
       - name: Install Android SDK Build-Tools and Platforms
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;34.0.0" "platform-tools" > /dev/null
 
       - name: Install frontend dependencies & Build
         run: |
