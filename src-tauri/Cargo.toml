@@ -1,0 +1,22 @@
+[package]
+name = "aria"
+version = "1.0.0"
+description = "Autonomous Research & Intelligence Synthesis Engine"
+authors = ["Swaraj Chhataraj"]
+edition = "2021"
+
+[lib]
+name = "main"
+path = "src/main.rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[dependencies]
+tauri = { version = "2", features = ["custom-protocol"] }
+
+[profile.release]
+codegen-units = 1
+lto = true

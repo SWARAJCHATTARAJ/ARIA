@@ -37,3 +37,16 @@ Thumbs.db
 
 # Internal Session History
 SESSION_MEMORY.md
+
+# Native Build Outputs (Tauri / Capacitor)
+src-tauri/target/
+src-tauri/gen/
+src-tauri/dist/
+android/build/
+android/.gradle/
+android/app/build/
+*.apk
+*.msi
+*.dmg
+*.deb
+*.rpm
