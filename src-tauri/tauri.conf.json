@@ -27,7 +27,8 @@
         "icons/icon.ico",
         "icons/icon.icns"
       ],
-      "resources": []
+      "resources": [],
+      "identifier": "tech.swarajchattaraj.aria"
     },
     "windows": [
       {
