@@ -24,10 +24,12 @@ jobs:
           targets: x86_64-pc-windows-msvc
 
       - name: Install frontend dependencies
-        run: npm install --prefix frontend
+        working-directory: frontend
+        run: npm install
 
       - name: Build frontend
-        run: npm run build --prefix frontend
+        working-directory: frontend
+        run: npm run build
 
       - name: Build Tauri Windows App
         uses: tauri-apps/tauri-action@v0.5.8
@@ -63,12 +65,12 @@ jobs:
           java-version: 17
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android SDK Build-Tools and Platforms
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
 
       - name: Install frontend dependencies & Build
         run: |
