@@ -5,10 +5,9 @@ description = "Autonomous Research & Intelligence Synthesis Engine"
 authors = ["Swaraj Chhataraj"]
 edition = "2021"
 
-[lib]
-name = "main"
+[[bin]]
+name = "aria"
 path = "src/main.rs"
-crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["custom-protocol"]
