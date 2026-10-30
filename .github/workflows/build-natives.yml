@@ -12,7 +12,7 @@ env:
 jobs:
   windows-exe:
     name: Build Windows .exe (Tauri)
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,7 +53,7 @@ jobs:
 
   android-apk:
     name: Build Android APK (Capacitor)
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -74,8 +74,8 @@ jobs:
 
       - name: Install Android SDK packages
         run: |
-          yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses > /dev/null || true
-          $ANDROID_HOME/tools/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
 
       - name: Install frontend dependencies
         run: npm --prefix frontend install
@@ -100,5 +100,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: aria-android-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
