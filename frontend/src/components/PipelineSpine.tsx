@@ -9,6 +9,8 @@ interface PipelineSpineProps {
   tiersFired?: string[];
   isComplete?: boolean;
   onReplay?: () => void;
+  /** vertical (default, desktop spine) or horizontal (mobile compact progress strip) */
+  orientation?: 'vertical' | 'horizontal';
 }
 
 export default function PipelineSpine({
@@ -16,6 +18,7 @@ export default function PipelineSpine({
   stage,
   tiersFired = [],
   isComplete = false,
+  orientation = 'vertical',
 }: PipelineSpineProps) {
   const motionScale = getMotionScale();
   const [homeStep, setHomeStep] = useState(0);
@@ -84,6 +87,61 @@ export default function PipelineSpine({
       isDone: isCheckDone,
     },
   ];
+
+  // Horizontal compact strip for narrow viewports (no sub-rows, tier glyphs inline)
+  if (orientation === 'horizontal') {
+    return (
+      <div className="w-full select-none pipeline-progress-h">
+        <div className="flex items-center justify-between gap-1 px-3 py-1.5">
+          {stages.map((st, idx) => (
+            <React.Fragment key={st.id}>
+              {idx > 0 && (
+                <div
+                  className={`flex-1 h-[1.5px] min-w-[6px] transition-colors duration-200 ${
+                    st.isDone || st.isActive ? 'bg-gray-300' : 'bg-ink-surface'
+                  }`}
+                />
+              )}
+              <div className="flex items-center gap-1 shrink-0">
+                <div
+                  className={`w-2 h-2 rounded-none border flex items-center justify-center transition-all duration-200 ${
+                    st.isDone
+                      ? 'bg-gray-200 border-gray-200'
+                      : st.isActive
+                      ? 'bg-ink-base border-white shadow-[0_0_6px_rgba(255,255,255,0.45)]'
+                      : 'bg-ink-base border-gray-600'
+                  }`}
+                >
+                  {st.isDone && <Check size={7} strokeWidth={3.5} className="text-ink-base" />}
+                </div>
+                <span
+                  className={`font-mono text-[9px] tracking-wider ${
+                    st.isActive ? 'text-white font-bold' : st.isDone ? 'text-gray-300' : 'text-gray-500'
+                  }`}
+                >
+                  {st.name}
+                </span>
+              </div>
+            </React.Fragment>
+          ))}
+          {/* Tier glyphs inline at the end: § OKF, ▲ RAG, ● LIVE */}
+          <div className="flex items-center gap-1 ml-1 shrink-0 pl-1.5 border-l border-ink-surface">
+            {(['OKF', 'RAG', 'LIVE'] as const).map((t) => (
+              <span
+                key={t}
+                className={`font-mono text-[9px] font-bold ${
+                  activeTiers.includes(t) ? 'opacity-100' : 'opacity-30'
+                } ${t === 'OKF' ? 'text-tier-okf' : t === 'RAG' ? 'text-tier-rag' : 'text-tier-live'}`}
+                title={t}
+              >
+                {t === 'OKF' ? '§' : t === 'RAG' ? '▲' : '●'}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-start select-none w-full">

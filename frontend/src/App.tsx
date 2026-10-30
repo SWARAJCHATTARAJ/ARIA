@@ -4,6 +4,7 @@ import ThreadView from './components/ThreadView';
 import SourcePanel from './components/SourcePanel';
 import Landing from './components/Landing';
 import PipelineSpine from './components/PipelineSpine';
+import { HistoryView, CollectionsView, OkfSpaceView, SettingsView } from './components/HubViews';
 import { Citation, MessageTelemetry } from './types';
 
 const MarkdownTestHarness = lazy(() => import('./components/MarkdownTestHarness'));
@@ -21,11 +22,18 @@ export default function App() {
     );
   }
 
+  return <AppShell />;
+}
+
+function AppShell() {
   const [isSourcePanelOpen, setSourcePanelOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [hasQuery, setHasQuery] = useState(false);
   const [isMockActive, setIsMockActive] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // Query handed over from History -> New question
+  const [pendingQuery, setPendingQuery] = useState<string | null>(null);
 
   // Active query state shared with SourcePanel
   const [activeCitations, setActiveCitations] = useState<Citation[]>([]);
@@ -37,18 +45,42 @@ export default function App() {
     setSourcePanelOpen(true);
   };
 
+  const handleOpenQuery = (query: string) => {
+    setPendingQuery(query);
+    setActiveTab('query');
+    setIsSidebarOpen(false);
+  };
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    setIsSidebarOpen(false);
+  };
+
   return (
-    <div className="flex h-screen bg-ink-base text-gray-200 font-sans overflow-hidden relative">
-      {/* Left Navigation */}
-      {!isFocusMode && (
-        <div className="hidden md:block shrink-0">
-          <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
-        </div>
+    <div className="flex h-screen bg-ink-base text-gray-200 font-sans overflow-hidden relative hud-grid">
+      {/* Mobile Sidebar Drawer Overlay */}
+      {isSidebarOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/60 z-40 backdrop-blur-xs"
+          onClick={() => setIsSidebarOpen(false)}
+        />
       )}
+
+      {/* Left Navigation: fixed column on desktop, slide-over drawer on mobile */}
+      <div className="hidden lg:block shrink-0">
+        <Sidebar activeTab={activeTab} onTabChange={handleTabChange} />
+      </div>
+      <aside
+        className={`lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-ink-base border-r border-ink-surface shadow-2xl transition-transform duration-200 ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <Sidebar activeTab={activeTab} onTabChange={handleTabChange} />
+      </aside>
 
       {/* Slim Vertical Spine between Sidebar and Content on New Question */}
       {activeTab === 'query' && !isFocusMode && (
-        <aside className="hidden lg:flex shrink-0 w-32 border-r border-ink-surface bg-ink-base/90 p-4 flex-col justify-center select-none">
+        <aside className="hidden xl:flex shrink-0 w-32 border-r border-ink-surface bg-ink-base/90 p-4 flex-col justify-center select-none">
           <PipelineSpine
             mode="live"
             stage={activeTelemetry?.stage}
@@ -60,9 +92,7 @@ export default function App() {
 
       {/* Center Thread Workspace */}
       <main className="flex-1 flex flex-col h-full md:border-r border-ink-surface bg-ink-base transition-all w-full overflow-hidden">
-        {activeTab === 'home' && (
-          <Landing onStart={() => setActiveTab('query')} />
-        )}
+        {activeTab === 'home' && <Landing onStart={() => handleTabChange('query')} />}
         {activeTab === 'query' && (
           <ThreadView
             onCitationClick={handleCitationClick}
@@ -75,25 +105,26 @@ export default function App() {
             activeTelemetry={activeTelemetry}
             activeCitations={activeCitations}
             isMockActive={isMockActive}
+            onToggleSidebar={() => setIsSidebarOpen((v) => !v)}
+            pendingQuery={pendingQuery}
+            onPendingQueryConsumed={() => setPendingQuery(null)}
           />
         )}
-        {activeTab !== 'query' && activeTab !== 'home' && (
-          <div className="flex-1 flex items-center justify-center text-ink-muted flex-col gap-4 p-8 text-center">
-            <h2 className="text-xl font-mono uppercase tracking-widest">{activeTab} View</h2>
-            <p className="text-sm font-sans">This is coming soon.</p>
-          </div>
-        )}
+        {activeTab === 'history' && <HistoryView onOpenQuery={handleOpenQuery} />}
+        {activeTab === 'collections' && <CollectionsView />}
+        {activeTab === 'okf' && <OkfSpaceView />}
+        {activeTab === 'settings' && <SettingsView />}
       </main>
 
-      {/* Right Source Panel: hidden until a query starts */}
+      {/* Right Source Panel: hidden until a query starts; slide-over on mobile/tablet, column on lg+ */}
       {isSourcePanelOpen && activeTab === 'query' && hasQuery && (
         <>
-          {/* Mobile Overlay */}
+          {/* Mobile / Tablet Overlay (<1024px) */}
           <div
-            className="md:hidden fixed inset-0 bg-black/60 z-40 backdrop-blur-xs"
+            className="lg:hidden fixed inset-0 bg-black/60 z-40 backdrop-blur-xs"
             onClick={() => setSourcePanelOpen(false)}
           />
-          <aside className="fixed inset-y-0 right-0 z-50 w-[85vw] max-w-sm md:relative md:w-96 h-full bg-ink-surface shadow-2xl flex-shrink-0 transition-transform">
+          <aside className="fixed inset-y-0 right-0 z-50 w-[85vw] max-w-sm lg:relative lg:w-96 h-full bg-ink-surface shadow-2xl flex-shrink-0 transition-transform">
             <SourcePanel
               onClose={() => setSourcePanelOpen(false)}
               activeQuery={hasQuery}

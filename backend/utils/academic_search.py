@@ -111,6 +111,11 @@ async def search_arxiv(query: str, max_results: int = 3) -> List[Dict[str, Any]]
                         logger.info(f"Dropping arXiv paper with <2 content words overlap ({len(overlap_tokens)} matched): {title}")
                         continue
                         
+                    # Require substantial abstracts (minimum 120 characters)
+                    if not summary or len(summary.strip()) < 120:
+                        logger.info(f"Dropping arXiv paper with empty or short (<120 chars) abstract: {title}")
+                        continue
+
                     # Drop other years if target_year specified
                     if target_year and year and year != int(target_year):
                         logger.info(f"Dropping arXiv paper outside target year {target_year}: [{year}] {title}")
@@ -376,9 +381,88 @@ async def search_duckduckgo(query: str, max_results: int = 3) -> List[Dict[str, 
         
     return results
 
-async def search_wikipedia(query: str, max_results: int = 1) -> List[Dict[str, Any]]:
+async def search_semantic_scholar(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
+    """
+    Queries the free Semantic Scholar Graph API for scholarly papers with abstracts.
+    Applies the same evidence-density discipline as arXiv/OpenAlex (>=120 char abstracts
+    and >=2 content-word overlap) so Semantic Scholar citations stay substantive.
+    """
+    clean_q = re.sub(r"[?*#&%=+\[\]\"]", " ", query).strip()
+    clean_query = " ".join(clean_q.split())[:200]
+    url = (
+        "https://api.semanticscholar.org/graph/v1/paper/search"
+        f"?query={urllib.parse.quote_plus(clean_query)}"
+        "&fields=title,abstract,year,venue,externalIds,url,authors,citationCount,openAccessPdf"
+        f"&limit={max_results}"
+    )
+    headers = {"User-Agent": "ARIA-Research-Assistant/2.0 (mailto:swarajchattaraj@users.noreply.github.com)"}
+
+    results = []
+    t0 = time.time()
+    start_iso = datetime.datetime.now().isoformat()
+    status_str = "error"
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+            status_str = f"HTTP {resp.status_code}"
+            if resp.status_code == 200:
+                data = resp.json()
+                q_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", query.lower())) - STOP_WORDS
+                for paper in data.get("data", []):
+                    title = (paper.get("title") or "").strip()
+                    abstract = (paper.get("abstract") or "").strip().replace("\n", " ")
+                    if not title or len(abstract) < 120:
+                        continue
+                    paper_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", (title + " " + abstract).lower()))
+                    if q_tokens and len(q_tokens.intersection(paper_tokens)) < 2:
+                        continue
+
+                    ext = paper.get("externalIds") or {}
+                    doi = ext.get("DOI")
+                    arxiv_id = ext.get("ArXiv")
+                    year = paper.get("year")
+                    venue = paper.get("venue") or "Semantic Scholar"
+                    raw_authors = [
+                        a.get("name") for a in (paper.get("authors") or [])
+                        if isinstance(a, dict) and a.get("name")
+                    ]
+                    authors = clean_authors_list(raw_authors)
+                    author_str = f" ({', '.join(authors[:2])}{' et al.' if len(authors) > 2 else ''})" if authors else ""
+                    paper_url = paper.get("url") or (f"https://doi.org/{doi}" if doi else None)
+
+                    results.append({
+                        "tier": "LIVE",
+                        "source_type": "semantic_scholar",
+                        "review_status": "scholarly",
+                        "title": title,
+                        "path": None,
+                        "url": paper_url,
+                        "authors": authors,
+                        "year": int(year) if isinstance(year, int) or (isinstance(year, str) and year.isdigit()) else None,
+                        "venue": venue,
+                        "snippet": abstract,
+                        "source": f"Semantic Scholar:{arxiv_id or doi or title[:60]}{author_str}",
+                        "arxiv_id": arxiv_id,
+                        "doi": doi,
+                        "is_retracted": False,
+                        "published": str(year) if year else None,
+                        "cited_by_count": paper.get("citationCount", 0)
+                    })
+    except Exception as e:
+        status_str = f"failed: {type(e).__name__}"
+        logger.warning(f"Semantic Scholar search error: {e}")
+    finally:
+        t1 = time.time()
+        end_iso = datetime.datetime.now().isoformat()
+        retrieval_tracker.record("provider_semantic_scholar", t0, t1, start_iso, end_iso, status_str)
+
+    return results
+
+async def search_wikipedia(query: str, max_results: int = 1, exact_title: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Encyclopedic reference search using Wikipedia. Returns chunks under tier='LIVE' with source_type='wikipedia'.
+    When a disambiguated canonical article title is available (Part 1.1 reformulator), that exact title is
+    tried first before generic search.
     """
     results = []
     t0 = time.time()
@@ -388,15 +472,24 @@ async def search_wikipedia(query: str, max_results: int = 1) -> List[Dict[str, A
         def _run_wiki():
             import wikipedia
             wikipedia.set_user_agent("ARIA-Scientific-Assistant/2.0 (https://aria.swarajchattaraj.tech; contact@swarajchattaraj.tech)")
-            hits = wikipedia.search(query, results=max_results)
-            res = []
-            for hit in hits:
+            ranked: List[tuple] = []
+            if exact_title and exact_title.strip():
                 try:
-                    summ = wikipedia.summary(hit, sentences=3, auto_suggest=False)
-                    res.append((hit, summ))
+                    summ = wikipedia.summary(exact_title.strip(), sentences=3, auto_suggest=False)
+                    ranked.append((exact_title.strip(), summ))
                 except Exception:
-                    continue
-            return res
+                    pass
+            if len(ranked) < max(1, max_results):
+                hits = wikipedia.search(query, results=max_results)
+                for hit in hits:
+                    if any(h.lower() == hit.lower() for h, _ in ranked):
+                        continue
+                    try:
+                        summ = wikipedia.summary(hit, sentences=3, auto_suggest=False)
+                        ranked.append((hit, summ))
+                    except Exception:
+                        continue
+            return ranked
         wiki_data = await asyncio.wait_for(asyncio.to_thread(_run_wiki), timeout=6.0)
         status_str = f"Wikipedia {len(wiki_data)} hits"
         for hit, summary in wiki_data:
@@ -457,6 +550,8 @@ def compute_source_score(chunk: Dict[str, Any], query: str) -> float:
     if stype == "arxiv":
         credibility_score = 8.0
     elif stype == "openalex":
+        credibility_score = 7.5
+    elif stype == "semantic_scholar":
         credibility_score = 7.5
     elif stype == "wikipedia":
         credibility_score = 5.0
@@ -693,13 +788,14 @@ async def fetch_readable_text(url: Optional[str], query: str, fallback_snippet: 
         end_iso_fetch = datetime.datetime.now().isoformat()
         retrieval_tracker.record(f"page_fetch: {url[:50]}", t0_fetch, t1_fetch, start_iso_fetch, end_iso_fetch, status_fetch)
 
-async def search_all_free_sources(query: str) -> List[Dict[str, Any]]:
+async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Executes parallel multi-source search across:
     1. arXiv
     2. OpenAlex
-    3. DuckDuckGo
-    4. Wikipedia
+    3. Semantic Scholar
+    4. DuckDuckGo
+    5. Wikipedia (prioritizes disambiguated exact article title from the reformulator)
     Capped at 15s total: providers capped at 10.0s, page fetches capped at 5.0s max.
     Filters out results with 0 query overlap and ranks candidates fairly.
     """
@@ -710,8 +806,9 @@ async def search_all_free_sources(query: str) -> List[Dict[str, Any]]:
     provider_tasks = [
         asyncio.create_task(search_arxiv(query, max_results=3)),
         asyncio.create_task(search_openalex(query, max_results=3)),
+        asyncio.create_task(search_semantic_scholar(query, max_results=2)),
         asyncio.create_task(search_duckduckgo(query, max_results=3)),
-        asyncio.create_task(search_wikipedia(query, max_results=1))
+        asyncio.create_task(search_wikipedia(query, max_results=1, exact_title=wikipedia_title))
     ]
     
     # Cap providers at 10.0s so total retrieval stays well within 15.0s

@@ -130,14 +130,143 @@
 }
 
 .audit-claim-highlight {
-  background-color: rgba(255, 255, 255, 0.12);
-  border-bottom: 1.5px solid rgba(255, 255, 255, 0.38);
-  padding: 1px 3px;
+  background-color: transparent;
+  border-bottom: none;
+  padding: 1px 0;
   border-radius: 0;
-  transition: background-color 200ms ease, border-color 200ms ease;
+  transition: background-color 150ms ease, border-bottom-color 150ms ease;
 }
 
 .audit-claim-highlight:hover {
-  background-color: rgba(255, 255, 255, 0.22);
-  border-bottom-color: rgba(255, 255, 255, 0.7);
+  background-color: rgba(255, 255, 255, 0.07);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.28);
+}
+
+/* ======================================================================
+   HIGH-DENSITY KINETIC RESEARCH HUD (Part 3.2)
+   Blueprint cyber-grid, glowing telemetry borders, 4px dark scrollbars
+   ====================================================================== */
+
+/* Blueprint cyber-grid background (crisp 24px grid + 120px major grid) */
+.hud-grid {
+  background-color: var(--tw-color, #0A0E14);
+  background-image:
+    linear-gradient(rgba(91, 141, 184, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91, 141, 184, 0.055) 1px, transparent 1px),
+    linear-gradient(rgba(91, 141, 184, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91, 141, 184, 0.09) 1px, transparent 1px);
+  background-size: 24px 24px, 24px 24px, 120px 120px, 120px 120px;
+  background-position: -1px -1px, -1px -1px, -1px -1px, -1px -1px;
+}
+
+/* Glowing telemetry border for source cards / HUD panels */
+.telemetry-glow {
+  position: relative;
+}
+.telemetry-glow::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  border: 1px solid rgba(91, 141, 184, 0.35);
+  box-shadow:
+    0 0 8px rgba(91, 141, 184, 0.14),
+    inset 0 0 12px rgba(91, 141, 184, 0.05);
+  transition: box-shadow 200ms ease, border-color 200ms ease;
+}
+.telemetry-glow:hover::before {
+  border-color: rgba(91, 141, 184, 0.7);
+  box-shadow:
+    0 0 14px rgba(91, 141, 184, 0.30),
+    inset 0 0 16px rgba(91, 141, 184, 0.10);
+}
+
+/* Sleek 4px dark scrollbars */
+.hud-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #2A3442 #0A0E14;
+}
+.hud-scroll::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.hud-scroll::-webkit-scrollbar-track {
+  background: #0A0E14;
+}
+.hud-scroll::-webkit-scrollbar-thumb {
+  background: #2A3442;
+  border-radius: 2px;
+}
+.hud-scroll::-webkit-scrollbar-thumb:hover {
+  background: #44506250;
+  background: #445062;
+}
+
+/* Animated data-link flow for the Citation & Entailment Constellation */
+@keyframes dashFlow {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+.constellation-link {
+  stroke-dasharray: 5 9;
+  animation: dashFlow calc(1.4s * var(--motion-scale, 1)) linear infinite;
+}
+
+/* Constellation node soft pulse */
+@keyframes nodePulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+.constellation-node {
+  animation: nodePulse calc(2.2s * var(--motion-scale, 1)) ease-in-out infinite;
+}
+
+/* Horizontal pipeline progress fill (mobile) */
+@keyframes pipelineSweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.pipeline-progress-h {
+  height: 2px;
+  overflow: hidden;
+  background: #121820;
+  position: relative;
+}
+.pipeline-progress-h::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 25%;
+  background: linear-gradient(90deg, transparent, #5B8DB8, transparent);
+  animation: pipelineSweep calc(1.8s * var(--motion-scale, 1)) linear infinite;
+}
+
+/* Real-time telemetry counter chip */
+.telemetry-chip {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: #A7B4C4;
+  border: 1px solid rgba(91, 141, 184, 0.35);
+  background: rgba(18, 24, 32, 0.85);
+  padding: 2px 6px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* Walkway scanline sweep over the thread HUD header */
+@keyframes hudScan {
+  0% { transform: translateX(-30%); opacity: 0; }
+  35% { opacity: 0.5; }
+  100% { transform: translateX(130%); opacity: 0; }
+}
+.hud-scanline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(91, 141, 184, 0.08), transparent);
+  animation: hudScan calc(6s * var(--motion-scale, 1)) ease-in-out infinite;
+  pointer-events: none;
 }

@@ -99,6 +99,20 @@ function getClaimStatusBadge(status: ClaimStatus) {
   }
 }
 
+function getClaimNoteClass(status: ClaimStatus): string {
+  switch (status) {
+    case 'supported':
+      return 'text-emerald-300/90 border-l border-emerald-500/40';
+    case 'partially_supported':
+    case 'audit_incomplete':
+      return 'text-amber-300/90 border-l border-amber-500/40';
+    case 'unsupported':
+    case 'uncited':
+    default:
+      return 'text-rose-300/90 border-l border-rose-500/40';
+  }
+}
+
 export default function SourcePanel({
   onClose,
   activeQuery = false,
@@ -201,7 +215,7 @@ export default function SourcePanel({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 hud-scroll">
         {!activeQuery && citations.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center space-y-2 opacity-60 py-20">
             <div className="font-mono text-xs text-ink-muted">No sources retrieved yet.</div>
@@ -318,7 +332,7 @@ export default function SourcePanel({
                         </div>
                       )}
                       {claim.note && (
-                        <div className="text-[10px] font-mono text-warning/90 pl-2 border-l border-warning/40 mt-1">
+                        <div className={`text-[10px] font-mono pl-2 mt-1 transition-colors ${getClaimNoteClass(claim.status)}`}>
                           Note: {claim.note}
                         </div>
                       )}

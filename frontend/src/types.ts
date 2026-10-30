@@ -21,10 +21,54 @@ export interface VisualCardData {
   found: boolean;
   title?: string;
   description?: string;
+  image_url?: string | null;
   thumbnail_url?: string;
   original_image_url?: string;
   extract?: string;
   page_url?: string;
+  canonical_topic?: string;
+  wikipedia_exact_title?: string;
+}
+
+export interface OkfGraphNode {
+  id: string;
+  note_id: string;
+  title: string;
+  type: string;
+  topic: string[];
+  confidence: string;
+  source: string;
+  updated: string;
+  snippet_preview: string;
+  content: string;
+}
+
+export interface OkfGraphEdge {
+  source: string;
+  target: string;
+}
+
+export interface OkfGraphData {
+  nodes: OkfGraphNode[];
+  edges: OkfGraphEdge[];
+  total_nodes: number;
+  total_edges: number;
+}
+
+export interface HistoryEntry {
+  id: string;
+  query: string;
+  snippet: string;
+  confidence?: number;
+  timestamp: number;
+}
+
+export interface CollectionEntry {
+  id: string;
+  query: string;
+  content: string;
+  confidence?: number;
+  timestamp: number;
 }
 
 export interface RouteTelemetry {

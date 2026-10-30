@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, AlertTriangle, Maximize2, Minimize2, Check, Sparkles, StopCircle, Network, FileText, CheckCircle2 } from 'lucide-react';
+import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, AlertTriangle, Maximize2, Minimize2, Check, Sparkles, StopCircle, Network, FileText, CheckCircle2, Menu, Bookmark, BookmarkCheck } from 'lucide-react';
 import ConfidenceDial from './ConfidenceDial';
 import MarkdownRenderer, { getTierGlyph, getTierColorClass } from './MarkdownRenderer';
 import CitationGraph from './CitationGraph';
 import VisualConceptCard from './VisualConceptCard';
+import PipelineSpine from './PipelineSpine';
 import { streamQuery } from '../utils/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim } from '../types';
 import { API_BASE_URL } from '../config';
+import { addHistoryEntry, addToCollection, isInCollection, getCompareDefault } from '../utils/storage';
 
 const EXAMPLE_QUERIES = [
   {
@@ -50,6 +52,12 @@ interface ThreadViewProps {
   activeTelemetry?: MessageTelemetry;
   activeCitations?: Citation[];
   isMockActive?: boolean;
+  /** opens the mobile sidebar drawer (hamburger) */
+  onToggleSidebar?: () => void;
+  /** query handed over from History view; executes once on mount */
+  pendingQuery?: string | null;
+  /** parent clears the pending query after consumption */
+  onPendingQueryConsumed?: () => void;
 }
 
 export default function ThreadView({
@@ -61,16 +69,21 @@ export default function ThreadView({
   onUpdateActiveCitations,
   onMockStateChange,
   isMockActive = false,
+  onToggleSidebar,
+  pendingQuery,
+  onPendingQueryConsumed,
 }: ThreadViewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isCompareMode, setIsCompareMode] = useState(false);
+  const [isCompareMode, setIsCompareMode] = useState<boolean>(() => getCompareDefault());
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [feedbackSent, setFeedbackSent] = useState<Record<string, 'positive' | 'negative' | 'flagged'>>({});
   const [isBackendReachable, setIsBackendReachable] = useState<boolean>(false);
   const [isCitationGraphOpen, setIsCitationGraphOpen] = useState<Record<string, boolean>>({});
   const [isExportingPdf, setIsExportingPdf] = useState<Record<string, boolean>>({});
+  const [bookmarkedQueries, setBookmarkedQueries] = useState<Record<string, boolean>>({});
+  const [elapsedMs, setElapsedMs] = useState(0);
 
   const handleDownloadPdf = async (msg: Message) => {
     try {
@@ -107,6 +120,20 @@ export default function ThreadView({
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  // Capture final stream values for the history save at onDone (state not readable synchronously)
+  const finalContentRef = useRef('');
+  const finalConfidenceRef = useRef<number | undefined>(undefined);
+  const lastQueryRef = useRef('');
+  const executedPendingRef = useRef<string | null>(null);
+
+  // Real-time millisecond telemetry counter while streaming
+  useEffect(() => {
+    if (!isLoading) return;
+    const start = performance.now();
+    setElapsedMs(0);
+    const id = setInterval(() => setElapsedMs(performance.now() - start), 100);
+    return () => clearInterval(id);
+  }, [isLoading]);
 
   // Probe backend health to hide thumbs if unreachable
   useEffect(() => {
@@ -246,6 +273,11 @@ export default function ThreadView({
     setInput('');
     setIsLoading(true);
 
+    // Capture final values for the history entry written at stream end
+    finalContentRef.current = '';
+    finalConfidenceRef.current = undefined;
+    lastQueryRef.current = queryText.trim();
+
     let collectedCitations: Citation[] = [];
     let currentTelemetry: MessageTelemetry = { stage: 'routing' };
 
@@ -351,10 +383,12 @@ export default function ThreadView({
                 }
                 if (evt.answer_final) {
                   updatedContent = evt.answer_final;
+                  finalContentRef.current = evt.answer_final;
                 }
-                break;
-
-              case 'done':
+                if (typeof evt.confidence === 'number' && evt.confidence > 0) {
+                  finalConfidenceRef.current = evt.confidence;
+                }
+                break;              case 'done':
                 updatedTelemetry.stage = 'complete';
                 return {
                   ...msg,
@@ -410,6 +444,22 @@ export default function ThreadView({
         setMessages((prev) =>
           prev.map((msg) => (msg.id === ariaMsgId ? { ...msg, isStreaming: false } : msg))
         );
+        // Persist the completed thread to local History (skip mock fixture replays)
+        if (!isMockActive && !effectiveMockKey && finalContentRef.current) {
+          try {
+            addHistoryEntry({
+              query: lastQueryRef.current,
+              snippet: finalContentRef.current
+                .replace(/[#*`>\[\]]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 220),
+              confidence: finalConfidenceRef.current,
+            });
+          } catch {
+            // Storage unavailable; quietly ignore
+          }
+        }
       },
     });
   };
@@ -418,6 +468,16 @@ export default function ThreadView({
     e.preventDefault();
     executeQuery(input);
   };
+
+  // Execute a query handed over from the History view exactly once
+  useEffect(() => {
+    if (pendingQuery && executedPendingRef.current !== pendingQuery) {
+      executedPendingRef.current = pendingQuery;
+      executeQuery(pendingQuery);
+      if (onPendingQueryConsumed) onPendingQueryConsumed();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingQuery]);
 
   const handleCopy = (msgId: string, content: string) => {
     navigator.clipboard.writeText(content);
@@ -507,6 +567,15 @@ export default function ThreadView({
       {/* Thread Header */}
       <div className="px-4 md:px-8 py-3.5 border-b border-ink-surface flex justify-between items-center bg-ink-base/90 backdrop-blur-md z-10 shrink-0">
         <div className="flex items-center gap-3">
+          {/* Mobile hamburger: opens the sidebar drawer */}
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className="lg:hidden text-ink-muted hover:text-white transition-colors p-1"
+            aria-label="Open navigation menu"
+          >
+            <Menu size={18} />
+          </button>
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xs font-mono font-bold text-white tracking-wider uppercase">
@@ -542,6 +611,24 @@ export default function ThreadView({
           </button>
         </div>
       </div>
+
+      {/* Mobile / Tablet: horizontal pipeline progress strip (<1024px, replaces vertical spine) */}
+      {messages.length > 0 && (
+        <div className="lg:hidden border-b border-ink-surface shrink-0 bg-ink-base/80">
+          {(() => {
+            const lastAria = [...messages].reverse().find((m) => m.role === 'aria');
+            return (
+              <PipelineSpine
+                orientation="horizontal"
+                mode="live"
+                stage={lastAria?.telemetry?.stage}
+                tiersFired={lastAria?.telemetry?.retrieval?.tiers}
+                isComplete={lastAria?.telemetry?.stage === 'complete'}
+              />
+            );
+          })()}
+        </div>
+      )}
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 select-text">
@@ -651,11 +738,12 @@ export default function ThreadView({
                       />
                     </div>
 
-                    {/* Status Indicator */}
+                    {/* Status Indicator with live elapsed-millisecond telemetry */}
                     {msg.isStreaming && (
                       <div className="flex items-center gap-1.5 text-tier-okf text-[10px] animate-pulse">
                         <Loader2 size={12} className="animate-spin" />
                         <span>{getStageLabel(msg.telemetry?.stage)}</span>
+                        <span className="font-mono text-ink-muted">T+{(elapsedMs / 1000).toFixed(1)}s</span>
                       </div>
                     )}
 
@@ -749,8 +837,25 @@ export default function ThreadView({
                                     <span className="leading-snug">
                                       {c.text}
                                       {c.citation_ids && c.citation_ids.length > 0 && (
-                                        <span className="font-mono text-[10px] text-tier-okf ml-1 opacity-70 group-hover:opacity-100">
-                                          [[c:{c.citation_ids[0]}]]
+                                        <span className="inline-flex gap-1 ml-1 align-middle">
+                                          {c.citation_ids.slice(0, 3).map((cid) => {
+                                            const cit = msg.citations?.find((x) => x.id === cid);
+                                            return (
+                                              <button
+                                                key={cid}
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  if (cit) onCitationClick(cit);
+                                                }}
+                                                className={`font-mono text-[9px] px-1 py-0.2 border rounded-none font-bold inline-flex items-center gap-0.5 hover:brightness-125 transition-all ${getTierColorClass(cit?.tier)}`}
+                                                title={cit?.title || `Citation #${cid + 1}`}
+                                              >
+                                                <span>{getTierGlyph(cit?.tier)}</span>
+                                                <span>{cid + 1}</span>
+                                              </button>
+                                            );
+                                          })}
                                         </span>
                                       )}
                                     </span>
@@ -771,7 +876,7 @@ export default function ThreadView({
 
                     {/* Right: Visual Concept / Diagram Card */}
                     <div className="lg:col-span-5 flex items-center">
-                      <VisualConceptCard query={msg.query || ''} />
+                      <VisualConceptCard query={msg.query || ''} citations={msg.citations} />
                     </div>
                   </div>
                 )}
@@ -859,6 +964,41 @@ export default function ThreadView({
                       >
                         <Download size={12} /> .BIB
                       </button>
+
+                      {/* Bookmark to Collections (local) */}
+                      {msg.query && (
+                        <button
+                          onClick={() => {
+                            const added = addToCollection({
+                              query: msg.query!,
+                              content: msg.content,
+                              confidence: msg.telemetry?.audit?.confidence,
+                            });
+                            setBookmarkedQueries((prev) => ({ ...prev, [msg.id]: added }));
+                          }}
+                          disabled={bookmarkedQueries[msg.id] || isInCollection(msg.query)}
+                          className={`transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase disabled:opacity-60 ${
+                            bookmarkedQueries[msg.id] || isInCollection(msg.query)
+                              ? 'text-tier-okf'
+                              : 'text-ink-muted hover:text-white'
+                          }`}
+                          title={
+                            bookmarkedQueries[msg.id] || isInCollection(msg.query)
+                              ? 'Already saved to Collections'
+                              : 'Bookmark this report to Collections'
+                          }
+                        >
+                          {bookmarkedQueries[msg.id] || isInCollection(msg.query) ? (
+                            <>
+                              <BookmarkCheck size={12} /> <span>Saved</span>
+                            </>
+                          ) : (
+                            <>
+                              <Bookmark size={12} /> <span>Save</span>
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
 
                     {/* Hide thumbs when backend is unreachable or in mock mode; show saved tick only on success */}
