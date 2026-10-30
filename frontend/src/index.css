@@ -43,6 +43,16 @@
   }
 }
 
+/* Neon cyan pulse for active pipeline stages and live telemetry indicators */
+@keyframes neonPulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(34, 211, 238, 0.35), 0 0 18px rgba(34, 211, 238, 0.10); }
+  50% { box-shadow: 0 0 12px rgba(34, 211, 238, 0.55), 0 0 34px rgba(34, 211, 238, 0.20); }
+}
+
+.animate-neon-pulse {
+  animation: neonPulse calc(2.2s * var(--motion-scale, 1)) ease-in-out infinite;
+}
+
 /* Stream Caret */
 @keyframes caretBlink {
   0%, 100% { opacity: 1; }

@@ -1079,8 +1079,24 @@ export default function ThreadView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* v3 Part 2: Flexible Research Controls dock (mode, discipline, custom context / BYOK) */}
-      <div className="px-4 md:px-8 pt-3 pb-2 border-t border-ink-surface shrink-0 bg-ink-base/90 z-10">
+      {/* Unified Collapsible: Advanced Parameters & Routing */}
+      <div className="shrink-0 bg-ink-base/90 border-t border-ink-surface z-10">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-4 md:px-8 py-2.5 bg-ink-base/90 transition-all duration-300 ease-out hover:bg-ink-surface/60 hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 hover:scale-[1.01] border-b border-ink-surface text-left"
+        >
+          <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-gray-200">
+            <span className="text-tier-okf">⚙</span> Advanced Parameters &amp; Routing
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="font-mono text-[9px] text-ink-muted">{advancedOpen ? 'COLLAPSE' : 'EXPAND'}</span>
+            <ChevronDown size={12} className={advancedOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+          </span>
+        </button>
+
+        {advancedOpen && (
+          <div className="px-4 md:px-8 pt-3 pb-2 border-t border-ink-surface bg-ink-base/90 shrink-0">
         {/* Research Mode Selector */}
         <div className="flex flex-wrap items-center gap-1.5 mb-2">
           <span className="font-mono text-[9px] uppercase tracking-wider text-ink-muted mr-1">Research Mode</span>
@@ -1123,18 +1139,6 @@ export default function ThreadView({
         </div>
 
         {/* Advanced Research Parameters: custom context + BYOK key injector */}
-        <div className="mb-2">
-          <button
-            type="button"
-            onClick={() => setAdvancedOpen((v) => !v)}
-            className="w-full flex items-center justify-between px-2 py-1.5 bg-ink-base border border-ink-surface text-ink-muted hover:text-gray-200 hover:border-sky-500/50 transition-all hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 font-mono text-[10px] uppercase tracking-wider"
-          >
-            <span className="flex items-center gap-1.5">
-              <ChevronDown size={12} className={advancedOpen ? 'rotate-180 transition-transform' : 'transition-transform'} /> + Inject Custom Context / Notes / Links / API Key
-            </span>
-            <span className="text-[9px] text-ink-muted">{advancedOpen ? 'COLLAPSE' : 'EXPAND'}</span>
-          </button>
-
           {advancedOpen && (
             <div className="mt-2 p-3 bg-ink-surface/40 border border-ink-surface space-y-3 animate-view-in">
               <div>
@@ -1219,6 +1223,7 @@ export default function ThreadView({
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Input Area */}
@@ -1239,7 +1244,7 @@ export default function ThreadView({
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
-            className="absolute right-3 top-3 text-ink-muted hover:text-white transition-colors disabled:opacity-40 p-1"
+            className="absolute right-3 top-3 text-ink-muted hover:text-white transition-all duration-300 ease-out hover:scale-[1.01] disabled:opacity-40 p-1"
             aria-label="Send query"
           >
             <Send size={16} />

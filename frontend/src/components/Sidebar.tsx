@@ -46,9 +46,7 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
           active={activeTab === 'okf'}
           onClick={() => onTabChange('okf')}
         />
-      </div>
-
-      <div className="mt-auto pt-4 border-t border-ink-surface">
+        <div className="my-2 border-t border-ink-surface/70" />
         <NavItem
           icon={<Settings size={18} />}
           label="Settings"

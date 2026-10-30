@@ -67,7 +67,7 @@ function getClaimStatusBadge(status: ClaimStatus) {
   switch (status) {
     case 'supported':
       return (
-        <span className="text-[9px] font-mono text-tier-okf bg-tier-okf/10 border border-tier-okf/30 px-1.5 py-0.5 shrink-0 flex items-center gap-1">
+        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 shrink-0 flex items-center gap-1">
           <CheckCircle2 size={10} /> Supported
         </span>
       );
@@ -102,7 +102,7 @@ function getClaimStatusBadge(status: ClaimStatus) {
 function getClaimNoteClass(status: ClaimStatus): string {
   switch (status) {
     case 'supported':
-      return 'text-emerald-300/90 border-l border-emerald-500/40';
+      return 'text-emerald-400/90 border-l border-emerald-500/40';
     case 'partially_supported':
     case 'audit_incomplete':
       return 'text-amber-300/90 border-l border-amber-500/40';
@@ -194,7 +194,7 @@ export default function SourcePanel({
   const confidenceScore = audit?.confidence ?? 0.85;
 
   return (
-    <div className="h-full flex flex-col bg-ink-surface/95 backdrop-blur-md border-l border-ink-surface select-text overflow-hidden">
+    <div className="h-full flex flex-col bg-ink-surface/95 backdrop-blur-md border-l border-ink-surface select-text overflow-hidden animate-rise-in">
       {/* Panel Header */}
       <div className="p-3.5 border-b border-ink-surface flex justify-between items-center bg-ink-surface shrink-0">
         <div className="flex items-center gap-2">

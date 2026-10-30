@@ -8,11 +8,6 @@ const FLOW_STAGES = [
   { id: 'CHECK', label: 'CHECK', desc: 'Entailment audit' },
 ];
 
-const DISCIPLINE_LAUNCH = [
-  { id: 'cs', label: 'Computer Science & AI', query: 'What are the off-target mitigation strategies for CRISPR gene editing?' },
-  { id: 'physics', label: 'Physics & Engineering', query: 'What is the definition and taxonomy of autonomous systems in artificial intelligence?' },
-];
-
 export default function Landing({ onStart }: { onStart: () => void }) {
   const [simStage, setSimStage] = useState(0);
 
@@ -28,7 +23,7 @@ export default function Landing({ onStart }: { onStart: () => void }) {
   const currentStage = FLOW_STAGES[Math.min(simStage, FLOW_STAGES.length - 1)];
 
   return (
-    <div className="w-full h-full flex items-center justify-start bg-ink-base text-gray-200 overflow-y-auto overflow-x-hidden p-8 md:p-16 hud-grid relative">
+    <div className="w-full h-full flex items-center justify-center bg-ink-base text-gray-200 overflow-y-auto overflow-x-hidden p-8 md:p-16 hud-grid relative bg-[radial-gradient(ellipse_at_top,rgba(15,23,42,0.45),rgba(5,8,17,0.9)_55%,rgba(3,5,8,1))]">
       {/* Ambient floating spotlights */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <div className="absolute -top-40 -left-32 w-[480px] h-[480px] bg-tier-okf/10 rounded-full blur-3xl animate-spotlight" />
@@ -75,21 +70,12 @@ export default function Landing({ onStart }: { onStart: () => void }) {
           >
             <button
               onClick={onStart}
-              className="group relative px-6 py-3 bg-ink-surface border border-ink-muted/30 hover:border-tier-okf/80 text-white font-mono text-xs uppercase tracking-widest transition-all hover:bg-tier-okf/10 flex items-center gap-3 rounded-none"
+              className="group relative px-8 py-3.5 bg-tier-okf/10 border border-tier-okf/50 hover:bg-tier-okf/20 text-white font-mono text-xs uppercase tracking-widest transition-all duration-300 ease-out hover:scale-[1.01] hover:shadow-[0_0_30px_rgba(56,189,248,0.2)] flex items-center gap-3"
             >
               Ask a question
               <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
               <div className="absolute -bottom-1 -right-1 w-2 h-2 border-b border-r border-tier-okf opacity-0 group-hover:opacity-100 transition-opacity" />
             </button>
-            {DISCIPLINE_LAUNCH.map((d) => (
-              <button
-                key={d.id}
-                onClick={onStart}
-                className="px-4 py-3 bg-ink-base/60 border border-ink-surface hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 transition-all duration-200 font-mono text-[10px] uppercase tracking-wider text-ink-muted hover:text-gray-200"
-              >
-                {d.label}
-              </button>
-            ))}
           </div>
 
           {/* Live telemetry chips */}
