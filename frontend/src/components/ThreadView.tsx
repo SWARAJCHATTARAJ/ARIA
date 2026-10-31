@@ -8,6 +8,7 @@ import PipelineSpine from './PipelineSpine';
 import { streamQuery } from '../utils/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim } from '../types';
 import { API_BASE_URL } from '../config';
+import { useSettingsContext } from '../context/SettingsContext';
 import { addHistoryEntry, addToCollection, isInCollection, getCompareDefault, getSettings, saveSettings, getByokKey, getByokProvider, setByokKey, clearByok, getCustomContext } from '../utils/storage';
 import { ResearchMode, RESEARCH_MODE_OPTIONS, DISCIPLINE_OPTIONS } from '../types';
 
@@ -55,12 +56,14 @@ interface ThreadViewProps {
   isMockActive?: boolean;
   /** opens the mobile sidebar drawer (hamburger) */
   onToggleSidebar?: () => void;
-  /** query handed over from History view; executes once on mount */
+  /** query handed over from History -> New question */
   pendingQuery?: string | null;
   /** parent clears the pending query after consumption */
   onPendingQueryConsumed?: () => void;
   /** parent toggles the sources drawer (used for auto-expansion on audit completion) */
   onSourcesExpand?: () => void;
+  /** navigate to another tab (e.g. settings) */
+  onNavigateTab?: (tab: string) => void;
 }
 
 export default function ThreadView({
@@ -71,16 +74,19 @@ export default function ThreadView({
   onUpdateActiveTelemetry,
   onUpdateActiveCitations,
   onMockStateChange,
+  activeTelemetry,
+  activeCitations,
   isMockActive = false,
   onToggleSidebar,
   pendingQuery,
   onPendingQueryConsumed,
   onSourcesExpand,
+  onNavigateTab,
 }: ThreadViewProps) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isCompareMode, setIsCompareMode] = useState<boolean>(() => getCompareDefault());
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [feedbackSent, setFeedbackSent] = useState<Record<string, 'positive' | 'negative' | 'flagged'>>({});
   const [isBackendReachable, setIsBackendReachable] = useState<boolean>(false);
@@ -89,17 +95,8 @@ export default function ThreadView({
   const [bookmarkedQueries, setBookmarkedQueries] = useState<Record<string, boolean>>({});
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  // v3 Part 2: flexible research configuration from the Control Center / dock
-  const initialSettings = getSettings();
-  const [researchMode, setResearchMode] = useState<ResearchMode>(initialSettings.researchMode);
-  const [discipline, setDiscipline] = useState<string>(initialSettings.discipline || 'auto');
-  const [customContext, setCustomContext] = useState<string>(getCustomContext);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [byokProvider, setByokProvider] = useState<string>(getByokProvider());
-  const [byokKey, setByokKeyState] = useState<string>(getByokKey());
-  const [showByokKey, setShowByokKey] = useState(false);
-  const customContextRef = useRef(customContext);
-  customContextRef.current = customContext;
+  // Read settings once from global SettingsContext (no local state for research mode/discipline)
+  const { settings } = useSettingsContext();
 
   const handleDownloadPdf = async (msg: Message) => {
     try {
@@ -182,15 +179,6 @@ export default function ThreadView({
       onQueryStateChange(messages.length > 0);
     }
   }, [messages.length, onQueryStateChange]);
-
-  // v3 Part 3.3: auto-expand sources drawer when audit completes
-  useEffect(() => {
-    const lastAria = [...messages].reverse().find((m) => m.role === 'aria');
-    if (lastAria && !lastAria.isStreaming && lastAria.telemetry?.audit) {
-      if (onSourcesExpand) onSourcesExpand();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length, isLoading]);
 
   // Clean up in-flight requests on unmount
   useEffect(() => {
@@ -309,24 +297,20 @@ export default function ThreadView({
     if (onUpdateActiveCitations) onUpdateActiveCitations([]);
     if (onUpdateActiveTelemetry) onUpdateActiveTelemetry(currentTelemetry);
 
-    // v3 Part 2.3: BYOK headers passed through to the backend
-    const byokActive = Boolean(byokKey && byokProvider);
-    const customHeaders: Record<string, string> = {
-      ...(byokActive ? { 'X-Custom-API-Key': byokKey, 'X-Custom-Provider': byokProvider } : {}),
-    };
-
-    // Replay recorded example card if mockKey provided; live queries typed by users pass mockKey = undefined
-    const effectiveMockKey = mockKey;
+    // Read researchMode and discipline from global SettingsContext
+    const researchMode = settings.researchMode;
+    const discipline = settings.discipline;
 
     streamQuery({
       query: queryText.trim(),
-      compareMode: isCompareMode,
+      compareMode: false,
       signal: abortController.signal,
-      mockFixtureKey: effectiveMockKey,
+      mockFixtureKey: mockKey,
       researchMode,
       discipline,
-      customContext: customContextRef.current,
-      customHeaders,
+      customContext: settings.customContext || '',
+      customHeaders: {},
+
       onMockState: (isMock) => {
         if (onMockStateChange) onMockStateChange(isMock);
       },
@@ -480,7 +464,7 @@ export default function ThreadView({
           prev.map((msg) => (msg.id === ariaMsgId ? { ...msg, isStreaming: false } : msg))
         );
         // Persist the completed thread to local History (skip mock fixture replays)
-        if (!isMockActive && !effectiveMockKey && finalContentRef.current) {
+        if (!isMockActive && !mockKey && finalContentRef.current) {
           try {
             addHistoryEntry({
               query: lastQueryRef.current,
@@ -597,6 +581,50 @@ export default function ThreadView({
     }
   };
 
+  const formatModeLabel = (mode?: string) => {
+    switch (mode) {
+      case 'fast_brief':
+        return 'Fast Executive Brief';
+      case 'deep_academic':
+        return 'Deep Academic Paper';
+      case 'critique':
+        return 'Debate & Critique';
+      case 'quantitative':
+        return 'Quantitative & Data';
+      case 'first_principles':
+        return 'First-Principles';
+      default:
+        return 'Deep Academic';
+    }
+  };
+
+  const formatDisciplineLabel = (disc?: string) => {
+    switch (disc) {
+      case 'auto':
+        return 'All Disciplines (Auto)';
+      case 'cs':
+        return 'Computer Science & AI';
+      case 'physics':
+        return 'Physics';
+      case 'chemistry':
+        return 'Chemistry';
+      case 'life':
+        return 'Botany & Life Sciences';
+      case 'medicine':
+        return 'Medicine';
+      case 'humanities':
+        return 'Arts & Humanities';
+      case 'music':
+        return 'Music';
+      case 'law':
+        return 'Law';
+      case 'economics':
+        return 'Economics';
+      default:
+        return 'All Disciplines (Auto)';
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative h-full overflow-hidden select-text">
       {/* Thread Header */}
@@ -647,23 +675,39 @@ export default function ThreadView({
         </div>
       </div>
 
-      {/* Mobile / Tablet: horizontal pipeline progress strip (<1024px, replaces vertical spine) */}
-      {messages.length > 0 && (
-        <div className="lg:hidden border-b border-ink-surface shrink-0 bg-ink-base/80">
-          {(() => {
-            const lastAria = [...messages].reverse().find((m) => m.role === 'aria');
+      {/* Mobile / Tablet Horizontal Pipeline Status Pill Bar (< 1280px) */}
+      <div className="xl:hidden px-4 py-2 bg-ink-base/95 border-b border-ink-surface flex items-center justify-between overflow-x-auto hud-scroll shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {(['routing', 'retrieving', 'streaming', 'auditing'] as const).map((st, idx) => {
+            const labels = ['PLAN', 'RETRIEVE', 'WRITE', 'CHECK'];
+            const stagesOrder = ['routing', 'retrieving', 'streaming', 'auditing', 'complete'];
+            const currentIdx = stagesOrder.indexOf(activeTelemetry?.stage || '');
+            const isActive = activeTelemetry?.stage === st;
+            const isDone = currentIdx > idx;
+
             return (
-              <PipelineSpine
-                orientation="horizontal"
-                mode="live"
-                stage={lastAria?.telemetry?.stage}
-                tiersFired={lastAria?.telemetry?.retrieval?.tiers}
-                isComplete={lastAria?.telemetry?.stage === 'complete'}
-              />
+              <div
+                key={st}
+                className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono border transition-all ${
+                  isActive
+                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.3)] animate-pulse font-bold'
+                    : isDone
+                    ? 'bg-ink-surface border-ink-surface text-gray-300'
+                    : 'bg-ink-base border-ink-surface/40 text-gray-600'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-cyan-400' : isDone ? 'bg-emerald-400' : 'bg-gray-700'}`} />
+                <span>{labels[idx]}</span>
+              </div>
             );
-          })()}
+          })}
         </div>
-      )}
+        {isLoading && (
+          <span className="font-mono text-[9px] text-cyan-400 pl-2 shrink-0 animate-pulse">
+            T+{(elapsedMs / 1000).toFixed(1)}s
+          </span>
+        )}
+      </div>
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 select-text">
@@ -924,7 +968,7 @@ export default function ThreadView({
                 )}
 
                 {/* Markdown Rendered Content with split-buffered citations, GFM tables & claim audit pass */}
-                <div className={`thread-content font-sans text-gray-200 max-w-[68ch] density-${initialSettings.fontDensity} leading-[1.65]`}>
+                <div className={`thread-content font-sans text-gray-200 max-w-[68ch] density-${settings.fontDensity} leading-[1.65]`}>
                   {msg.recordedDate && (
                     <div className="mb-3 px-2.5 py-1 text-[11px] font-mono bg-tier-okf/10 border border-tier-okf/40 text-tier-okf flex items-center gap-1.5">
                       <span>Recorded answer, {msg.recordedDate}, no live query</span>
@@ -967,111 +1011,111 @@ export default function ThreadView({
                       </div>
                     </details>
                   )}
-                </div>
 
-                {/* Action Bar */}
-                {!msg.isStreaming && msg.content && (
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-ink-surface/50">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => handleCopy(msg.id, msg.content)}
-                        className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase"
-                        title="Copy Markdown text"
-                      >
-                        {copiedMsgId === msg.id ? (
-                          <>
-                            <Check size={12} className="text-emerald-400" />
-                            <span className="text-emerald-400">Copied</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy size={12} />
-                            <span>Copy</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => handleDownloadBibtex(msg.citations)}
-                        disabled={!msg.citations || msg.citations.length === 0}
-                        className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase disabled:opacity-30"
-                        title="Download .bib bibliography"
-                      >
-                        <Download size={12} /> .BIB
-                      </button>
-
-                      {/* Bookmark to Collections (local) */}
-                      {msg.query && (
+                  {/* Action Bar */}
+                  {!msg.isStreaming && msg.content && (
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-ink-surface/50">
+                      <div className="flex items-center gap-3">
                         <button
-                          onClick={() => {
-                            const added = addToCollection({
-                              query: msg.query!,
-                              content: msg.content,
-                              confidence: msg.telemetry?.audit?.confidence,
-                            });
-                            setBookmarkedQueries((prev) => ({ ...prev, [msg.id]: added }));
-                          }}
-                          disabled={bookmarkedQueries[msg.id] || isInCollection(msg.query)}
-                          className={`transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase disabled:opacity-60 ${
-                            bookmarkedQueries[msg.id] || isInCollection(msg.query)
-                              ? 'text-tier-okf'
-                              : 'text-ink-muted hover:text-white'
-                          }`}
-                          title={
-                            bookmarkedQueries[msg.id] || isInCollection(msg.query)
-                              ? 'Already saved to Collections'
-                              : 'Bookmark this report to Collections'
-                          }
+                          onClick={() => handleCopy(msg.id, msg.content)}
+                          className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase"
+                          title="Copy Markdown text"
                         >
-                          {bookmarkedQueries[msg.id] || isInCollection(msg.query) ? (
+                          {copiedMsgId === msg.id ? (
                             <>
-                              <BookmarkCheck size={12} /> <span>Saved</span>
+                              <Check size={12} className="text-emerald-400" />
+                              <span className="text-emerald-400">Copied</span>
                             </>
                           ) : (
                             <>
-                              <Bookmark size={12} /> <span>Save</span>
+                              <Copy size={12} />
+                              <span>Copy</span>
                             </>
                           )}
                         </button>
-                      )}
-                    </div>
 
-                    {/* Hide thumbs when backend is unreachable or in mock mode; show saved tick only on success */}
-                    {isBackendReachable && !isMockActive && (
-                      <div className="flex items-center gap-2.5">
-                        {feedbackSent[msg.id] ? (
-                          <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 select-none">
-                            <Check size={12} /> Saved
-                          </span>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleFeedback(msg, 'positive')}
-                              className="text-ink-muted hover:text-white transition-colors p-1"
-                              title="Accurate synthesis"
-                            >
-                              <ThumbsUp size={13} />
-                            </button>
-                            <button
-                              onClick={() => handleFeedback(msg, 'negative')}
-                              className="text-ink-muted hover:text-warning transition-colors p-1"
-                              title="Inaccurate / Hallucination"
-                            >
-                              <ThumbsDown size={13} />
-                            </button>
-                            <button
-                              onClick={() => handleFeedback(msg, 'flagged')}
-                              className="text-ink-muted hover:text-warning transition-colors flex items-center gap-1 text-[10px] font-mono px-1 py-0.5"
-                              title="Flag Tier Conflict"
-                            >
-                              <AlertTriangle size={11} /> Flag Conflict
-                            </button>
-                          </>
+                        <button
+                          onClick={() => handleDownloadBibtex(msg.citations)}
+                          disabled={!msg.citations || msg.citations.length === 0}
+                          className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase disabled:opacity-30"
+                          title="Download .bib bibliography"
+                        >
+                          <Download size={12} /> .BIB
+                        </button>
+
+                        {/* Bookmark to Collections (local) */}
+                        {msg.query && (
+                          <button
+                            onClick={() => {
+                              const added = addToCollection({
+                                query: msg.query!,
+                                content: msg.content,
+                                confidence: msg.telemetry?.audit?.confidence,
+                              });
+                              setBookmarkedQueries((prev) => ({ ...prev, [msg.id]: added }));
+                            }}
+                            disabled={bookmarkedQueries[msg.id] || isInCollection(msg.query)}
+                            className={`transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase disabled:opacity-60 ${
+                              bookmarkedQueries[msg.id] || isInCollection(msg.query)
+                                ? 'text-tier-okf'
+                                : 'text-ink-muted hover:text-white'
+                            }`}
+                            title={
+                              bookmarkedQueries[msg.id] || isInCollection(msg.query)
+                                ? 'Already saved to Collections'
+                                : 'Bookmark this report to Collections'
+                            }
+                          >
+                            {bookmarkedQueries[msg.id] || isInCollection(msg.query) ? (
+                              <>
+                                <BookmarkCheck size={12} /> <span>Saved</span>
+                              </>
+                            ) : (
+                              <>
+                                <Bookmark size={12} /> <span>Save</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+
+                        {/* Hide thumbs when backend is unreachable or in mock mode; show saved tick only on success */}
+                        {isBackendReachable && !isMockActive && (
+                          <div className="flex items-center gap-2.5">
+                            {feedbackSent[msg.id] ? (
+                              <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 select-none">
+                                <Check size={12} /> Saved
+                              </span>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => handleFeedback(msg, 'positive')}
+                                  className="text-ink-muted hover:text-white transition-colors p-1"
+                                  title="Accurate synthesis"
+                                >
+                                  <ThumbsUp size={13} />
+                                </button>
+                                <button
+                                  onClick={() => handleFeedback(msg, 'negative')}
+                                  className="text-ink-muted hover:text-warning transition-colors p-1"
+                                  title="Inaccurate / Hallucination"
+                                >
+                                  <ThumbsDown size={13} />
+                                </button>
+                                <button
+                                  onClick={() => handleFeedback(msg, 'flagged')}
+                                  className="text-ink-muted hover:text-warning transition-colors flex items-center gap-1 text-[10px] font-mono px-1 py-0.5"
+                                  title="Flag Tier Conflict"
+                                >
+                                  <AlertTriangle size={11} /> Flag Conflict
+                                </button>
+                              </>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1079,193 +1123,53 @@ export default function ThreadView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Unified Collapsible: Advanced Parameters & Routing */}
-      <div className="shrink-0 bg-ink-base/90 border-t border-ink-surface z-10">
-        <button
-          type="button"
-          onClick={() => setAdvancedOpen((v) => !v)}
-          className="w-full flex items-center justify-between px-4 md:px-8 py-2.5 bg-ink-base/90 transition-all duration-300 ease-out hover:bg-ink-surface/60 hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 hover:scale-[1.01] border-b border-ink-surface text-left"
-        >
-          <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-gray-200">
-            <span className="text-tier-okf">⚙</span> Advanced Parameters &amp; Routing
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="font-mono text-[9px] text-ink-muted">{advancedOpen ? 'COLLAPSE' : 'EXPAND'}</span>
-            <ChevronDown size={12} className={advancedOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
-          </span>
-        </button>
-
-        {advancedOpen && (
-          <div className="px-4 md:px-8 pt-3 pb-2 border-t border-ink-surface bg-ink-base/90 shrink-0">
-        {/* Research Mode Selector */}
-        <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <span className="font-mono text-[9px] uppercase tracking-wider text-ink-muted mr-1">Research Mode</span>
-          {RESEARCH_MODE_OPTIONS.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => setResearchMode(m.id)}
-              title={m.hint}
-              className={`font-mono text-[10px] px-2 py-1 border transition-all hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 ${
-                researchMode === m.id
-                  ? 'bg-tier-okf/15 border-tier-okf/50 text-tier-okf'
-                  : 'bg-ink-base border-ink-surface text-ink-muted hover:text-gray-200'
-              }`}
-            >
-              <span className="mr-1">{m.glyph}</span>
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Multi-Discipline Branch Filter */}
-        <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <span className="font-mono text-[9px] uppercase tracking-wider text-ink-muted mr-1">Discipline Branch</span>
-          {DISCIPLINE_OPTIONS.map((d) => (
-            <button
-              key={d.id}
-              type="button"
-              onClick={() => setDiscipline(d.id)}
-              className={`font-mono text-[10px] px-2 py-1 border transition-all hover:border-sky-500/50 hover:shadow-[0_0_20px_rgba(14,165,233,0.18)] hover:-translate-y-0.5 ${
-                discipline === d.id
-                  ? 'bg-tier-live/15 border-tier-live/50 text-tier-live'
-                  : 'bg-ink-base border-ink-surface text-ink-muted hover:text-gray-200'
-              }`}
-            >
-              <span className="mr-1">{d.glyph}</span>
-              {d.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Advanced Research Parameters: custom context + BYOK key injector */}
-          {advancedOpen && (
-            <div className="mt-2 p-3 bg-ink-surface/40 border border-ink-surface space-y-3 animate-view-in">
-              <div>
-                <div className="font-mono text-[10px] uppercase tracking-wider text-gray-200 mb-1.5">
-                  Custom Research Context / Notes / Reference Links
-                </div>
-                <textarea
-                  value={customContext}
-                  onChange={(e) => setCustomContext(e.target.value)}
-                  placeholder="Paste lecture notes, paper excerpts, raw data, or specific URLs. Injected as authoritative user context ahead of retrieved literature."
-                  className="w-full h-24 bg-ink-base border border-ink-surface p-2 text-[11px] font-sans text-gray-200 placeholder-ink-muted focus:outline-none focus:border-tier-okf/50 resize-none"
-                />
-                <div className="mt-1.5 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setCustomContext('')}
-                    className="text-[9px] font-mono px-2 py-1 border border-ink-surface text-ink-muted hover:text-warning hover:border-warning/50 transition-colors"
-                  >
-                    <span className="flex items-center gap-1"><Eraser size={10} /> Clear context</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCustomContext(customContext)}
-                    disabled={!customContext.trim()}
-                    className="text-[9px] font-mono px-2 py-1 ml-1 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf hover:bg-tier-okf/25 transition-colors disabled:opacity-40"
-                  >
-                    <span className="flex items-center gap-1"><ChevronUp size={10} /> Set Context</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-ink-surface/70">
-                <div className="font-mono text-[10px] uppercase tracking-wider text-gray-200 mb-1.5 flex items-center gap-1.5">
-                  <KeyRound size={11} className="text-tier-okf" /> Custom BYOK API Key (Groq / OpenAI / Anthropic / Gemini)
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={byokProvider}
-                    onChange={(e) => setByokProvider(e.target.value)}
-                    className="bg-ink-base border border-ink-surface text-[11px] font-mono text-gray-200 px-2 py-1 outline-none focus:border-tier-okf/50"
-                  >
-                    <option value="">Default Engine</option>
-                    <option value="groq">Groq</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="gemini">Gemini</option>
-                  </select>
-                  <div className="flex-1 relative">
-                    <input
-                      type={showByokKey ? 'text' : 'password'}
-                      value={byokKey}
-                      onChange={(e) => setByokKeyState(e.target.value)}
-                      placeholder="sk-..."
-                      className="w-full bg-ink-base border border-ink-surface text-[11px] font-mono text-gray-200 px-2 py-1.5 pr-8 outline-none focus:border-tier-okf/50"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowByokKey((v) => !v)}
-                      className="absolute right-1.5 top-1.5 text-ink-muted hover:text-white"
-                    >
-                      {showByokKey ? 'Hide' : 'Show'}
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { if (byokProvider && byokKey) setByokKey(byokProvider, byokKey); }}                    className="text-[10px] font-mono px-2.5 py-1 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf hover:bg-tier-okf/25 transition-colors disabled:opacity-40"
-                    disabled={!byokProvider || !byokKey}
-                  >
-                    <span className="flex items-center gap-1"><KeyRound size={10} /> Save Key</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { clearByok(); setByokProvider(''); setByokKeyState(''); }}
-                    className="text-[10px] font-mono px-2.5 py-1 bg-ink-base border border-ink-surface text-ink-muted hover:text-warning hover:border-warning/50 transition-colors"
-                  >
-                    <span className="flex items-center gap-1"><Eraser size={10} /> Clear Key</span>
-                  </button>
-                </div>
-              </div>
+        {/* Sleek Glowing Prompt Input Box + Single-Line Read-Only Badge Underneath */}
+        <div className="p-3 md:p-4 bg-ink-base/95 border-t border-ink-surface shrink-0 z-20 safe-pb">
+          <form onSubmit={handleSubmit} className="relative">
+            <div className="relative border border-cyan-500/40 focus-within:border-cyan-400 bg-ink-surface/90 shadow-[0_0_15px_rgba(6,182,212,0.12)] transition-all">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
+                placeholder={placeholder || "Ask any research question (e.g. quantum biology, CRISPR off-target effects)..."}
+                rows={2}
+                className="w-full bg-transparent px-3.5 py-3 pr-12 text-sm md:text-base font-sans text-gray-100 placeholder-ink-muted focus:outline-none resize-none max-h-36 overflow-y-auto leading-relaxed"
+                style={{ fontSize: '16px' }}
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || isLoading}
+                className="absolute right-2.5 top-2.5 p-2 text-cyan-400 hover:text-white hover:bg-cyan-500/20 disabled:opacity-30 disabled:hover:bg-transparent transition-all touch-spring"
+                aria-label="Send query"
+              >
+                {isLoading ? <Loader2 size={16} className="animate-spin text-cyan-400" /> : <Send size={16} />}
+              </button>
             </div>
-          )}
-        </div>
-        )}
-      </div>
+          </form>
 
-      {/* Input Area */}
-      <form onSubmit={handleSubmit} className="p-4 bg-ink-base border-t border-ink-surface shrink-0">
-        <div className="relative">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit(e);
-              }
-            }}
-            className="w-full bg-ink-surface border border-ink-surface rounded-none pl-4 pr-12 py-3 text-xs font-sans text-gray-200 placeholder-ink-muted focus:outline-none focus:border-tier-okf/50 focus:ring-1 focus:ring-tier-okf/50 resize-none h-14"
-            placeholder={placeholder}
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading}
-            className="absolute right-3 top-3 text-ink-muted hover:text-white transition-all duration-300 ease-out hover:scale-[1.01] disabled:opacity-40 p-1"
-            aria-label="Send query"
-          >
-            <Send size={16} />
-          </button>
-        </div>
-
-        <div className="flex justify-between items-center mt-2 px-1">
-          <div className="flex gap-4 text-xs font-mono text-ink-muted">
+          {/* Tiny single-line read-only status badge underneath */}
+          <div className="mt-2 flex items-center justify-between text-[11px] font-mono text-ink-muted select-none">
             <button
               type="button"
-              onClick={() => setIsCompareMode(!isCompareMode)}
-              className={`transition-colors text-[11px] ${
-                isCompareMode ? 'text-tier-live font-bold' : 'hover:text-white'
-              }`}
+              onClick={() => onNavigateTab ? onNavigateTab('settings') : null}
+              className="group inline-flex items-center gap-1.5 hover:text-white transition-colors cursor-pointer text-left"
+              title="Configure research parameters in Settings"
             >
-              Compare Tiers [{isCompareMode ? 'On' : 'Off'}]
+              <span>
+                Mode: <strong className="text-gray-300 font-semibold">{formatModeLabel(settings.researchMode)}</strong> · Branch: <strong className="text-gray-300 font-semibold">{formatDisciplineLabel(settings.discipline)}</strong> · <span className="text-cyan-400 group-hover:underline">Configure in Settings ⚙</span>
+              </span>
             </button>
+            <span className="hidden sm:inline text-[10px] text-gray-500">
+              Press Enter ↵ to search · Shift + Enter for newline
+            </span>
           </div>
-          <span className="text-[10px] font-mono text-ink-muted">Press Enter to stream</span>
         </div>
-      </form>
-    </div>
-  );
-}
+      </div>
+    );
+  }

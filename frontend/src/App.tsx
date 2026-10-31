@@ -2,11 +2,16 @@ import React, { useState, Suspense, lazy, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ThreadView from './components/ThreadView';
 import SourcePanel from './components/SourcePanel';
-import Landing from './components/Landing';
+import Home from './components/Home';
 import PipelineSpine from './components/PipelineSpine';
 import { HistoryView, CollectionsView, OkfSpaceView, SettingsView } from './components/HubViews';
-import { Citation, MessageTelemetry, AriaSettings, ThemePreset, AnimationIntensity } from './types';
-import { getSettings, saveSettings } from './utils/storage';
+import { MobileTopBar, MobileBottomNav } from './components/ui/MobileNavBar';
+import AuthModal from './components/ui/AuthModal';
+import CommandPalette from './components/ui/CommandPalette';
+import { Citation, MessageTelemetry } from './types';
+import { ThemeProvider } from './context/ThemeContext';
+import { AuthProvider } from './context/AuthContext';
+import { SettingsProvider } from './context/SettingsContext';
 
 const MarkdownTestHarness = lazy(() => import('./components/MarkdownTestHarness'));
 
@@ -23,7 +28,15 @@ export default function App() {
     );
   }
 
-  return <AppShell />;
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <SettingsProvider>
+          <AppShell />
+        </SettingsProvider>
+      </AuthProvider>
+    </ThemeProvider>
+  );
 }
 
 function AppShell() {
@@ -32,51 +45,27 @@ function AppShell() {
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [hasQuery, setHasQuery] = useState(false);
   const [isMockActive, setIsMockActive] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+
   // Query handed over from History -> New question
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
-
-  // v3 Part 3: Research Control Center settings (theme, motion, density)
-  const [settings, setSettings] = useState<AriaSettings>(() => getSettings());
-
-  const applyAppearance = (s: AriaSettings) => {
-    const themeMap: Record<string, ThemePreset> = {
-      cyber_obsidian: 'cyber_obsidian',
-      quantum_indigo: 'quantum_indigo',
-      emerald_matrix: 'emerald_matrix',
-      solar_amber: 'solar_amber',
-      high_contrast: 'high_contrast',
-    };
-    const root = document.documentElement;
-    root.dataset.theme = themeMap[s.themePreset] || 'cyber_obsidian';
-    const motionMap: Record<string, number> = {
-      full_kinetic: 1,
-      subtle_smooth: 0.55,
-      reduced_motion: 0,
-    };
-    root.style.setProperty('--motion-scale', String(motionMap[s.animationIntensity] ?? 1));
-    document.body.classList.remove('density-compact', 'density-standard', 'density-comfortable');
-    document.body.classList.add(`density-${s.fontDensity || 'standard'}`);
-  };
-
-  useEffect(() => {
-    applyAppearance(settings);
-  }, [settings]);
-
-  const handleUpdateSettings = (patch: Partial<AriaSettings>) => {
-    const next = { ...settings, ...patch };
-    setSettings(next);
-    saveSettings(next);
-  };
-
-  const handleSourcesExpand = () => {
-    setSourcePanelOpen(true);
-  };
 
   // Active query state shared with SourcePanel
   const [activeCitations, setActiveCitations] = useState<Citation[]>([]);
   const [activeTelemetry, setActiveTelemetry] = useState<MessageTelemetry | undefined>(undefined);
   const [selectedCitationId, setSelectedCitationId] = useState<number | null>(null);
+
+  // Global Ctrl+K / Cmd+K listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleCitationClick = (citation: Citation) => {
     setSelectedCitationId(citation.id);
@@ -86,37 +75,35 @@ function AppShell() {
   const handleOpenQuery = (query: string) => {
     setPendingQuery(query);
     setActiveTab('query');
-    setIsSidebarOpen(false);
   };
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
-    setIsSidebarOpen(false);
+  };
+
+  const handleSourcesExpand = () => {
+    setSourcePanelOpen(true);
   };
 
   return (
-    <div className="flex h-screen bg-ink-base text-gray-200 font-sans overflow-hidden relative hud-grid">
-      {/* Mobile Sidebar Drawer Overlay */}
-      {isSidebarOpen && (
-        <div
-          className="lg:hidden fixed inset-0 bg-black/60 z-40 backdrop-blur-xs"
-          onClick={() => setIsSidebarOpen(false)}
+    <div className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-ink-base text-gray-200 font-sans overflow-hidden relative hud-grid select-none">
+      {/* Mobile Top Bar (< 768px) */}
+      <MobileTopBar
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+      />
+
+      {/* Desktop Left Navigation (>= 768px md:block) */}
+      <div className="hidden md:block shrink-0 h-full">
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         />
-      )}
-
-      {/* Left Navigation: fixed column on desktop, slide-over drawer on mobile */}
-      <div className="hidden lg:block shrink-0">
-        <Sidebar activeTab={activeTab} onTabChange={handleTabChange} />
       </div>
-      <aside
-        className={`lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-ink-base border-r border-ink-surface shadow-2xl transition-transform duration-200 ${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <Sidebar activeTab={activeTab} onTabChange={handleTabChange} />
-      </aside>
 
-      {/* Slim Vertical Spine between Sidebar and Content on New Question */}
+      {/* Slim Vertical Spine between Sidebar and Content on New Question (xl+ only) */}
       {activeTab === 'query' && !isFocusMode && (
         <aside className="hidden xl:flex shrink-0 w-32 border-r border-ink-surface bg-ink-base/90 p-4 flex-col justify-center select-none">
           <PipelineSpine
@@ -129,8 +116,11 @@ function AppShell() {
       )}
 
       {/* Center Thread Workspace: keyed per-tab for view transitions */}
-      <main key={activeTab} className="flex-1 flex flex-col h-full md:border-r border-ink-surface bg-ink-base transition-all w-full overflow-hidden animate-view-in">
-        {activeTab === 'home' && <Landing onStart={() => handleTabChange('query')} />}
+      <main
+        key={activeTab}
+        className="flex-1 flex flex-col h-full md:border-r border-ink-surface bg-ink-base transition-all w-full overflow-hidden pb-14 md:pb-0 animate-view-in relative"
+      >
+        {activeTab === 'home' && <Home onStart={() => handleTabChange('query')} />}
         {activeTab === 'query' && (
           <ThreadView
             onCitationClick={handleCitationClick}
@@ -143,18 +133,16 @@ function AppShell() {
             activeTelemetry={activeTelemetry}
             activeCitations={activeCitations}
             isMockActive={isMockActive}
-            onToggleSidebar={() => setIsSidebarOpen((v) => !v)}
             pendingQuery={pendingQuery}
             onPendingQueryConsumed={() => setPendingQuery(null)}
             onSourcesExpand={handleSourcesExpand}
+            onNavigateTab={handleTabChange}
           />
         )}
         {activeTab === 'history' && <HistoryView onOpenQuery={handleOpenQuery} />}
         {activeTab === 'collections' && <CollectionsView />}
         {activeTab === 'okf' && <OkfSpaceView />}
-        {activeTab === 'settings' && (
-          <SettingsView settings={settings} onUpdateSettings={handleUpdateSettings} />
-        )}
+        {activeTab === 'settings' && <SettingsView />}
       </main>
 
       {/* Right Source Panel: hidden until a query starts; slide-over on mobile/tablet, column on lg+ */}
@@ -165,7 +153,7 @@ function AppShell() {
             className="lg:hidden fixed inset-0 bg-black/60 z-40 backdrop-blur-xs"
             onClick={() => setSourcePanelOpen(false)}
           />
-          <aside className="fixed inset-y-0 right-0 z-50 w-[85vw] max-w-sm lg:relative lg:w-96 h-full bg-ink-surface shadow-2xl flex-shrink-0 transition-transform">
+          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-ink-surface shadow-2xl flex-shrink-0 transition-transform">
             <SourcePanel
               onClose={() => setSourcePanelOpen(false)}
               activeQuery={hasQuery}
@@ -178,6 +166,18 @@ function AppShell() {
           </aside>
         </>
       )}
+
+      {/* Mobile Fixed Bottom Navigation Bar (< 768px) */}
+      <MobileBottomNav activeTab={activeTab} onTabChange={handleTabChange} />
+
+      {/* Global Modals */}
+      <AuthModal />
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onNavigate={handleTabChange}
+        onStartQuery={(q) => handleOpenQuery(q)}
+      />
     </div>
   );
 }

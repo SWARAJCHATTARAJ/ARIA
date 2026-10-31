@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ExternalLink } from 'lucide-react';
 import { Citation, TierType, AuditClaim } from '../types';
 
 interface MarkdownRendererProps {
@@ -108,34 +109,13 @@ export default function MarkdownRenderer({
         const citId = parseInt(match[2], 10);
         const cit = citationMap.get(citId);
         if (cit) {
-          const glyph = getTierGlyph(cit.tier);
-          const colorClass = getTierColorClass(cit.tier);
-          const tooltip = `${cit.tier || 'SOURCE'} • ${cit.title || cit.path || `Citation #${citId + 1}`}`;
-
           nodes.push(
-            <button
+            <InlineCitationPill
               key={matchKey}
-              type="button"
-              onClick={() => {
-                if (onCitationClick) onCitationClick(cit);
-                const card = document.getElementById(`citation-card-${citId}`);
-                if (card) {
-                  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                  const ev = card.querySelector('.evidence-snippet');
-                  if (ev) {
-                    ev.classList.remove('flash-evidence');
-                    void (ev as HTMLElement).offsetWidth;
-                    ev.classList.add('flash-evidence');
-                  }
-                }
-              }}
-              className={`inline-flex items-center gap-1 font-mono text-[10px] font-semibold px-1 py-0.2 mx-0.5 rounded-none border transition-all select-none cursor-pointer align-baseline animate-[citationFadeIn_calc(120ms*var(--motion-scale,1))_cubic-bezier(.2,.8,.2,1)] ${colorClass}`}
-              title={tooltip}
-              aria-label={`Citation ${citId + 1}: ${tooltip}`}
-            >
-              <span className="opacity-80 text-[9px] select-none">{glyph}</span>
-              <span>{citId + 1}</span>
-            </button>
+              cit={cit}
+              citId={citId}
+              onCitationClick={onCitationClick}
+            />
           );
         }
       } else if (match[3]) {
@@ -569,5 +549,97 @@ export default function MarkdownRenderer({
       {/* Stream Caret: blinking block removed on audit */}
       {isStreaming && <span className="animate-caret" aria-hidden="true" />}
     </div>
+  );
+}
+
+function InlineCitationPill({
+  cit,
+  citId,
+  onCitationClick,
+}: {
+  cit: Citation;
+  citId: number;
+  onCitationClick?: (citation: Citation) => void;
+}) {
+  const [showPreview, setShowPreview] = useState(false);
+  const glyph = getTierGlyph(cit.tier);
+  const colorClass = getTierColorClass(cit.tier);
+  const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
+  const targetUrl = cit.doi
+    ? cit.doi.startsWith('http')
+      ? cit.doi
+      : `https://doi.org/${cit.doi}`
+    : cit.url || (cit.arxiv_id ? `https://arxiv.org/abs/${cit.arxiv_id}` : '');
+
+  return (
+    <span
+      className="relative inline-block align-baseline group"
+      onMouseEnter={() => setShowPreview(true)}
+      onMouseLeave={() => setShowPreview(false)}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (onCitationClick) onCitationClick(cit);
+          const card = document.getElementById(`citation-card-${citId}`);
+          if (card) {
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            const ev = card.querySelector('.evidence-snippet');
+            if (ev) {
+              ev.classList.remove('flash-evidence');
+              void (ev as HTMLElement).offsetWidth;
+              ev.classList.add('flash-evidence');
+            }
+          }
+        }}
+        className={`inline-flex items-center gap-1 font-mono text-[10px] font-semibold px-1.5 py-0.2 mx-0.5 rounded-none border transition-all select-none cursor-pointer align-baseline animate-[citationFadeIn_calc(120ms*var(--motion-scale,1))_cubic-bezier(.2,.8,.2,1)] touch-spring ${colorClass}`}
+        aria-label={`Citation ${citId + 1}: ${cit.title || 'Source'}`}
+      >
+        <span className="opacity-80 text-[9px] select-none">{glyph}</span>
+        <span>{citId + 1}</span>
+      </button>
+
+      {/* Spring-animated floating citation card preview on hover / focus */}
+      {showPreview && (
+        <span
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-ink-base border border-cyan-500/50 shadow-2xl z-50 rounded-none pointer-events-auto text-left block animate-view-in"
+          style={{ filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.85))' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="flex items-center justify-between text-[10px] font-mono mb-1.5 border-b border-ink-surface pb-1 text-ink-muted">
+            <span className="flex items-center gap-1 font-bold text-cyan-400">
+              <span>{glyph}</span>
+              <span>{cit.tier || 'PRIMARY SOURCE'} #{citId + 1}</span>
+            </span>
+            {cit.year && <span>{cit.year}</span>}
+          </span>
+          <span className="block font-sans font-semibold text-xs text-white leading-snug line-clamp-2 mb-1">
+            {cit.title || cit.path || 'Academic Citation'}
+          </span>
+          {authorsStr && (
+            <span className="block font-sans text-[11px] text-gray-300 line-clamp-1 mb-1.5">
+              {authorsStr}
+            </span>
+          )}
+          {cit.venue && (
+            <span className="block font-mono text-[10px] text-ink-muted line-clamp-1 mb-1">
+              Venue: {cit.venue}
+            </span>
+          )}
+          {targetUrl && (
+            <a
+              href={targetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[10px] font-mono text-cyan-400 hover:underline mt-1"
+            >
+              <span>View Source / DOI</span>
+              <ExternalLink size={10} />
+            </a>
+          )}
+        </span>
+      )}
+    </span>
   );
 }

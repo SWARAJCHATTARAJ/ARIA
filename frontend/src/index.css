@@ -3,16 +3,131 @@
 @tailwind utilities;
 
 :root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
   --motion-scale: 1;
   --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --theme-bg: #04070f;
+  --theme-surface: #0b111e;
+  --theme-surface-translucent: rgba(11, 17, 30, 0.94);
+  --theme-accent: #06b6d4;
+  --theme-accent-glow: rgba(6, 182, 212, 0.25);
+  --theme-border: rgba(6, 182, 212, 0.2);
+  --theme-text: #f1f5f9;
+  --theme-text-muted: #94a3b8;
+  --theme-grid: rgba(6, 182, 212, 0.05);
+  --theme-grid-major: rgba(6, 182, 212, 0.09);
+}
+
+/* ======================================================================
+   4-THEME ENGINE (cyber-cyan, emerald-biolab, obsidian-gold, solaris-paper)
+   ====================================================================== */
+html[data-theme='cyber-cyan'],
+html[data-theme='cyber_obsidian'] {
+  --theme-bg: #04070f;
+  --theme-surface: #0b111e;
+  --theme-surface-translucent: rgba(11, 17, 30, 0.94);
+  --theme-accent: #06b6d4;
+  --theme-accent-glow: rgba(6, 182, 212, 0.25);
+  --theme-border: rgba(6, 182, 212, 0.2);
+  --theme-text: #f1f5f9;
+  --theme-text-muted: #94a3b8;
+  --theme-grid: rgba(6, 182, 212, 0.05);
+  --theme-grid-major: rgba(6, 182, 212, 0.09);
+  --aria-hud-accent: #06b6d4;
+  --aria-hud-bg: #04070f;
+}
+
+html[data-theme='emerald-biolab'],
+html[data-theme='emerald_matrix'] {
+  --theme-bg: #030906;
+  --theme-surface: #09160f;
+  --theme-surface-translucent: rgba(9, 22, 15, 0.94);
+  --theme-accent: #10b981;
+  --theme-accent-glow: rgba(16, 185, 129, 0.25);
+  --theme-border: rgba(16, 185, 129, 0.22);
+  --theme-text: #ecfdf5;
+  --theme-text-muted: #6ee7b7;
+  --theme-grid: rgba(16, 185, 129, 0.05);
+  --theme-grid-major: rgba(16, 185, 129, 0.09);
+  --aria-hud-accent: #10b981;
+  --aria-hud-bg: #030906;
+}
+
+html[data-theme='obsidian-gold'],
+html[data-theme='solar_amber'] {
+  --theme-bg: #080705;
+  --theme-surface: #14110a;
+  --theme-surface-translucent: rgba(20, 17, 10, 0.94);
+  --theme-accent: #f59e0b;
+  --theme-accent-glow: rgba(245, 158, 11, 0.25);
+  --theme-border: rgba(245, 158, 11, 0.22);
+  --theme-text: #fef3c7;
+  --theme-text-muted: #fcd34d;
+  --theme-grid: rgba(245, 158, 11, 0.05);
+  --theme-grid-major: rgba(245, 158, 11, 0.09);
+  --aria-hud-accent: #f59e0b;
+  --aria-hud-bg: #080705;
+}
+
+html[data-theme='solaris-paper'] {
+  --theme-bg: #f8fafc;
+  --theme-surface: #ffffff;
+  --theme-surface-translucent: rgba(255, 255, 255, 0.96);
+  --theme-accent: #0284c7;
+  --theme-accent-glow: rgba(2, 132, 199, 0.2);
+  --theme-border: rgba(2, 132, 199, 0.25);
+  --theme-text: #0f172a;
+  --theme-text-muted: #475569;
+  --theme-grid: rgba(2, 132, 199, 0.04);
+  --theme-grid-major: rgba(2, 132, 199, 0.07);
+  --aria-hud-accent: #0284c7;
+  --aria-hud-bg: #f8fafc;
+}
+
+/* Light theme overrides for solaris-paper */
+html[data-theme='solaris-paper'] body,
+html[data-theme='solaris-paper'] .bg-ink-base {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+html[data-theme='solaris-paper'] .bg-ink-surface {
+  background-color: #ffffff !important;
+}
+html[data-theme='solaris-paper'] .border-ink-surface {
+  border-color: #e2e8f0 !important;
+}
+html[data-theme='solaris-paper'] .text-ink-muted {
+  color: #64748b !important;
+}
+html[data-theme='solaris-paper'] .text-white {
+  color: #0f172a !important;
+}
+html[data-theme='solaris-paper'] .text-gray-100,
+html[data-theme='solaris-paper'] .text-gray-200,
+html[data-theme='solaris-paper'] .text-gray-300 {
+  color: #1e293b !important;
 }
 
 @layer base {
-  body {
-    @apply bg-ink-base text-gray-200 antialiased;
+  html, body {
+    min-height: 100dvh;
+    height: 100dvh;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    background-color: var(--theme-bg);
+    color: var(--theme-text);
     font-size: 15px;
     line-height: 1.65;
   }
+
+  /* Safe-area insets helpers */
+  .safe-pt { padding-top: max(var(--sat), 8px); }
+  .safe-pb { padding-bottom: max(var(--sab), 8px); }
+  .safe-nav-pb { padding-bottom: calc(var(--sab) + 64px); }
 
   /* Type scale enforcement */
   h1 {
@@ -43,17 +158,65 @@
   }
 }
 
-/* Neon cyan pulse for active pipeline stages and live telemetry indicators */
+/* ======================================================================
+   60FPS MOBILE CSS ENGINE & GPU ACCELERATION (@media max-width: 768px)
+   ====================================================================== */
+@media (max-width: 768px) {
+  /* Replace heavy multi-layer blur filters with hardware-composited semi-opaque surfaces */
+  .backdrop-blur-md,
+  .backdrop-blur-lg,
+  .backdrop-blur-sm,
+  .backdrop-blur-xs {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: var(--theme-surface-translucent) !important;
+  }
+
+  /* Flatten heavy spread box shadows to prevent WebView fill-rate stalls */
+  .shadow-2xl, .shadow-xl, .shadow-lg {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45) !important;
+  }
+
+  /* Promote key animated containers to hardware composited layers */
+  .animate-rise-in,
+  .animate-view-in,
+  .animate-orbit-spin,
+  .animate-neon-pulse,
+  .animate-spotlight {
+    transform: translate3d(0, 0, 0);
+    will-change: transform, opacity;
+  }
+
+  /* Prevent auto-zoom on mobile inputs by keeping font size >= 16px */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
+  /* Butter-smooth momentum touch scrolling */
+  .overflow-y-auto, .overflow-x-auto, [class*="overflow-"] {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+}
+
+/* Active touch feedback (no hover dependency) */
+button:active:not(:disabled),
+.touch-spring:active {
+  transform: scale(0.97);
+  transition: transform 90ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Neon Pulse */
 @keyframes neonPulse {
-  0%, 100% { box-shadow: 0 0 6px rgba(34, 211, 238, 0.35), 0 0 18px rgba(34, 211, 238, 0.10); }
-  50% { box-shadow: 0 0 12px rgba(34, 211, 238, 0.55), 0 0 34px rgba(34, 211, 238, 0.20); }
+  0%, 100% { box-shadow: 0 0 6px rgba(6, 182, 212, 0.35), 0 0 16px rgba(6, 182, 212, 0.12); }
+  50% { box-shadow: 0 0 14px rgba(6, 182, 212, 0.65), 0 0 30px rgba(6, 182, 212, 0.25); }
 }
 
 .animate-neon-pulse {
   animation: neonPulse calc(2.2s * var(--motion-scale, 1)) ease-in-out infinite;
 }
 
-/* Stream Caret */
+/* Caret Blink */
 @keyframes caretBlink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
@@ -63,7 +226,7 @@
   display: inline-block;
   width: 7px;
   height: 15px;
-  background-color: #E2E8F0;
+  background-color: var(--theme-accent);
   vertical-align: middle;
   margin-left: 4px;
   animation: caretBlink calc(0.8s * var(--motion-scale, 1)) step-start infinite;
@@ -82,7 +245,7 @@
 
 /* Evidence flash highlight */
 @keyframes evidenceFlash {
-  0% { background-color: rgba(91, 141, 184, 0.4); }
+  0% { background-color: rgba(6, 182, 212, 0.35); }
   100% { background-color: transparent; }
 }
 
@@ -101,7 +264,7 @@
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #E2E8F0;
+  color: var(--theme-text);
   border: 1px solid rgba(226, 232, 240, 0.7);
   transform: rotate(-2deg) translate(1px, -1px);
   margin-left: 6px;
@@ -109,36 +272,12 @@
   background-color: rgba(255, 255, 255, 0.05);
 }
 
-/* Clipped corner utility for source cards (12px top-right) */
+/* Clipped corner utility for source cards */
 .clipped-source-card {
   clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
 }
 
-/* Source Panel 160ms slide and fade */
-@keyframes slideIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-/* Citation pill 120ms scale .9 to 1 and fade */
-@keyframes citationFadeIn {
-  0% { transform: scale(0.9); opacity: 0; }
-  100% { transform: scale(1); opacity: 1; }
-}
-
-/* Claim sweep highlight */
-@keyframes sweepHighlight {
-  0% {
-    background-color: rgba(255, 255, 255, 0.35);
-  }
-  50% {
-    background-color: rgba(255, 255, 255, 0.22);
-  }
-  100% {
-    background-color: rgba(255, 255, 255, 0.12);
-  }
-}
-
+/* Audit Claim Highlight */
 .audit-claim-highlight {
   background-color: transparent;
   border-bottom: none;
@@ -152,24 +291,19 @@
   border-bottom: 1.5px solid rgba(255, 255, 255, 0.28);
 }
 
-/* ======================================================================
-   HIGH-DENSITY KINETIC RESEARCH HUD (Part 3.2)
-   Blueprint cyber-grid, glowing telemetry borders, 4px dark scrollbars
-   ====================================================================== */
-
-/* Blueprint cyber-grid background (crisp 24px grid + 120px major grid) */
+/* Blueprint cyber-grid background */
 .hud-grid {
-  background-color: var(--tw-color, #0A0E14);
+  background-color: var(--theme-bg);
   background-image:
-    linear-gradient(rgba(91, 141, 184, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(91, 141, 184, 0.055) 1px, transparent 1px),
-    linear-gradient(rgba(91, 141, 184, 0.09) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(91, 141, 184, 0.09) 1px, transparent 1px);
+    linear-gradient(var(--theme-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--theme-grid) 1px, transparent 1px),
+    linear-gradient(var(--theme-grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--theme-grid-major) 1px, transparent 1px);
   background-size: 24px 24px, 24px 24px, 120px 120px, 120px 120px;
   background-position: -1px -1px, -1px -1px, -1px -1px, -1px -1px;
 }
 
-/* Glowing telemetry border for source cards / HUD panels */
+/* Glowing telemetry border */
 .telemetry-glow {
   position: relative;
 }
@@ -178,41 +312,40 @@
   position: absolute;
   inset: -1px;
   pointer-events: none;
-  border: 1px solid rgba(91, 141, 184, 0.35);
+  border: 1px solid var(--theme-border);
   box-shadow:
-    0 0 8px rgba(91, 141, 184, 0.14),
-    inset 0 0 12px rgba(91, 141, 184, 0.05);
+    0 0 8px var(--theme-accent-glow),
+    inset 0 0 12px rgba(6, 182, 212, 0.04);
   transition: box-shadow 200ms ease, border-color 200ms ease;
 }
 .telemetry-glow:hover::before {
-  border-color: rgba(91, 141, 184, 0.7);
+  border-color: var(--theme-accent);
   box-shadow:
-    0 0 14px rgba(91, 141, 184, 0.30),
-    inset 0 0 16px rgba(91, 141, 184, 0.10);
+    0 0 14px var(--theme-accent-glow),
+    inset 0 0 16px rgba(6, 182, 212, 0.08);
 }
 
-/* Sleek 4px dark scrollbars */
+/* Sleek dark scrollbars */
 .hud-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #2A3442 #0A0E14;
+  scrollbar-color: #2A3442 var(--theme-bg);
 }
 .hud-scroll::-webkit-scrollbar {
   width: 4px;
   height: 4px;
 }
 .hud-scroll::-webkit-scrollbar-track {
-  background: #0A0E14;
+  background: var(--theme-bg);
 }
 .hud-scroll::-webkit-scrollbar-thumb {
   background: #2A3442;
   border-radius: 2px;
 }
 .hud-scroll::-webkit-scrollbar-thumb:hover {
-  background: #44506250;
-  background: #445062;
+  background: var(--theme-accent);
 }
 
-/* Animated data-link flow for the Citation & Entailment Constellation */
+/* Constellation data-link flow */
 @keyframes dashFlow {
   to {
     stroke-dashoffset: -14;
@@ -232,7 +365,7 @@
   animation: nodePulse calc(2.2s * var(--motion-scale, 1)) ease-in-out infinite;
 }
 
-/* Horizontal pipeline progress fill (mobile) */
+/* Horizontal pipeline progress fill */
 @keyframes pipelineSweep {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
@@ -248,24 +381,24 @@
   position: absolute;
   inset: 0;
   width: 25%;
-  background: linear-gradient(90deg, transparent, #5B8DB8, transparent);
+  background: linear-gradient(90deg, transparent, var(--theme-accent), transparent);
   animation: pipelineSweep calc(1.8s * var(--motion-scale, 1)) linear infinite;
 }
 
-/* Real-time telemetry counter chip */
+/* Telemetry chip */
 .telemetry-chip {
   font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-size: 10px;
   letter-spacing: 0.03em;
-  color: #A7B4C4;
-  border: 1px solid rgba(91, 141, 184, 0.35);
+  color: var(--theme-text-muted);
+  border: 1px solid var(--theme-border);
   background: rgba(18, 24, 32, 0.85);
   padding: 2px 6px;
   line-height: 1.4;
   white-space: nowrap;
 }
 
-/* Walkway scanline sweep over the thread HUD header */
+/* HUD Scanline */
 @keyframes hudScan {
   0% { transform: translateX(-30%); opacity: 0; }
   35% { opacity: 0.5; }
@@ -276,16 +409,12 @@
   top: 0;
   bottom: 0;
   width: 30%;
-  background: linear-gradient(90deg, transparent, rgba(91, 141, 184, 0.08), transparent);
+  background: linear-gradient(90deg, transparent, var(--theme-accent-glow), transparent);
   animation: hudScan calc(6s * var(--motion-scale, 1)) ease-in-out infinite;
   pointer-events: none;
 }
 
-/* ======================================================================
-   KINETIC ENTRANCE / TRANSITION (v3 Part 4.2, 4.3)
-   ====================================================================== */
-
-/* Staggered entrance: fade + soft Y rise (hero typography, cards, hubs) */
+/* Staggered entrance */
 @keyframes riseIn {
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: translateY(0); }
@@ -295,7 +424,7 @@
   animation: riseIn calc(0.55s * var(--motion-scale, 1)) cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-/* View transition: fade + subtle Y slide on workspace surfaces */
+/* View transition */
 @keyframes viewIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -305,7 +434,7 @@
   animation: viewIn calc(0.35s * var(--motion-scale, 1)) cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-/* Floating ambient spotlight gradients for hero */
+/* Floating ambient spotlight gradients */
 @keyframes spotlightDrift {
   0%, 100% { transform: translate3d(-12%, -8%, 0) scale(1); opacity: 0.55; }
   50% { transform: translate3d(10%, 12%, 0) scale(1.08); opacity: 0.7; }
@@ -315,7 +444,7 @@
   animation: spotlightDrift calc(9s * var(--motion-scale, 1)) ease-in-out infinite;
 }
 
-/* Orbital ring slow spin for hero */
+/* Orbital ring slow spin */
 @keyframes orbitSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -324,75 +453,39 @@
   animation: orbitSpin calc(14s * var(--motion-scale, 1)) linear infinite;
 }
 
-/* Data packets flowing along an SVG path */
-@keyframes packetFlow {
-  0% { offset-path: path('M 0 0 L 100 40 L 200 20'); offset-distance: 0%; }
-  100% { offset-path: path('M 0 0 L 100 40 L 200 20'); offset-distance: 100%; }
-}
-@supports (offset-path: path('M 0 0 L 10 10')) {
-  .animate-packet-flow {
-    animation: packetFlow calc(2.2s * var(--motion-scale, 1)) linear infinite;
-  }
+/* Continuous sweeping neon border sheen */
+@keyframes neonBorderSheen {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
-/* Stagger helper: children with increasing delay */
-@keyframes staggerIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+.neon-sheen {
+  position: relative;
 }
-.animate-stagger {
-  animation: staggerIn calc(0.5s * var(--motion-scale, 1)) cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-/* ======================================================================
-   THEME PRESETS (v3 Part 3.2): data-theme overrides on top of Cyber Obsidian
-   ====================================================================== */
-html[data-theme='cyber_obsidian'] {
-  --aria-hud-accent: #5B8DB8;
-  --aria-hud-glow: rgba(91, 141, 184, 0.14);
-  --aria-hud-bg: #0A0E14;
-  --aria-hud-grid: rgba(91, 141, 184, 0.055);
-  --aria-hud-grid-major: rgba(91, 141, 184, 0.09);
+.neon-sheen::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.15), rgba(6, 182, 212, 0.75), rgba(99, 102, 241, 0.75), rgba(6, 182, 212, 0.15));
+  background-size: 300% 300%;
+  animation: neonBorderSheen calc(4s * var(--motion-scale, 1)) ease infinite;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+  opacity: 0.7;
 }
 
-html[data-theme='quantum_indigo'] {
-  --aria-hud-accent: #7C6BD9;
-  --aria-hud-glow: rgba(124, 107, 217, 0.16);
-  --aria-hud-bg: #0A0A18;
-  --aria-hud-grid: rgba(124, 107, 217, 0.06);
-  --aria-hud-grid-major: rgba(124, 107, 217, 0.10);
+/* Pulse telemetry dot */
+@keyframes pulseDot {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.35); opacity: 1; }
+}
+.pulse-telemetry {
+  animation: pulseDot 1.8s ease-in-out infinite;
 }
 
-html[data-theme='emerald_matrix'] {
-  --aria-hud-accent: #34D399;
-  --aria-hud-glow: rgba(52, 211, 153, 0.13);
-  --aria-hud-bg: #060F0B;
-  --aria-hud-grid: rgba(52, 211, 153, 0.055);
-  --aria-hud-grid-major: rgba(52, 211, 153, 0.09);
-}
-
-html[data-theme='solar_amber'] {
-  --aria-hud-accent: #D9A441;
-  --aria-hud-glow: rgba(217, 164, 65, 0.14);
-  --aria-hud-bg: #0E0A05;
-  --aria-hud-grid: rgba(217, 164, 65, 0.05);
-  --aria-hud-grid-major: rgba(217, 164, 65, 0.09);
-}
-
-html[data-theme='high_contrast'] {
-  --aria-hud-accent: #5B8DB8;
-  --aria-hud-glow: rgba(91, 141, 184, 0.22);
-  --aria-hud-bg: #05080C;
-  --aria-hud-grid: rgba(91, 141, 184, 0.14);
-  --aria-hud-grid-major: rgba(91, 141, 184, 0.22);
-}
-
-/* Theme-aware HUD surface tokens (re-declare on the html element) */
-html[data-theme] body {
-  background-color: var(--aria-hud-bg);
-}
-
-/* Reading density overrides for the thread content container */
+/* Reading density overrides */
 .thread-content.density-compact { font-size: 13px; line-height: 1.55; }
 .thread-content.density-standard { font-size: 15px; line-height: 1.65; }
 .thread-content.density-comfortable { font-size: 16.5px; line-height: 1.8; }

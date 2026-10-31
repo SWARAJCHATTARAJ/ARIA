@@ -22,8 +22,8 @@ export default defineConfig({
         name: 'ARIA v2 — Autonomous Research & Intelligence Assistant',
         short_name: 'ARIA v2',
         description: 'Autonomous Research & Intelligence Assistant',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
+        theme_color: '#050811',
+        background_color: '#050811',
         display: 'standalone',
         orientation: 'portrait-primary',
         scope: '/',
@@ -58,5 +58,19 @@ export default defineConfig({
         runtimeCaching: []
       }
     })
-  ]
+  ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom')) return 'vendor-react';
+            if (id.includes('lucide-react')) return 'vendor-icons';
+            if (id.includes('@supabase')) return 'vendor-supabase';
+          }
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1200,
+  },
 });

@@ -5,12 +5,16 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-windows:
-    name: Build Windows .exe (Tauri)
+    name: Build Windows .exe (Tauri CLI)
     runs-on: windows-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,28 +29,66 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm install
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
+      - name: Install frontend dependencies & Build
+        run: |
+          npm install --prefix frontend
+          npm run build --prefix frontend
+        env:
+          VITE_API_BASE_URL: https://aria.swarajchattaraj.tech
 
       - name: Build Tauri Windows App
-        uses: tauri-apps/tauri-action@v0.5.8
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: app-v__VERSION__
-          releaseName: 'ARIA App v__VERSION__'
-          args: --target x86_64-pc-windows-msvc
+        run: npx --yes @tauri-apps/cli@^2 build
+
+      - name: Locate and Stage Windows Installer
+        shell: pwsh
+        run: |
+          $nsis = Get-ChildItem -Path "src-tauri/target" -Recurse -Filter "*.exe" | Where-Object { $_.FullName -like "*bundle*nsis*" } | Select-Object -First 1
+          if ($nsis) {
+            Write-Host "Found NSIS installer: $($nsis.FullName)"
+            Copy-Item -Path $nsis.FullName -Destination "./ARIA-Windows-x64-Setup.exe" -Force
+          } else {
+            $raw = Get-ChildItem -Path "src-tauri/target" -Recurse -Filter "*.exe" | Where-Object { $_.FullName -like "*release*" -and $_.FullName -notlike "*deps*" -and $_.FullName -notlike "*build*" } | Select-Object -First 1
+            if ($raw) {
+              Write-Host "Found release binary: $($raw.FullName)"
+              Copy-Item -Path $raw.FullName -Destination "./ARIA-Windows-x64-Setup.exe" -Force
+            } else {
+              throw "No Windows executable found in src-tauri/target"
+            }
+          }
+          Get-Item "./ARIA-Windows-x64-Setup.exe"
 
       - name: Upload Windows Executable Artifact
         uses: actions/upload-artifact@v4
         with:
           name: aria-windows-x64-exe
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          path: ARIA-Windows-x64-Setup.exe
+
+      - name: Publish Windows Installer to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: app-v1.0.0
+          name: 'ARIA App v1.0.0'
+          files: ARIA-Windows-x64-Setup.exe
+          fail_on_unmatched_files: false
+
+      - name: Write Windows Step Summary
+        if: always()
+        shell: pwsh
+        run: |
+          $status = if ("${{ job.status }}" -eq "success") { "PASS Succeeded" } else { "FAIL Failed" }
+          $summary = @"
+          ### Windows Native Build Summary
+          | Metric | Value |
+          |---|---|
+          | **Status** | $status |
+          | **Target** | x86_64-pc-windows-msvc |
+          | **Artifact** | `ARIA-Windows-x64-Setup.exe` |
+          | **Release Tag** | `app-v1.0.0` |
+          "@
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
   build-android:
     name: Build Android APK (Capacitor)
@@ -66,18 +108,17 @@ jobs:
           distribution: 'temurin'
           java-version: 21
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-
       - name: Install Android SDK Build-Tools and Platforms
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;34.0.0" "platform-tools" > /dev/null
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Install frontend dependencies & Build
         run: |
           npm install --prefix frontend
           npm run build --prefix frontend
+        env:
+          VITE_API_BASE_URL: https://aria.swarajchattaraj.tech
 
       - name: Install Capacitor CLI & Sync
         run: |
@@ -90,8 +131,43 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
+      - name: Stage Android APK
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk ./ARIA-Android-v1.0.0.apk
+          ls -lh ./ARIA-Android-v1.0.0.apk
+
       - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: aria-android_debug_apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ARIA-Android-v1.0.0.apk
+
+      - name: Publish Android APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: app-v1.0.0
+          name: 'ARIA App v1.0.0'
+          files: ARIA-Android-v1.0.0.apk
+          fail_on_unmatched_files: false
+
+      - name: Write Android Step Summary
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            EMOJI="PASS Succeeded"
+          else
+            EMOJI="FAIL Failed"
+          fi
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          ### Android Native Build Summary
+          | Metric | Value |
+          |---|---|
+          | **Status** | $EMOJI |
+          | **Target** | Android SDK 34 (Capacitor) |
+          | **Artifact** | \`ARIA-Android-v1.0.0.apk\` |
+          | **Release Tag** | \`app-v1.0.0\` |
+          EOF
