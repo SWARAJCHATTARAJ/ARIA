@@ -3,6 +3,8 @@ name: Build Native Apps
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -15,6 +17,8 @@ jobs:
   build-windows:
     name: Build Windows .exe (Tauri)
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,8 +27,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Setup Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -33,7 +35,11 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install
+        shell: pwsh
+        run: |
+          if (Test-Path node_modules) { Remove-Item -Recurse -Force node_modules }
+          if (Test-Path package-lock.json) { Remove-Item -Force package-lock.json }
+          npm install
 
       - name: Build frontend
         working-directory: frontend
@@ -77,7 +83,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: app-v1.0.0
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}
           name: 'ARIA App v1.0.0'
           files: ARIA-Windows-x64-Setup.exe
           fail_on_unmatched_files: false
@@ -87,6 +93,7 @@ jobs:
         shell: pwsh
         run: |
           $status = if ("${{ job.status }}" -eq "success") { "PASS Succeeded" } else { "FAIL Failed" }
+          $tag = if ("${{ github.ref }}".StartsWith("refs/tags/")) { "${{ github.ref_name }}" } else { "v1.0.0" }
           $summary = @"
           ### Windows Native Build Summary
           | Metric | Value |
@@ -94,13 +101,15 @@ jobs:
           | **Status** | $status |
           | **Target** | x86_64-pc-windows-msvc |
           | **Artifact** | `ARIA-Windows-x64-Setup.exe` |
-          | **Release Tag** | `app-v1.0.0` |
+          | **Release Tag** | `$tag` |
           "@
           $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
   build-android:
     name: Build Android APK (Capacitor)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -109,8 +118,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Setup Java 21
         uses: actions/setup-java@v4
@@ -125,7 +132,9 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install
+        run: |
+          rm -rf node_modules package-lock.json
+          npm install
 
       - name: Build frontend
         working-directory: frontend
@@ -161,7 +170,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: app-v1.0.0
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}
           name: 'ARIA App v1.0.0'
           files: ARIA-Android-v1.0.0.apk
           fail_on_unmatched_files: false
@@ -175,6 +184,7 @@ jobs:
           else
             EMOJI="FAIL Failed"
           fi
+          TAG="${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}"
           cat << EOF >> $GITHUB_STEP_SUMMARY
           ### Android Native Build Summary
           | Metric | Value |
@@ -182,5 +192,5 @@ jobs:
           | **Status** | $EMOJI |
           | **Target** | Android SDK 34 (Capacitor) |
           | **Artifact** | \`ARIA-Android-v1.0.0.apk\` |
-          | **Release Tag** | \`app-v1.0.0\` |
+          | **Release Tag** | \`$TAG\` |
           EOF
