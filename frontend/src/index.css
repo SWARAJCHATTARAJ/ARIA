@@ -489,3 +489,151 @@ button:active:not(:disabled),
 .thread-content.density-compact { font-size: 13px; line-height: 1.55; }
 .thread-content.density-standard { font-size: 15px; line-height: 1.65; }
 .thread-content.density-comfortable { font-size: 16.5px; line-height: 1.8; }
+
+/* ======================================================================
+   ARIA OBSIDIAN DESIGN SYSTEM — flagship tokens & signature details
+   Surfaces: obsidian void #050505, matte carbon #0A0B0E, elevated #101217,
+   hover/active #161922. Titanium primary #F3F4F6, steel secondary #8A8F9E.
+   ====================================================================== */
+:root {
+  --obsidian-bg: #050505;
+  --obsidian-carbon: #0a0b0e;
+  --obsidian-elevated: #101217;
+  --obsidian-hover: #161922;
+  --obsidian-text-primary: #f3f4f6;
+  --obsidian-text-secondary: #8a8f9e;
+  --obsidian-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --obsidian-border-subtle: rgba(255, 255, 255, 0.07);
+  --obsidian-border-focus: rgba(255, 255, 255, 0.18);
+  --obsidian-radius-sharp: 6px;
+  --obsidian-radius-industrial: 8px;
+}
+
+/* Fluid typography & spacing scale: 360px -> 1920px+ */
+:root {
+  --fs-display: clamp(1.75rem, 1.2rem + 3vw, 3.25rem);
+  --fs-h1: clamp(1.75rem, 1.2rem + 3vw, 3.25rem);
+  --fs-h2: clamp(1.35rem, 1.05rem + 1.8vw, 2.25rem);
+  --fs-h3: clamp(1.05rem, 1rem + 0.4vw, 1.25rem);
+  --fs-body: clamp(0.85rem, 0.78rem + 0.2vw, 1rem);
+  --fs-small: clamp(0.7rem, 0.64rem + 0.2vw, 0.8rem);
+}
+
+/* Global text size adjust + tap highlight */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* ARIA reticle: crisp L-shaped corner brackets, brightens on focus/hover */
+.aria-reticle {
+  position: relative;
+}
+.aria-reticle::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid var(--obsidian-text-primary);
+  border-left: 2px solid var(--obsidian-text-primary);
+  opacity: 0.35;
+  transition: opacity 200ms ease, border-color 200ms ease, border-width 200ms ease;
+  pointer-events: none;
+}
+.aria-reticle::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 6px;
+  height: 6px;
+  border-bottom: 2px solid var(--obsidian-text-primary);
+  border-right: 2px solid var(--obsidian-text-primary);
+  opacity: 0.35;
+  transition: opacity 200ms ease, border-color 200ms ease, border-width 200ms ease;
+  pointer-events: none;
+}
+.aria-reticle:hover::before,
+.aria-reticle:focus-within::before,
+.aria-reticle:hover::after,
+.aria-reticle:focus-within::after {
+  opacity: 0.9;
+  border-width: 2px;
+}
+
+/* ARIA telemetry strip (mono) */
+.aria-telemetry {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--obsidian-mono, "JetBrains Mono", monospace);
+  font-size: var(--fs-small);
+  letter-spacing: 0.08em;
+  color: var(--obsidian-text-secondary);
+  border: 1px solid var(--obsidian-border-subtle);
+  background: var(--obsidian-carbon);
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+/* ARIA core state kinetics — calm breathing IDLE */
+@keyframes ariaCoreBreathe {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+.aria-core-idle { animation: ariaCoreBreathe 4s ease-in-out infinite; }
+
+/* ARIA core — counter-rotating orbital rings during THINKING/STREAMING */
+@keyframes ariaCoreOrbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.aria-core-thinking .aria-core-ring {
+  animation: ariaCoreOrbit 3.2s cubic-bezier(0.22, 1, 0.36, 1) linear infinite;
+}
+.aria-core-streaming .aria-core-ring {
+  animation: ariaCoreOrbit 2.2s cubic-bezier(0.22, 1, 0.36, 1) linear infinite reverse;
+}
+
+/* ARIA core — crisp scale lock-in on COMPLETE */
+@keyframes ariaCoreLock {
+  from { transform: scale(0.82); opacity: 0.4; }
+  to { transform: scale(1); opacity: 1; }
+}
+.aria-core-complete .aria-core-ring {
+  animation: ariaCoreLock 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Specular laser scanline: 1px top border sweep via transform */
+@keyframes ariaLaserSweep {
+  from { transform: translate3d(-100%, 0, 0); }
+  to { transform: translate3d(100%, 0, 0); }
+}
+.aria-laser {
+  position: relative;
+  overflow: hidden;
+}
+.aria-laser::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--theme-accent, #06b6d4), transparent);
+  pointer-events: none;
+}
+.aria-laser-active::before {
+  animation: ariaLaserSweep calc(1.6s * var(--motion-scale, 1)) cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+/* Tactical cascade reveal: 180ms snappy entrance */
+@keyframes ariaCascade {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+.aria-cascade {
+  animation: ariaCascade calc(0.18s * var(--motion-scale, 1)) cubic-bezier(0.16, 1, 0.3, 1) both;
+}

@@ -1,1 +1,1 @@
-export const API_BASE_URL: string = import.meta.env.PROD ? '' : 'http://localhost:8000';
+export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL || 'https://aria.swarajchattaraj.tech';

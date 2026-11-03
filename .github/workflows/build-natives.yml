@@ -147,6 +147,9 @@ jobs:
           npm install -D @capacitor/cli @capacitor/core @capacitor/android
           npx cap sync android
 
+      - name: Generate Capacitor Android Adaptive Icons
+        run: npx --yes @capacitor/assets generate --android --iconBackgroundColor '#050505' --iconBackgroundColorDark '#050505' --splashBackgroundColor '#050505' --splashBackgroundColorDark '#050505'
+
       - name: Make Gradle wrapper executable and Build APK
         run: |
           cd android

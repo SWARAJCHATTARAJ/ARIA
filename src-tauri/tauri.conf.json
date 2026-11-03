@@ -14,12 +14,13 @@
       {
         "title": "ARIA Science Engine",
         "width": 1280,
-        "height": 800,
+        "height": 820,
         "resizable": true,
         "visible": true,
-        "minWidth": 900,
+        "minWidth": 420,
         "minHeight": 600,
-        "backgroundColor": "#050811"
+        "backgroundColor": "#050811",
+        "center": true
       }
     ],
     "security": {
