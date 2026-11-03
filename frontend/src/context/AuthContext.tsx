@@ -43,6 +43,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_GUEST_KEY = 'aria-guest-session-v1';
+/** Strict-gate flag: the inner workspace renders if this is exactly 'true'. */
+export const ARIA_GUEST_FLAG_KEY = 'aria_guest_mode';
 
 // Read Vite Supabase environment variables safely
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -77,6 +79,57 @@ export const GUEST_PROFILE: AuthUserProfile = {
   role: 'guest',
 };
 
+/** One canonical Supabase user → profile mapper (used at init and on auth events). */
+function buildGitHubProfile(sbUser: User): AuthUserProfile {
+  const meta = sbUser.user_metadata || {};
+  return {
+    id: sbUser.id,
+    name: meta.full_name || meta.name || meta.user_name || 'Researcher',
+    username:
+      meta.user_name || meta.preferred_username || sbUser.email?.split('@')[0] || 'researcher',
+    email: sbUser.email,
+    avatarUrl: meta.avatar_url || 'https://avatars.githubusercontent.com/u/9919?s=200&v=4',
+    provider: 'github',
+  };
+}
+
+function writeGuestSession() {
+  try {
+    localStorage.setItem(AUTH_GUEST_KEY, JSON.stringify(GUEST_PROFILE));
+    localStorage.setItem(ARIA_GUEST_FLAG_KEY, 'true');
+  } catch {
+    // ignore — storage unavailable means the gate re-evaluates on next load
+  }
+}
+
+function clearGuestSession() {
+  try {
+    localStorage.removeItem(AUTH_GUEST_KEY);
+    localStorage.removeItem(ARIA_GUEST_FLAG_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/** Hydrate a persisted guest profile (if the strict gate flag or profile exists). */
+function readGuestProfile(): AuthUserProfile | null {
+  try {
+    const raw = localStorage.getItem(AUTH_GUEST_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as AuthUserProfile;
+      if (parsed && typeof parsed.id === 'string') {
+        // Legacy sessions (profile written before the flag existed) upgrade here
+        localStorage.setItem(ARIA_GUEST_FLAG_KEY, 'true');
+        return parsed;
+      }
+    }
+    if (localStorage.getItem(ARIA_GUEST_FLAG_KEY) === 'true') return GUEST_PROFILE;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -95,88 +148,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user && mounted) {
-            const sbUser = session.user;
-            const meta = sbUser.user_metadata || {};
-            setUser({
-              id: sbUser.id,
-              name: meta.full_name || meta.name || meta.user_name || 'Researcher',
-              username: meta.user_name || meta.preferred_username || sbUser.email?.split('@')[0] || 'researcher',
-              email: sbUser.email,
-              avatarUrl: meta.avatar_url || 'https://avatars.githubusercontent.com/u/9919?s=200&v=4',
-              provider: 'github',
-            });
+            setUser(buildGitHubProfile(session.user));
             setIsLoading(false);
             return;
           }
         } catch {
-          // Supabase unreachable / network failure — fall through to the
-          // instant guest session so the user is never stuck on auth.
+          // Supabase unreachable — fall through to local gate state so the
+          // user is never stuck on a hanging auth check.
         }
       }
 
-      // 2. Check local guest session
-      try {
-        const localGuest = localStorage.getItem(AUTH_GUEST_KEY);
-        if (localGuest && mounted) {
-          const parsed = JSON.parse(localGuest);
-          setUser(parsed);
-          setIsLoading(false);
-          return;
-        }
-      } catch {
-        // ignore
-      }
-
-      // 3. Supabase not configured (or client init failed): instantly enter
-      //    as a local guest — the app is fully usable without any auth backend.
-      if (!hasSupabaseConfig && mounted) {
-        setUser(GUEST_PROFILE);
-        setIsLoading(false);
-        try {
-          localStorage.setItem(AUTH_GUEST_KEY, JSON.stringify(GUEST_PROFILE));
-        } catch {
-          // ignore
-        }
-        return;
-      }
-
+      // 2. Local gate state: persisted guest session (aria_guest_mode flag)
       if (mounted) {
-        setUser(null);
+        const guest = readGuestProfile();
+        setUser(guest);
         setIsLoading(false);
       }
     }
 
     initAuth();
 
-    // 3. Listen to Supabase auth state changes
+    // 3. Listen to Supabase auth state changes — login / logout transition the
+    //    gate view instantly, never requiring a manual page refresh.
     if (supabase) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         if (!mounted) return;
         if (session?.user) {
-          const sbUser = session.user;
-          const meta = sbUser.user_metadata || {};
-          const profile: AuthUserProfile = {
-            id: sbUser.id,
-            name: meta.full_name || meta.name || meta.user_name || 'Researcher',
-            username: meta.user_name || meta.preferred_username || sbUser.email?.split('@')[0] || 'researcher',
-            email: sbUser.email,
-            avatarUrl: meta.avatar_url || 'https://avatars.githubusercontent.com/u/9919?s=200&v=4',
-            provider: 'github',
-          };
-          setUser(profile);
+          setUser(buildGitHubProfile(session.user));
           if (pendingAction) {
             pendingAction();
             setPendingAction(null);
           }
         } else {
-          // If no supabase session, keep guest if exists
+          // No Supabase session: fall back to the persisted local guest state
           try {
-            const localGuest = localStorage.getItem(AUTH_GUEST_KEY);
-            if (localGuest) {
-              setUser(JSON.parse(localGuest));
-            } else {
-              setUser(null);
-            }
+            setUser(readGuestProfile());
           } catch {
             setUser(null);
           }
@@ -232,11 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInInstantResearcher = () => {
-    try {
-      localStorage.setItem(AUTH_GUEST_KEY, JSON.stringify(GUEST_PROFILE));
-    } catch {
-      // ignore
-    }
+    writeGuestSession();
     setUser(GUEST_PROFILE);
     setIsAuthModalOpen(false);
     if (pendingAction) {
@@ -246,11 +248,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    try {
-      localStorage.removeItem(AUTH_GUEST_KEY);
-    } catch {
-      // ignore
-    }
+    clearGuestSession();
     if (supabase) {
       try {
         await supabase.auth.signOut();
