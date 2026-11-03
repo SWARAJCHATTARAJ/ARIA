@@ -21,7 +21,9 @@ export interface AuthUserProfile {
   username: string;
   email?: string;
   avatarUrl: string;
-  provider: 'github' | 'instant';
+  provider: 'github' | 'instant' | 'guest';
+  /** Optional access role — 'guest' for local/offline sessions. */
+  role?: 'user' | 'guest';
 }
 
 interface AuthContextType {
@@ -58,10 +60,22 @@ if (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http')) {
         storage: typeof window !== 'undefined' ? window.localStorage : undefined,
       },
     });
-  } catch (e) {
-    console.warn('Failed to initialize Supabase client:', e);
+  } catch {
+    // Supabase client init failed — the app falls back to the local guest session.
+    supabase = null;
   }
 }
+
+/** Instant local guest identity — never blocks or requires network. */
+export const GUEST_PROFILE: AuthUserProfile = {
+  id: 'guest',
+  name: 'Guest Researcher',
+  username: 'guest',
+  email: 'guest@aria.local',
+  avatarUrl: '',
+  provider: 'guest',
+  role: 'guest',
+};
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUserProfile | null>(null);
@@ -94,12 +108,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setIsLoading(false);
             return;
           }
-        } catch (err) {
-          console.warn('Supabase session lookup error:', err);
+        } catch {
+          // Supabase unreachable / network failure — fall through to the
+          // instant guest session so the user is never stuck on auth.
         }
       }
 
-      // 2. Check local Instant Researcher session
+      // 2. Check local guest session
       try {
         const localGuest = localStorage.getItem(AUTH_GUEST_KEY);
         if (localGuest && mounted) {
@@ -110,6 +125,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // ignore
+      }
+
+      // 3. Supabase not configured (or client init failed): instantly enter
+      //    as a local guest — the app is fully usable without any auth backend.
+      if (!hasSupabaseConfig && mounted) {
+        setUser(GUEST_PROFILE);
+        setIsLoading(false);
+        try {
+          localStorage.setItem(AUTH_GUEST_KEY, JSON.stringify(GUEST_PROFILE));
+        } catch {
+          // ignore
+        }
+        return;
       }
 
       if (mounted) {
@@ -196,27 +224,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       });
       if (error) throw error;
-    } catch (err) {
-      console.error('GitHub OAuth error:', err);
-      // Fallback
+    } catch {
+      // Supabase OAuth failed / user aborted — fall back to the instant
+      // guest session so the click handler never appears to hang.
       signInInstantResearcher();
     }
   };
 
   const signInInstantResearcher = () => {
-    const instantProfile: AuthUserProfile = {
-      id: 'instant-researcher-' + Math.random().toString(36).substring(2, 7),
-      name: 'Instant Researcher',
-      username: 'guest_researcher',
-      avatarUrl: 'https://avatars.githubusercontent.com/u/9919?s=200&v=4',
-      provider: 'instant',
-    };
     try {
-      localStorage.setItem(AUTH_GUEST_KEY, JSON.stringify(instantProfile));
+      localStorage.setItem(AUTH_GUEST_KEY, JSON.stringify(GUEST_PROFILE));
     } catch {
       // ignore
     }
-    setUser(instantProfile);
+    setUser(GUEST_PROFILE);
     setIsAuthModalOpen(false);
     if (pendingAction) {
       pendingAction();
@@ -233,8 +254,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (supabase) {
       try {
         await supabase.auth.signOut();
-      } catch (err) {
-        console.warn('Supabase sign out error:', err);
+      } catch {
+        // ignore — signOut failure should never block the UI
       }
     }
     setUser(null);
@@ -242,6 +263,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const requireAuth = (action: () => void) => {
     if (user) {
+      action();
+    } else if (!hasSupabaseConfig) {
+      // No auth backend configured: enter instantly as a local guest
+      // instead of stalling in a broken login flow.
+      signInInstantResearcher();
       action();
     } else {
       openAuthModal(action);

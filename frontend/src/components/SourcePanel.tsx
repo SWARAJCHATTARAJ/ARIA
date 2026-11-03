@@ -124,6 +124,15 @@ export default function SourcePanel({
 }: SourcePanelProps) {
   const cardRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const [copiedId, setCopiedId] = React.useState<number | null>(null);
+  const copyTimerRef = useRef<number | undefined>(undefined);
+
+  // Unmount-safe copy feedback timer
+  React.useEffect(
+    () => () => {
+      if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
+    },
+    []
+  );
 
   // Citation map for quick lookup
   const citationMap = React.useMemo(() => {
@@ -155,7 +164,8 @@ export default function SourcePanel({
     const bib = `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${authorsStr || 'Unknown'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
     navigator.clipboard.writeText(bib);
     setCopiedId(cit.id);
-    setTimeout(() => setCopiedId(null), 2000);
+    if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = window.setTimeout(() => setCopiedId(null), 2000);
   };
 
   const route = telemetry?.route;

@@ -170,7 +170,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
         aria-hidden="true"
       />
 
-      <div className="relative w-full max-w-xl bg-[#050505] border border-white/[0.07] hover:border-white/[0.18] shadow-2xl rounded-none overflow-hidden z-10 neon-sheen">
+      <div className="relative w-full max-w-xl bg-[#050505] border border-white/[0.07] hover:border-white/[0.18] shadow-2xl rounded-none overflow-hidden z-10">
         {/* Top Search Input */}
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-ink-surface bg-ink-surface/80">
           <Search size={18} className="text-cyan-400 shrink-0" />

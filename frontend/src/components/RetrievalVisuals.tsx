@@ -10,7 +10,7 @@ interface RetrievalVisualsProps {
   onHighlightSource?: (id: number | string) => void;
 }
 
-export default function RetrievalVisuals({
+function RetrievalVisualsInner({
   okfNodePaths = [],
   ragScores = [],
   sources = [],
@@ -206,3 +206,9 @@ export default function RetrievalVisuals({
     </div>
   );
 }
+
+// Memoized: heavy render trees (markdown / graphs / SVG) only re-render
+// when their props actually change during a streaming update.
+const RetrievalVisualsMemo = React.memo(RetrievalVisualsInner);
+RetrievalVisualsMemo.displayName = 'RetrievalVisuals';
+export default RetrievalVisualsMemo;

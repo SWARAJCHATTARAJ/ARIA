@@ -1,4 +1,4 @@
-import React, { useState, Suspense, lazy, useEffect } from 'react';
+import React, { useState, Suspense, lazy, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ThreadView from './components/ThreadView';
 import SourcePanel from './components/SourcePanel';
@@ -87,25 +87,27 @@ function AppShell() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const handleCitationClick = (citation: Citation) => {
+  // Stable handlers (useCallback) — memoized children deep in the tree
+  // (MarkdownRenderer, SourcePanel, Sidebar) skip re-renders while streaming.
+  const handleCitationClick = useCallback((citation: Citation) => {
     setSelectedCitationId(citation.id);
     setSourcePanelOpen(true);
-  };
+  }, []);
 
-  const handleOpenQuery = (query: string) => {
+  const handleOpenQuery = useCallback((query: string) => {
     setPendingQuery(query);
     setActiveTab('query');
-  };
+  }, []);
 
-  const handleTabChange = (tab: string) => {
+  const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab);
     // Close the slide-over drawer on navigation
     setIsMobileDrawerOpen(false);
-  };
+  }, []);
 
-  const handleSourcesExpand = () => {
+  const handleSourcesExpand = useCallback(() => {
     setSourcePanelOpen(true);
-  };
+  }, []);
 
   return (
     <div

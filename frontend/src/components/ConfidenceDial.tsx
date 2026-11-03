@@ -11,7 +11,7 @@ interface ConfidenceDialProps {
   isAudited?: boolean;
 }
 
-export default function ConfidenceDial({
+function ConfidenceDialInner({
   confidence = 0.85,
   tierAgreement,
   claimsSupported,
@@ -136,3 +136,9 @@ export default function ConfidenceDial({
     </div>
   );
 }
+
+// Memoized: heavy render trees (markdown / graphs / SVG) only re-render
+// when their props actually change during a streaming update.
+const ConfidenceDialMemo = React.memo(ConfidenceDialInner);
+ConfidenceDialMemo.displayName = 'ConfidenceDial';
+export default ConfidenceDialMemo;

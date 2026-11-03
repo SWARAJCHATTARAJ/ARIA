@@ -42,21 +42,24 @@ export default function AuthModal() {
             <span>Continue with GitHub</span>
           </button>
 
+          {/* Instant Guest bypass: works fully offline, never hangs */}
           <button
             onClick={() => signInInstantResearcher()}
-            className="press w-full py-2.5 px-4 bg-ink-surface/80 hover:bg-ink-surface border border-white/[0.07] hover:border-white/[0.18] text-tier-okf font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-200"
+            className="press aria-hover-glow w-full py-2.5 px-4 bg-[#101217] hover:bg-[#161922] border border-white/[0.07] hover:border-white/[0.18] text-gray-300 hover:text-white font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-200"
           >
             <Zap size={14} className="text-tier-live" />
-            <span>Continue in Instant Researcher Mode</span>
+            <span>Continue as Guest — Skip Login</span>
           </button>
         </div>
 
         {/* Security / Notice footnote */}
-        <div className="mt-6 pt-4 border-t border-ink-surface/80 text-center">
+        <div className="mt-6 pt-4 border-t border-white/[0.07] text-center">
           <div className="inline-flex items-center gap-1.5 text-[10px] font-mono text-ink-muted">
             <ShieldCheck size={12} className="text-emerald-400" />
             <span>
-              {hasSupabaseConfig ? 'Secured by Supabase OAuth & PKCE' : 'Instant local session · Zero external credentials required'}
+              {hasSupabaseConfig
+                ? 'Secured by Supabase OAuth & PKCE · Guest mode stored locally'
+                : 'Instant local session · Zero external credentials required'}
             </span>
           </div>
         </div>

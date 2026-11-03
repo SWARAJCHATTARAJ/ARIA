@@ -13,7 +13,7 @@ interface PipelineSpineProps {
   orientation?: 'vertical' | 'horizontal';
 }
 
-export default function PipelineSpine({
+function PipelineSpineInner({
   mode = 'live',
   stage,
   tiersFired = [],
@@ -248,3 +248,9 @@ export default function PipelineSpine({
     </div>
   );
 }
+
+// Memoized: heavy render trees (markdown / graphs / SVG) only re-render
+// when their props actually change during a streaming update.
+const PipelineSpineMemo = React.memo(PipelineSpineInner);
+PipelineSpineMemo.displayName = 'PipelineSpine';
+export default PipelineSpineMemo;

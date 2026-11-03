@@ -44,7 +44,7 @@ interface LineSpan {
   end: number;
 }
 
-export default function MarkdownRenderer({
+function MarkdownRendererInner({
   content,
   citations = [],
   onCitationClick,
@@ -643,3 +643,9 @@ function InlineCitationPill({
     </span>
   );
 }
+
+// Memoized: heavy render trees (markdown / graphs / SVG) only re-render
+// when their props actually change during a streaming update.
+const MarkdownRendererMemo = React.memo(MarkdownRendererInner);
+MarkdownRendererMemo.displayName = 'MarkdownRenderer';
+export default MarkdownRendererMemo;

@@ -10,7 +10,7 @@ interface CitationGraphProps {
   onClose?: () => void;
 }
 
-export default function CitationGraph({
+function CitationGraphInner({
   query,
   citations = [],
   claims = [],
@@ -268,3 +268,9 @@ export default function CitationGraph({
     </div>
   );
 }
+
+// Memoized: heavy render trees (markdown / graphs / SVG) only re-render
+// when their props actually change during a streaming update.
+const CitationGraphMemo = React.memo(CitationGraphInner);
+CitationGraphMemo.displayName = 'CitationGraph';
+export default CitationGraphMemo;

@@ -10,7 +10,7 @@ interface VisualConceptCardProps {
   onCitationClick?: (citation: Citation) => void;
 }
 
-export default function VisualConceptCard({ query, citations = [] }: VisualConceptCardProps) {
+function VisualConceptCardInner({ query, citations = [] }: VisualConceptCardProps) {
   const [data, setData] = useState<VisualCardData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [isZoomed, setIsZoomed] = useState<boolean>(false);
@@ -124,3 +124,9 @@ export default function VisualConceptCard({ query, citations = [] }: VisualConce
     </>
   );
 }
+
+// Memoized: heavy render trees (markdown / graphs / SVG) only re-render
+// when their props actually change during a streaming update.
+const VisualConceptCardMemo = React.memo(VisualConceptCardInner);
+VisualConceptCardMemo.displayName = 'VisualConceptCard';
+export default VisualConceptCardMemo;

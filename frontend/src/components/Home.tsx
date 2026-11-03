@@ -147,7 +147,7 @@ export default function Home({ onStart }: HomeProps) {
 
         {/* Right Column: Holographic Pipeline Architecture Flow Simulator */}
         <div className="lg:col-span-6 w-full flex justify-center">
-          <div className="w-full max-w-md bg-ink-surface/40 border border-cyan-500/30 p-5 md:p-6 relative overflow-hidden shadow-2xl neon-sheen">
+          <div className="w-full max-w-md bg-ink-surface/40 border border-cyan-500/30 p-5 md:p-6 relative overflow-hidden shadow-2xl">
             <div className="hud-scanline" />
 
             {/* Header */}

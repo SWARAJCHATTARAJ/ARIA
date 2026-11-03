@@ -6,6 +6,7 @@ import CitationGraph from './CitationGraph';
 import VisualConceptCard from './VisualConceptCard';
 import PipelineSpine from './PipelineSpine';
 import AriaCoreIndicator, { AriaCoreState } from './AriaCoreIndicator';
+import LiveElapsed from './ui/LiveElapsed';
 import { streamQuery } from '../services/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim } from '../types';
 import { API_BASE_URL } from '../services/config';
@@ -94,7 +95,6 @@ export default function ThreadView({
   const [isCitationGraphOpen, setIsCitationGraphOpen] = useState<Record<string, boolean>>({});
   const [isExportingPdf, setIsExportingPdf] = useState<Record<string, boolean>>({});
   const [bookmarkedQueries, setBookmarkedQueries] = useState<Record<string, boolean>>({});
-  const [elapsedMs, setElapsedMs] = useState(0);
 
   // Read settings once from global SettingsContext (no local state for research mode/discipline)
   const { settings } = useSettingsContext();
@@ -125,8 +125,8 @@ export default function ThreadView({
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (err) {
-      console.error('PDF export error:', err);
+    } catch {
+      // PDF export failed silently — flag clears in finally below
     } finally {
       setIsExportingPdf((prev) => ({ ...prev, [msg.id]: false }));
     }
@@ -134,20 +134,24 @@ export default function ThreadView({
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const copyTimerRef = useRef<number | undefined>(undefined);
+  // Clear pending copy-feedback timers when the thread unmounts (tab switches
+  // remount this component — never let a timer fire on a dead instance).
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
+    },
+    []
+  );
   // Capture final stream values for the history save at onDone (state not readable synchronously)
   const finalContentRef = useRef('');
   const finalConfidenceRef = useRef<number | undefined>(undefined);
   const lastQueryRef = useRef('');
   const executedPendingRef = useRef<string | null>(null);
 
-  // Real-time millisecond telemetry counter while streaming
-  useEffect(() => {
-    if (!isLoading) return;
-    const start = performance.now();
-    setElapsedMs(0);
-    const id = setInterval(() => setElapsedMs(performance.now() - start), 100);
-    return () => clearInterval(id);
-  }, [isLoading]);
+  // Real-time millisecond telemetry lives in isolated <LiveElapsed> chips
+  // (own interval, own re-render) so streaming ticks never re-render the
+  // whole thread view.
 
   // Probe backend health to hide thumbs if unreachable
   useEffect(() => {
@@ -190,17 +194,46 @@ export default function ThreadView({
     };
   }, []);
 
-  // Scroll to bottom
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  // Autoscroll: only follow the stream while the user is already near the
+  // bottom (no smooth-scroll fight), throttled through requestAnimationFrame.
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const isNearBottomRef = useRef(true);
+  const scrollRafRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    scrollToBottom();
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (scrollRafRef.current !== undefined) return;
+      scrollRafRef.current = window.requestAnimationFrame(() => {
+        scrollRafRef.current = undefined;
+        isNearBottomRef.current =
+          el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+      });
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (scrollRafRef.current !== undefined) {
+        window.cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = undefined;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isNearBottomRef.current) return;
+    const streaming = messages.some((m) => m.isStreaming);
+    messagesEndRef.current?.scrollIntoView({
+      behavior: streaming ? 'auto' : 'smooth',
+      block: 'end',
+    });
   }, [messages]);
 
-  // Typewriter placeholder logic
-  const [placeholder, setPlaceholder] = useState('');
+  // Typewriter placeholder: mutated directly on the textarea element (zero
+  // React re-renders — placeholder text changes don't change React state).
+  // The recursive chain is fully cleared on unmount (prevents stacked
+  // zombie loops that freeze the tab) and idles when the tab is hidden.
   useEffect(() => {
     const prompts = [
       'Analyze the structural taxonomy of autonomous systems...',
@@ -211,33 +244,47 @@ export default function ThreadView({
     let pIdx = 0;
     let cIdx = 0;
     let isDeleting = false;
+    let alive = true;
+    let timerId: number | undefined;
 
     const tick = () => {
+      if (!alive) return;
+
+      if (document.hidden) {
+        // idle frame — keep the chain alive but never work while hidden
+        timerId = window.setTimeout(tick, 500);
+        return;
+      }
+
       const currentPrompt = prompts[pIdx];
       if (isDeleting) {
-        setPlaceholder(currentPrompt.substring(0, cIdx - 1));
         cIdx--;
       } else {
-        setPlaceholder(currentPrompt.substring(0, cIdx + 1));
         cIdx++;
       }
 
+      const shown = currentPrompt.substring(0, Math.max(cIdx, 0));
+      textareaRef.current?.setAttribute('placeholder', shown);
+
       let nextSpeed = isDeleting ? 25 : 45;
 
-      if (!isDeleting && cIdx === currentPrompt.length) {
+      if (!isDeleting && cIdx >= currentPrompt.length) {
         nextSpeed = 2200;
         isDeleting = true;
-      } else if (isDeleting && cIdx === 0) {
+      } else if (isDeleting && cIdx <= 0) {
         isDeleting = false;
         pIdx = (pIdx + 1) % prompts.length;
         nextSpeed = 500;
       }
 
-      setTimeout(tick, nextSpeed);
+      timerId = window.setTimeout(tick, nextSpeed);
     };
 
-    const timerId = setTimeout(tick, 500);
-    return () => clearTimeout(timerId);
+    timerId = window.setTimeout(tick, 500);
+    return () => {
+      alive = false;
+      if (timerId !== undefined) window.clearTimeout(timerId);
+    };
   }, []);
 
   const handleStopGeneration = () => {
@@ -295,6 +342,157 @@ export default function ThreadView({
     let collectedCitations: Citation[] = [];
     let currentTelemetry: MessageTelemetry = { stage: 'routing' };
 
+    // Reducer: apply one SSE event to the streaming message document
+    const applyEvent = (msg: Message, evt: any): Message => {
+      const updatedTelemetry = { ...(msg.telemetry || currentTelemetry) };
+      let updatedContent = msg.content;
+      let updatedCitations = msg.citations ? [...msg.citations] : [];
+      let updatedQueuePosition: number | null = msg.queuePosition ?? null;
+
+      switch (evt.event) {
+        case 'queued':
+          updatedQueuePosition = evt.position ?? 1;
+          break;
+
+        case 'start':
+          updatedTelemetry.stage = 'routing';
+          break;
+
+        case 'route':
+          updatedTelemetry.stage = 'retrieving';
+          updatedTelemetry.route = {
+            route_decision: evt.route_decision || 'cascade',
+          };
+          break;
+
+        case 'retrieve':
+          updatedTelemetry.stage = 'streaming';
+          updatedTelemetry.retrieval = {
+            tiers: evt.tiers,
+            okf_node_paths: evt.okf_node_paths,
+            rag_scores: evt.rag_scores,
+            sources: evt.sources,
+          };
+          break;
+
+        case 'citation': {
+          const newCit: Citation = {
+            id: evt.id,
+            title: evt.title,
+            path: evt.path,
+            url: evt.url,
+            authors: evt.authors,
+            year: evt.year,
+            venue: evt.venue,
+            snippet: evt.snippet,
+            source_type: evt.source_type,
+            tier: evt.tier,
+            doi: evt.doi,
+            arxiv_id: evt.arxiv_id,
+            is_retracted: evt.is_retracted,
+            review_status: evt.review_status,
+          };
+          if (!updatedCitations.some((c) => c.id === newCit.id)) {
+            updatedCitations.push(newCit);
+            collectedCitations = updatedCitations;
+            if (onUpdateActiveCitations) onUpdateActiveCitations(updatedCitations);
+          }
+          break;
+        }
+
+        case 'token':
+          if (evt.delta) {
+            updatedContent += evt.delta;
+          }
+          updatedQueuePosition = null; // remove queued event when stream starts
+          break;
+
+        case 'audit':
+          updatedTelemetry.stage = 'auditing';
+          updatedTelemetry.audit = {
+            claims: evt.claims,
+            removed_claims: evt.removed_claims,
+            conflicts: evt.conflicts_found || evt.conflicts,
+            retractions: evt.retractions_found || evt.retractions,
+            confidence: evt.confidence,
+            tier_agreement: evt.tier_agreement,
+            answer_final: evt.answer_final,
+            repaired: evt.repaired ?? false,
+          };
+          if (evt.sources) {
+            updatedTelemetry.retrieval = {
+              ...updatedTelemetry.retrieval,
+              sources: evt.sources,
+            };
+          }
+          if (evt.answer_final) {
+            updatedContent = evt.answer_final;
+            finalContentRef.current = evt.answer_final;
+          }
+          if (typeof evt.confidence === 'number' && evt.confidence > 0) {
+            finalConfidenceRef.current = evt.confidence;
+          }
+          break;
+
+        case 'done':
+          updatedTelemetry.stage = 'complete';
+          currentTelemetry = updatedTelemetry;
+          return {
+            ...msg,
+            content: updatedContent,
+            citations: updatedCitations,
+            telemetry: updatedTelemetry,
+            queuePosition: null,
+            isStreaming: false,
+          };
+
+        case 'error':
+          updatedTelemetry.stage = 'error';
+          currentTelemetry = updatedTelemetry;
+          return {
+            ...msg,
+            content: updatedContent,
+            citations: updatedCitations,
+            telemetry: updatedTelemetry,
+            queuePosition: null,
+            isStreaming: false,
+            error: evt.message || 'Stream connection error',
+          };
+      }
+
+      currentTelemetry = updatedTelemetry;
+
+      return {
+        ...msg,
+        content: updatedContent,
+        citations: updatedCitations,
+        telemetry: updatedTelemetry,
+        queuePosition: updatedQueuePosition,
+      };
+    };
+
+    // rAF-batched event application: coalesce bursty SSE token events into a
+    // single setMessages per animation frame (prevents re-render storms).
+    let pendingEvents: any[] = [];
+    let flushScheduled = false;
+    const flushEvents = () => {
+      flushScheduled = false;
+      if (pendingEvents.length === 0) return;
+      const events = pendingEvents;
+      pendingEvents = [];
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== ariaMsgId) return msg;
+          let next = msg;
+          for (const e of events) {
+            next = applyEvent(next, e);
+          }
+          return next;
+        })
+      );
+      if (onUpdateActiveTelemetry) onUpdateActiveTelemetry(currentTelemetry);
+    };
+
     if (onUpdateActiveCitations) onUpdateActiveCitations([]);
     if (onUpdateActiveTelemetry) onUpdateActiveTelemetry(currentTelemetry);
 
@@ -316,134 +514,11 @@ export default function ThreadView({
         if (onMockStateChange) onMockStateChange(isMock);
       },
       onEvent: (evt) => {
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id !== ariaMsgId) return msg;
-
-            const updatedTelemetry = { ...(msg.telemetry || currentTelemetry) };
-            let updatedContent = msg.content;
-            let updatedCitations = msg.citations ? [...msg.citations] : [];
-            let updatedQueuePosition = msg.queuePosition;
-
-            switch (evt.event) {
-              case 'queued':
-                updatedQueuePosition = evt.position ?? 1;
-                break;
-
-              case 'start':
-                updatedTelemetry.stage = 'routing';
-                break;
-
-              case 'route':
-                updatedTelemetry.stage = 'retrieving';
-                updatedTelemetry.route = {
-                  route_decision: evt.route_decision || 'cascade',
-                };
-                break;
-
-              case 'retrieve':
-                updatedTelemetry.stage = 'streaming';
-                updatedTelemetry.retrieval = {
-                  tiers: evt.tiers,
-                  okf_node_paths: evt.okf_node_paths,
-                  rag_scores: evt.rag_scores,
-                  sources: evt.sources,
-                };
-                break;
-
-              case 'citation': {
-                const newCit: Citation = {
-                  id: evt.id,
-                  title: evt.title,
-                  path: evt.path,
-                  url: evt.url,
-                  authors: evt.authors,
-                  year: evt.year,
-                  venue: evt.venue,
-                  snippet: evt.snippet,
-                  source_type: evt.source_type,
-                  tier: evt.tier,
-                  doi: evt.doi,
-                  arxiv_id: evt.arxiv_id,
-                  is_retracted: evt.is_retracted,
-                  review_status: evt.review_status,
-                };
-                if (!updatedCitations.some((c) => c.id === newCit.id)) {
-                  updatedCitations.push(newCit);
-                  collectedCitations = updatedCitations;
-                  if (onUpdateActiveCitations) onUpdateActiveCitations(updatedCitations);
-                }
-                break;
-              }
-
-              case 'token':
-                if (evt.delta) {
-                  updatedContent += evt.delta;
-                }
-                updatedQueuePosition = null; // remove queued event when stream starts
-                break;
-
-              case 'audit':
-                updatedTelemetry.stage = 'auditing';
-                updatedTelemetry.audit = {
-                  claims: evt.claims,
-                  removed_claims: evt.removed_claims,
-                  conflicts: evt.conflicts_found || evt.conflicts,
-                  retractions: evt.retractions_found || evt.retractions,
-                  confidence: evt.confidence,
-                  tier_agreement: evt.tier_agreement,
-                  answer_final: evt.answer_final,
-                  repaired: evt.repaired ?? false,
-                };
-                if (evt.sources) {
-                  updatedTelemetry.retrieval = {
-                    ...updatedTelemetry.retrieval,
-                    sources: evt.sources,
-                  };
-                }
-                if (evt.answer_final) {
-                  updatedContent = evt.answer_final;
-                  finalContentRef.current = evt.answer_final;
-                }
-                if (typeof evt.confidence === 'number' && evt.confidence > 0) {
-                  finalConfidenceRef.current = evt.confidence;
-                }
-                break;              case 'done':
-                updatedTelemetry.stage = 'complete';
-                return {
-                  ...msg,
-                  content: updatedContent,
-                  citations: updatedCitations,
-                  telemetry: updatedTelemetry,
-                  queuePosition: null,
-                  isStreaming: false,
-                };
-
-              case 'error':
-                updatedTelemetry.stage = 'error';
-                return {
-                  ...msg,
-                  content: updatedContent,
-                  citations: updatedCitations,
-                  telemetry: updatedTelemetry,
-                  queuePosition: null,
-                  isStreaming: false,
-                  error: evt.message || 'Stream connection error',
-                };
-            }
-
-            currentTelemetry = updatedTelemetry;
-            if (onUpdateActiveTelemetry) onUpdateActiveTelemetry(updatedTelemetry);
-
-            return {
-              ...msg,
-              content: updatedContent,
-              citations: updatedCitations,
-              telemetry: updatedTelemetry,
-              queuePosition: updatedQueuePosition,
-            };
-          })
-        );
+        pendingEvents.push(evt);
+        if (!flushScheduled) {
+          flushScheduled = true;
+          window.requestAnimationFrame(flushEvents);
+        }
       },
       onError: (err) => {
         setIsLoading(false);
@@ -502,7 +577,8 @@ export default function ThreadView({
   const handleCopy = (msgId: string, content: string) => {
     navigator.clipboard.writeText(content);
     setCopiedMsgId(msgId);
-    setTimeout(() => setCopiedMsgId(null), 2000);
+    if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = window.setTimeout(() => setCopiedMsgId(null), 2000);
   };
 
   const handleDownloadBibtex = (citations: Citation[] = []) => {
@@ -701,7 +777,7 @@ export default function ThreadView({
               {formatModeLabel(settings.researchMode).split(' ')[0]}
             </span>
             <span className="text-[10px] text-gray-500 tabular-nums">
-              {isLoading ? `${elapsedMs}ms` : '--'}
+              <LiveElapsed running={isLoading} mode="ms" />
             </span>
           </div>
 
@@ -754,14 +830,19 @@ export default function ThreadView({
           })}
         </div>
         {isLoading && (
-          <span className="font-mono text-[9px] text-cyan-400 pl-2 shrink-0 animate-pulse">
-            T+{(elapsedMs / 1000).toFixed(1)}s
-          </span>
+          <LiveElapsed
+            running={isLoading}
+            mode="s"
+            className="pl-2 shrink-0 font-mono text-[9px] text-cyan-400 animate-pulse"
+          />
         )}
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 select-text aria-scroll">
+      <div
+        ref={messagesScrollRef}
+        className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 select-text aria-scroll"
+      >
         {messages.length === 0 && (
           <div className="flex-1 flex flex-col items-center justify-center py-8">
             <div className="w-full max-w-2xl bg-ink-surface/20 rounded-none p-6 border border-ink-surface relative overflow-hidden aria-reticle">
@@ -878,7 +959,11 @@ export default function ThreadView({
                           className="text-tier-okf"
                         />
                         <span>{getStageLabel(msg.telemetry?.stage)}</span>
-                        <span className="font-mono text-ink-muted">T+{(elapsedMs / 1000).toFixed(1)}s</span>
+                        <LiveElapsed
+                          running={true}
+                          mode="s"
+                          className="font-mono text-ink-muted"
+                        />
                       </div>
                     )}
 
@@ -1205,7 +1290,7 @@ export default function ThreadView({
                     handleSubmit(e);
                   }
                 }}
-                placeholder={placeholder || "Ask any research question (e.g. quantum biology, CRISPR off-target effects)..."}
+                placeholder="Ask any research question (e.g. quantum biology, CRISPR off-target effects)..."
                 rows={2}
                 className="w-full bg-transparent px-3.5 py-3 pr-12 text-sm md:text-base font-sans text-gray-100 placeholder-ink-muted focus:outline-none resize-none max-h-36 overflow-y-auto leading-relaxed"
                 style={{ fontSize: '16px' }}

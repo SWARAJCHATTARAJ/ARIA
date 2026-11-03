@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Settings as SettingsIcon,
   Cpu,
@@ -37,6 +37,15 @@ export default function SettingsView() {
   const [pinging, setPinging] = useState(false);
   const [showByokKey, setShowByokKey] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const saveTimerRef = useRef<number | undefined>(undefined);
+
+  // Unmount-safe save feedback timer
+  useEffect(
+    () => () => {
+      if (saveTimerRef.current !== undefined) window.clearTimeout(saveTimerRef.current);
+    },
+    []
+  );
 
   const runLatencyTest = useCallback(async () => {
     setPinging(true);
@@ -109,7 +118,8 @@ export default function SettingsView() {
 
   const handleSaveByok = () => {
     setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
+    if (saveTimerRef.current !== undefined) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => setSaveSuccess(false), 2000);
   };
 
   const handleClearByok = () => {
