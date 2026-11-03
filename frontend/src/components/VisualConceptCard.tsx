@@ -99,7 +99,7 @@ export default function VisualConceptCard({ query, citations = [] }: VisualConce
       {/* Lightbox Zoom Modal */}
       {isZoomed && (
         <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={() => setIsZoomed(false)}
         >
           <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>

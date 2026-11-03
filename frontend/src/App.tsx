@@ -10,10 +10,39 @@ import AuthModal from './components/ui/AuthModal';
 import CommandPalette from './components/ui/CommandPalette';
 import { Citation, MessageTelemetry } from './types';
 import { ThemeProvider } from './context/ThemeContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, isNativeRuntime } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
 
 const MarkdownTestHarness = lazy(() => import('./components/MarkdownTestHarness'));
+
+/** Offline connection banner — obsidian matte, never flashes white. */
+function ConnectivityBanner() {
+  const [offline, setOffline] = useState(
+    typeof navigator !== 'undefined' && !navigator.onLine
+  );
+
+  useEffect(() => {
+    const goOffline = () => setOffline(true);
+    const goOnline = () => setOffline(false);
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
+    };
+  }, []);
+
+  if (!offline) return null;
+  return (
+    <div
+      className="fixed top-0 inset-x-0 z-[60] aria-matte border-b border-amber-500/40 safe-pt flex items-center justify-center gap-2 py-1.5 font-mono text-[10px] uppercase tracking-widest text-amber-300 aria-cascade"
+      role="status"
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+      Offline — session persisted · reconnecting when available
+    </div>
+  );
+}
 
 export default function App() {
   // Dev-only manual test page at /?test=md
@@ -32,6 +61,7 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <SettingsProvider>
+          <ConnectivityBanner />
           <AppShell />
         </SettingsProvider>
       </AuthProvider>
@@ -46,6 +76,7 @@ function AppShell() {
   const [hasQuery, setHasQuery] = useState(false);
   const [isMockActive, setIsMockActive] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
   // Query handed over from History -> New question
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
@@ -79,6 +110,8 @@ function AppShell() {
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
+    // Close the slide-over drawer on navigation
+    setIsMobileDrawerOpen(false);
   };
 
   const handleSourcesExpand = () => {
@@ -86,13 +119,38 @@ function AppShell() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-ink-base text-gray-200 font-sans overflow-hidden relative hud-grid select-none">
+    <div
+      data-runtime={isNativeRuntime ? 'native' : 'web'}
+      className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-ink-base text-gray-200 font-sans overflow-hidden relative hud-grid select-none"
+    >
       {/* Mobile Top Bar (< 768px) */}
       <MobileTopBar
         activeTab={activeTab}
         onTabChange={handleTabChange}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        onOpenDrawer={() => setIsMobileDrawerOpen(true)}
       />
+
+      {/* Mobile Slide-Over Navigation Drawer (< 768px): transform-only GPU animation */}
+      <div
+        className={`md:hidden fixed inset-0 bg-black/60 z-40 transition-opacity duration-200 ${
+          isMobileDrawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={() => setIsMobileDrawerOpen(false)}
+        aria-hidden={!isMobileDrawerOpen}
+      />
+      <aside
+        className={`md:hidden fixed inset-y-0 left-0 z-50 h-full w-64 max-w-[85vw] aria-matte border-r border-ink-surface safe-pt safe-pb overflow-y-auto ${
+          isMobileDrawerOpen ? 'aria-drawer-open' : 'aria-drawer'
+        } ${isMobileDrawerOpen ? '' : 'pointer-events-none'}`}
+        aria-hidden={!isMobileDrawerOpen}
+      >
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        />
+      </aside>
 
       {/* Desktop Left Navigation (>= 768px md:block) */}
       <div className="hidden md:block shrink-0 h-full">
@@ -150,7 +208,7 @@ function AppShell() {
         <>
           {/* Mobile / Tablet Overlay (<1024px) */}
           <div
-            className="lg:hidden fixed inset-0 bg-black/60 z-40 backdrop-blur-xs"
+            className="lg:hidden fixed inset-0 bg-black/60 z-40"
             onClick={() => setSourcePanelOpen(false)}
           />
           <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-ink-surface shadow-2xl flex-shrink-0 transition-transform">

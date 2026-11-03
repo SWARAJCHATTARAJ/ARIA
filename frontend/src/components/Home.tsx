@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ArrowRight, Activity, Sparkles, Cpu, ShieldCheck, Database, Layers, ExternalLink } from 'lucide-react';
+import AriaCoreIndicator from './AriaCoreIndicator';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -108,7 +109,22 @@ export default function Home({ onStart }: HomeProps) {
 
     let lastTime = performance.now();
 
+    // Pause the loop when scrolled out of view or the tab/window is hidden
+    let inView = true;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        inView = entries[0]?.isIntersecting ?? true;
+      },
+      { threshold: 0 }
+    );
+    observer.observe(canvas);
+
     const render = (time: number) => {
+      if (!inView || document.hidden) {
+        // idle frame — keep the rAF loop alive so it resumes automatically
+        animId = requestAnimationFrame(render);
+        return;
+      }
       const dt = Math.min((time - lastTime) / 1000, 0.1);
       lastTime = time;
 
@@ -177,6 +193,7 @@ export default function Home({ onStart }: HomeProps) {
 
     return () => {
       cancelAnimationFrame(animId);
+      observer.disconnect();
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('touchmove', onMove);
@@ -222,7 +239,8 @@ export default function Home({ onStart }: HomeProps) {
         {/* Left Hero Column */}
         <div className="lg:col-span-6 space-y-5 text-left">
           {/* Badge */}
-          <div className="animate-rise-in inline-flex items-center gap-2 px-3 py-1 bg-ink-surface/90 border border-cyan-500/30 text-[10px] font-mono uppercase tracking-widest text-cyan-400">
+          <div className="animate-rise-in inline-flex items-center gap-2 px-3 py-1 bg-ink-surface/90 border border-white/10 text-[10px] font-mono uppercase tracking-widest text-gray-300 aria-reticle">
+            <AriaCoreIndicator state="IDLE" size={14} className="text-cyan-300" />
             <span className="w-2 h-2 rounded-full bg-emerald-400 pulse-telemetry" />
             <span>Autonomous Verification Engine v2.0</span>
           </div>
@@ -250,7 +268,7 @@ export default function Home({ onStart }: HomeProps) {
           >
             <button
               onClick={handleCtaClick}
-              className="group relative px-7 py-3.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/60 hover:border-cyan-300 text-white font-mono text-xs uppercase tracking-widest transition-all duration-300 ease-out hover:scale-[1.02] shadow-[0_0_25px_rgba(6,182,212,0.25)] flex items-center gap-3 touch-spring"
+              className="group relative px-7 py-3.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/60 hover:border-cyan-300 text-white font-mono text-xs uppercase tracking-widest transition-all duration-300 ease-out hover:scale-[1.02] flex items-center gap-3 touch-spring"
             >
               <Sparkles size={14} className="text-cyan-300 animate-pulse" />
               <span>Ask a question</span>

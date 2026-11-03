@@ -41,9 +41,17 @@ app.add_middleware(
     allow_origins=[
         "https://aria.swarajchattaraj.tech",
         "https://swarajchattaraj.tech",
+        # Tauri desktop WebView origins (Windows/WebView2)
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        # Capacitor Android WebView origin
+        "https://localhost",
+        "http://localhost",
+        # Local development servers
         "http://localhost:5173",
-        "http://localhost:3000",
         "http://127.0.0.1:5173",
+        "http://localhost:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],

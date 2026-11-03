@@ -119,7 +119,7 @@ export default function SettingsView() {
   return (
     <div className="flex-1 flex flex-col h-full bg-ink-base overflow-y-auto select-text text-gray-200">
       {/* Top Header */}
-      <div className="px-6 md:px-10 py-5 border-b border-ink-surface bg-ink-base/80 backdrop-blur-md sticky top-0 z-20 flex items-center justify-between">
+      <div className="px-6 md:px-10 py-5 border-b border-ink-surface aria-matte sticky top-0 z-20 flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
             <SettingsIcon size={18} className="text-tier-okf animate-spin-slow" />

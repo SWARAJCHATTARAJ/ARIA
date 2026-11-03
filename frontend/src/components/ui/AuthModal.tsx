@@ -8,11 +8,8 @@ export default function AuthModal() {
   if (!isAuthModalOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-md bg-ink-base border border-ink-surface shadow-2xl rounded-none p-6 md:p-8 text-gray-200 overflow-hidden">
-        {/* Ambient Top Glow */}
-        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-48 h-48 bg-tier-okf/20 rounded-full blur-3xl pointer-events-none" />
-
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 animate-fade-in">
+      <div className="relative w-full max-w-md bg-ink-base border border-ink-surface shadow-2xl rounded-none p-6 md:p-8 text-gray-200 overflow-hidden aria-reticle">
         {/* Close Button */}
         <button
           onClick={closeAuthModal}
@@ -24,7 +21,7 @@ export default function AuthModal() {
 
         {/* Header */}
         <div className="flex flex-col items-center text-center space-y-2 mb-6">
-          <div className="w-12 h-12 flex items-center justify-center border border-tier-okf/40 bg-tier-okf/10 text-tier-okf mb-1 shadow-[0_0_20px_rgba(6,182,212,0.25)]">
+          <div className="w-12 h-12 flex items-center justify-center border border-tier-okf/40 bg-tier-okf/10 text-tier-okf mb-1">
             <Github size={24} />
           </div>
           <h2 className="text-xl font-bold font-sans text-white tracking-tight">
@@ -39,7 +36,7 @@ export default function AuthModal() {
         <div className="space-y-3">
           <button
             onClick={() => signInWithGitHub()}
-            className="w-full py-3 px-4 bg-white hover:bg-gray-100 text-gray-950 font-mono text-xs uppercase tracking-wider font-bold flex items-center justify-center gap-3 transition-all duration-200 shadow-[0_0_25px_rgba(255,255,255,0.2)] hover:scale-[1.01]"
+            className="w-full py-3 px-4 bg-white hover:bg-gray-100 text-gray-950 font-mono text-xs uppercase tracking-wider font-bold flex items-center justify-center gap-3 transition-all duration-200 hover:scale-[1.01]"
           >
             <Github size={16} />
             <span>Continue with GitHub</span>

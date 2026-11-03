@@ -194,7 +194,7 @@ export default function SourcePanel({
   const confidenceScore = audit?.confidence ?? 0.85;
 
   return (
-    <div className="h-full flex flex-col bg-ink-surface/95 backdrop-blur-md border-l border-ink-surface select-text overflow-hidden animate-rise-in">
+    <div className="h-full flex flex-col bg-ink-surface/95 border-l border-ink-surface select-text overflow-hidden animate-rise-in">
       {/* Panel Header */}
       <div className="p-3.5 border-b border-ink-surface flex justify-between items-center bg-ink-surface shrink-0">
         <div className="flex items-center gap-2">

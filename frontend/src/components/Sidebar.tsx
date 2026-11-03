@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import AriaCoreIndicator from './AriaCoreIndicator';
 
 interface SidebarProps {
   activeTab: string;
@@ -33,7 +34,10 @@ export default function Sidebar({ activeTab, onTabChange, onOpenCommandPalette }
       <div className="space-y-6">
         {/* Logo Wordmark & Command Palette Trigger */}
         <div className="flex items-center justify-between px-2 pt-2">
-          <img src="/aria-logo.svg" alt="ARIA" className="h-8 w-auto max-w-[130px] object-contain" />
+          <div className="flex items-center gap-2">
+            <AriaCoreIndicator state="IDLE" size={22} className="text-cyan-300 shrink-0" />
+            <img src="/aria-logo.svg" alt="ARIA" className="h-7 w-auto max-w-[110px] object-contain" />
+          </div>
           {onOpenCommandPalette && (
             <button
               onClick={onOpenCommandPalette}
@@ -88,8 +92,17 @@ export default function Sidebar({ activeTab, onTabChange, onOpenCommandPalette }
         </div>
       </div>
 
-      {/* Bottom Section: Theme & Auth Profile */}
+      {/* Bottom Section: Telemetry, Theme & Auth Profile */}
       <div className="space-y-3 pt-4 border-t border-ink-surface/80">
+        {/* System Telemetry Strip (persistent footer) */}
+        <div className="aria-telemetry w-full justify-center" aria-label="System telemetry">
+          <span className="text-[9px] text-gray-400">SYS // ARIA-2.0</span>
+          <span className="flex items-center gap-1 text-[9px] text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            ONLINE
+          </span>
+        </div>
+
         {/* Quick Theme Cycle Button */}
         <button
           onClick={cycleNextTheme}
@@ -146,7 +159,7 @@ export default function Sidebar({ activeTab, onTabChange, onOpenCommandPalette }
         ) : (
           <button
             onClick={() => openAuthModal()}
-            className="w-full py-2.5 px-3 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-300 hover:text-white text-xs font-mono font-semibold flex items-center justify-center gap-2 transition-all touch-spring shadow-[0_0_12px_rgba(6,182,212,0.15)]"
+            className="w-full py-2.5 px-3 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-300 hover:text-white text-xs font-mono font-semibold flex items-center justify-center gap-2 transition-all touch-spring"
           >
             <Github size={14} />
             <span>Sign In / OAuth</span>

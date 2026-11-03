@@ -1,5 +1,19 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
+import { API_BASE_URL } from '../config';
+
+/**
+ * Native runtime detection: Tauri (Windows WebView2) & Capacitor (Android WebView).
+ * Used so OAuth redirects and session recovery resolve inside native WebViews
+ * without hanging on a blank screen or redirecting to an unreachable localhost.
+ */
+export const isTauriRuntime =
+  typeof window !== 'undefined' &&
+  Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+export const isCapacitorRuntime =
+  typeof window !== 'undefined' &&
+  Boolean((window as any).Capacitor?.isNativePlatform?.());
+export const isNativeRuntime = isTauriRuntime || isCapacitorRuntime;
 
 export interface AuthUserProfile {
   id: string;
@@ -35,7 +49,15 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undef
 let supabase: SupabaseClient | null = null;
 if (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http')) {
   try {
-    supabase = createClient(supabaseUrl, supabaseAnonKey);
+    supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        flowType: 'pkce',
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      },
+    });
   } catch (e) {
     console.warn('Failed to initialize Supabase client:', e);
   }
@@ -161,10 +183,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      // Native WebViews (Tauri / Capacitor) must round-trip the OAuth callback
+      // through the hosted production origin; window.location.origin there is
+      // an unreachable scheme (tauri://localhost / https://localhost).
+      const redirectTo = isNativeRuntime
+        ? API_BASE_URL || window.location.origin
+        : window.location.origin;
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo,
         },
       });
       if (error) throw error;

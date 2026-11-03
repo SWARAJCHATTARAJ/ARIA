@@ -163,7 +163,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-black/75 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-black/75 animate-fade-in">
       <div
         className="fixed inset-0"
         onClick={onClose}

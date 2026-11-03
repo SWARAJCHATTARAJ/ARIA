@@ -1,24 +1,39 @@
 import React from 'react';
-import { Home, PlusCircle, Clock, FolderGit2, Settings, BookOpen, Command, User, Github } from 'lucide-react';
+import { Home, PlusCircle, Clock, FolderGit2, Settings, BookOpen, Command, User, Github, Menu } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import AriaCoreIndicator from '../AriaCoreIndicator';
 
 interface MobileNavBarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
   onOpenCommandPalette?: () => void;
+  /** opens the < 768px slide-over navigation drawer */
+  onOpenDrawer?: () => void;
 }
 
-export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette }: MobileNavBarProps) {
+export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onOpenDrawer }: MobileNavBarProps) {
   const { theme, cycleNextTheme, themes } = useTheme();
   const { user, openAuthModal } = useAuth();
   const currentThemeObj = themes.find((t) => t.id === theme) || themes[0];
 
   return (
     <header className="md:hidden flex items-center justify-between px-3.5 py-2.5 bg-ink-base border-b border-ink-surface shrink-0 z-30 safe-pt select-none">
-      {/* Brand logo */}
+      {/* Hamburger: opens slide-over drawer */}
+      {onOpenDrawer && (
+        <button
+          onClick={onOpenDrawer}
+          className="p-2 text-ink-muted hover:text-white transition-colors touch-spring"
+          aria-label="Open navigation menu"
+        >
+          <Menu size={18} />
+        </button>
+      )}
+
+      {/* Brand: ARIA Core emblem + wordmark */}
       <div className="flex items-center gap-2" onClick={() => onTabChange('home')}>
-        <img src="/aria-logo.svg" alt="ARIA" className="h-7 w-auto object-contain cursor-pointer" />
+        <AriaCoreIndicator state="IDLE" size={20} className="text-cyan-300" />
+        <img src="/aria-logo.svg" alt="ARIA" className="h-6 w-auto object-contain cursor-pointer" />
       </div>
 
       {/* Right controls: OKF Space + Theme Toggle + Auth/Spotlight */}

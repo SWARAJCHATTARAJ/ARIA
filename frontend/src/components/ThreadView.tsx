@@ -5,6 +5,7 @@ import MarkdownRenderer, { getTierGlyph, getTierColorClass } from './MarkdownRen
 import CitationGraph from './CitationGraph';
 import VisualConceptCard from './VisualConceptCard';
 import PipelineSpine from './PipelineSpine';
+import AriaCoreIndicator, { AriaCoreState } from './AriaCoreIndicator';
 import { streamQuery } from '../utils/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim } from '../types';
 import { API_BASE_URL } from '../config';
@@ -581,6 +582,20 @@ export default function ThreadView({
     }
   };
 
+  // Map the pipeline stage to the ARIA Core emblem state for the app shell
+  const coreState: AriaCoreState = isLoading
+    ? activeTelemetry?.stage === 'streaming'
+      ? 'STREAMING'
+      : 'THINKING'
+    : activeTelemetry?.stage === 'complete'
+      ? 'COMPLETE'
+      : 'IDLE';
+
+  const messageCoreState = (msg: Message): AriaCoreState => {
+    if (!msg.isStreaming) return 'COMPLETE';
+    return msg.telemetry?.stage === 'streaming' ? 'STREAMING' : 'THINKING';
+  };
+
   const formatModeLabel = (mode?: string) => {
     switch (mode) {
       case 'fast_brief':
@@ -628,7 +643,7 @@ export default function ThreadView({
   return (
     <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative h-full overflow-hidden select-text">
       {/* Thread Header */}
-      <div className="px-4 md:px-8 py-3.5 border-b border-ink-surface flex justify-between items-center bg-ink-base/90 backdrop-blur-md z-10 shrink-0">
+      <div className="px-4 md:px-8 py-3.5 border-b border-ink-surface flex justify-between items-center aria-matte z-10 shrink-0">
         <div className="flex items-center gap-3">
           {/* Mobile hamburger: opens the sidebar drawer */}
           <button
@@ -641,6 +656,11 @@ export default function ThreadView({
           </button>
           <div>
             <div className="flex items-center gap-2">
+              <AriaCoreIndicator
+                state={coreState}
+                size={16}
+                className="text-cyan-300 shrink-0"
+              />
               <h2 className="text-xs font-mono font-bold text-white tracking-wider uppercase">
                 New question
               </h2>
@@ -654,6 +674,29 @@ export default function ThreadView({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* ARIA Telemetry Strip: system id, link state, engine badge, latency */}
+          <div className="aria-telemetry hidden sm:inline-flex" aria-label="System telemetry">
+            <span className="text-[10px] text-gray-400">SYS // ARIA-2.0</span>
+            <span
+              className={`flex items-center gap-1 text-[10px] ${
+                isLoading ? 'text-amber-300' : 'text-emerald-400'
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isLoading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                }`}
+              />
+              {isLoading ? 'SYNCING' : 'ONLINE'}
+            </span>
+            <span className="text-[10px] text-tier-okf uppercase">
+              {formatModeLabel(settings.researchMode).split(' ')[0]}
+            </span>
+            <span className="text-[10px] text-gray-500 tabular-nums">
+              {isLoading ? `${elapsedMs}ms` : '--'}
+            </span>
+          </div>
+
           {isLoading && (
             <button
               onClick={handleStopGeneration}
@@ -710,10 +753,10 @@ export default function ThreadView({
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 select-text">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 select-text aria-scroll">
         {messages.length === 0 && (
           <div className="flex-1 flex flex-col items-center justify-center py-8">
-            <div className="w-full max-w-2xl bg-ink-surface/20 rounded-none p-6 border border-ink-surface relative overflow-hidden">
+            <div className="w-full max-w-2xl bg-ink-surface/20 rounded-none p-6 border border-ink-surface relative overflow-hidden aria-reticle">
               <div
                 className="absolute inset-0 opacity-[0.03]"
                 style={{
@@ -723,6 +766,7 @@ export default function ThreadView({
               />
               <div className="relative z-10 space-y-4">
                 <div className="font-mono text-xs uppercase tracking-widest text-tier-okf flex items-center gap-2">
+                  <AriaCoreIndicator state="IDLE" size={14} className="text-tier-okf" />
                   <Sparkles size={14} /> Try one of these, or type your own.
                 </div>
 
@@ -763,7 +807,7 @@ export default function ThreadView({
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'flex-col gap-2 max-w-[95%]'}`}
+            className={`aria-cascade flex ${msg.role === 'user' ? 'justify-end' : 'flex-col gap-2 max-w-[95%]'}`}
           >
             {msg.role === 'user' ? (
               <div className="bg-ink-surface px-4 py-3 rounded-none border border-ink-surface/80 max-w-[85%] text-xs font-sans text-gray-100">
@@ -819,8 +863,12 @@ export default function ThreadView({
 
                     {/* Status Indicator with live elapsed-millisecond telemetry */}
                     {msg.isStreaming && (
-                      <div className="flex items-center gap-1.5 text-tier-okf text-[10px] animate-pulse">
-                        <Loader2 size={12} className="animate-spin" />
+                      <div className="flex items-center gap-1.5 text-tier-okf text-[10px]">
+                        <AriaCoreIndicator
+                          state={messageCoreState(msg)}
+                          size={14}
+                          className="text-tier-okf"
+                        />
                         <span>{getStageLabel(msg.telemetry?.stage)}</span>
                         <span className="font-mono text-ink-muted">T+{(elapsedMs / 1000).toFixed(1)}s</span>
                       </div>
@@ -1126,7 +1174,13 @@ export default function ThreadView({
         {/* Sleek Glowing Prompt Input Box + Single-Line Read-Only Badge Underneath */}
         <div className="p-3 md:p-4 bg-ink-base/95 border-t border-ink-surface shrink-0 z-20 safe-pb">
           <form onSubmit={handleSubmit} className="relative">
-            <div className="relative border border-cyan-500/40 focus-within:border-cyan-400 bg-ink-surface/90 shadow-[0_0_15px_rgba(6,182,212,0.12)] transition-all">
+            <div
+              className={`relative border bg-ink-elevated transition-colors aria-reticle ${
+                isLoading
+                  ? 'aria-laser aria-laser-active border-white/20'
+                  : 'border-white/10 focus-within:border-white/25'
+              }`}
+            >
               <textarea
                 ref={textareaRef}
                 value={input}
