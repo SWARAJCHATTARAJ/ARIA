@@ -7,7 +7,7 @@ import PipelineSpine from './components/PipelineSpine';
 import { HistoryView, CollectionsView, OkfSpaceView, SettingsView } from './components/HubViews';
 import { MobileTopBar, MobileBottomNav } from './components/ui/MobileNavBar';
 import AuthModal from './components/ui/AuthModal';
-import AuthGate from './components/ui/AuthGate';
+import { AuthGate } from './components/ui/AuthGate';
 import CommandPalette from './components/ui/CommandPalette';
 import { Citation, MessageTelemetry } from './types';
 import { ThemeProvider } from './context/ThemeContext';
