@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, AlertTriangle, Maximize2, Minimize2, Check, Sparkles, StopCircle, Network, FileText, CheckCircle2, Menu, Bookmark, BookmarkCheck, ChevronDown, ChevronUp, KeyRound, Eraser } from 'lucide-react';
+import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, AlertTriangle, Maximize2, Minimize2, Check, Sparkles, StopCircle, Network, FileText, CheckCircle2, Bookmark, BookmarkCheck, ChevronDown, ChevronUp, KeyRound, Eraser } from 'lucide-react';
 import ConfidenceDial from './ConfidenceDial';
 import MarkdownRenderer, { getTierGlyph, getTierColorClass } from './MarkdownRenderer';
 import CitationGraph from './CitationGraph';
@@ -721,16 +721,6 @@ export default function ThreadView({
       {/* Thread Header */}
       <div className="px-4 md:px-8 py-3.5 border-b border-ink-surface flex justify-between items-center aria-matte z-10 shrink-0">
         <div className="flex items-center gap-3">
-          {/* Mobile hamburger: opens the slide-over drawer (< 768px) */}
-          <button
-            type="button"
-            onClick={onToggleSidebar}
-            className="press tip md:hidden text-ink-muted hover:text-white transition-colors p-2"
-            data-tip="Open navigation"
-            aria-label="Open navigation menu"
-          >
-            <Menu size={18} />
-          </button>
           <div>
             <div className="flex items-center gap-2">
               <AriaCoreIndicator

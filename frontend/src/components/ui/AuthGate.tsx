@@ -46,10 +46,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     }
   }, [open]);
 
-  // Cinematic exit transition (~700ms): magnifier expands & fades, workspace fades in
+  // Cinematic exit transition (500ms): magnifier expands & fades, workspace fades in
   useEffect(() => {
     if (!enterAnim) return;
-    const t = window.setTimeout(() => setEnterAnim(false), 780);
+    const t = window.setTimeout(() => setEnterAnim(false), 520);
     return () => window.clearTimeout(t);
   }, [enterAnim]);
 
@@ -123,7 +123,7 @@ function LoginView({
           className="press w-full py-3 px-4 bg-white hover:bg-gray-100 text-gray-950 font-mono text-xs uppercase tracking-wider font-bold flex items-center justify-center gap-3 transition-all duration-200 hover:scale-[1.01]"
         >
           <Github size={16} />
-          <span>Continue with GitHub</span>
+          <span>Sign in with GitHub</span>
         </button>
 
         <button
@@ -131,7 +131,7 @@ function LoginView({
           className="press aria-hover-glow w-full py-2.5 px-4 bg-[#101217] hover:bg-[#161922] border border-white/[0.07] hover:border-white/[0.18] text-gray-300 hover:text-white font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-200"
         >
           <Zap size={14} className="text-tier-live" />
-          <span>Continue as Guest — Skip Login</span>
+          <span>Enter as Guest</span>
         </button>
       </div>
 

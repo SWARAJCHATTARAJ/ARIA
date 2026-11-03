@@ -49,7 +49,7 @@ export default function Sidebar({
 
   return (
     <nav
-      className={`h-full bg-[#0A0B0E] border-r border-white/[0.07] p-3 py-4 flex flex-col justify-between select-none relative transition-all duration-200 ease-out overflow-hidden ${
+      className={`h-full bg-[#0A0B0E] border-r border-white/[0.08] p-3 py-4 flex flex-col justify-between select-none relative transition-all duration-200 ease-out overflow-hidden will-change-transform ${
         isRail ? 'w-[68px]' : 'w-64'
       }`}
     >

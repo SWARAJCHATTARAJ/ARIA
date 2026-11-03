@@ -44,7 +44,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_GUEST_KEY = 'aria-guest-session-v1';
 /** Strict-gate flag: the inner workspace renders if this is exactly 'true'. */
-export const ARIA_GUEST_FLAG_KEY = 'aria_guest_mode';
+export const ARIA_GUEST_FLAG_KEY = 'aria_guest';
 
 // Read Vite Supabase environment variables safely
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
