@@ -12,25 +12,13 @@ import { Citation, MessageTelemetry } from './types';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, isNativeRuntime } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 const MarkdownTestHarness = lazy(() => import('./components/MarkdownTestHarness'));
 
 /** Offline connection banner — obsidian matte, never flashes white. */
 function ConnectivityBanner() {
-  const [offline, setOffline] = useState(
-    typeof navigator !== 'undefined' && !navigator.onLine
-  );
-
-  useEffect(() => {
-    const goOffline = () => setOffline(true);
-    const goOnline = () => setOffline(false);
-    window.addEventListener('offline', goOffline);
-    window.addEventListener('online', goOnline);
-    return () => {
-      window.removeEventListener('offline', goOffline);
-      window.removeEventListener('online', goOnline);
-    };
-  }, []);
+  const offline = !useOnlineStatus();
 
   if (!offline) return null;
   return (
@@ -77,6 +65,7 @@ function AppShell() {
   const [isMockActive, setIsMockActive] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const [isRailCollapsed, setIsRailCollapsed] = useState(false);
 
   // Query handed over from History -> New question
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
@@ -152,12 +141,14 @@ function AppShell() {
         />
       </aside>
 
-      {/* Desktop Left Navigation (>= 768px md:block) */}
+      {/* Desktop Obsidian Rail (>= 768px md:block): collapsible */}
       <div className="hidden md:block shrink-0 h-full">
         <Sidebar
           activeTab={activeTab}
           onTabChange={handleTabChange}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          collapsed={isRailCollapsed}
+          onToggleCollapsed={() => setIsRailCollapsed((prev) => !prev)}
         />
       </div>
 
@@ -195,6 +186,7 @@ function AppShell() {
             onPendingQueryConsumed={() => setPendingQuery(null)}
             onSourcesExpand={handleSourcesExpand}
             onNavigateTab={handleTabChange}
+            onToggleSidebar={() => setIsMobileDrawerOpen(true)}
           />
         )}
         {activeTab === 'history' && <HistoryView onOpenQuery={handleOpenQuery} />}
@@ -211,7 +203,7 @@ function AppShell() {
             className="lg:hidden fixed inset-0 bg-black/60 z-40"
             onClick={() => setSourcePanelOpen(false)}
           />
-          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-ink-surface shadow-2xl flex-shrink-0 transition-transform">
+          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#0A0B0E] border-l border-white/[0.07] shadow-2xl flex-shrink-0 transition-transform duration-200 will-change-transform">
             <SourcePanel
               onClose={() => setSourcePanelOpen(false)}
               activeQuery={hasQuery}

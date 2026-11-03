@@ -36,7 +36,7 @@ export default function AuthModal() {
         <div className="space-y-3">
           <button
             onClick={() => signInWithGitHub()}
-            className="w-full py-3 px-4 bg-white hover:bg-gray-100 text-gray-950 font-mono text-xs uppercase tracking-wider font-bold flex items-center justify-center gap-3 transition-all duration-200 hover:scale-[1.01]"
+            className="press w-full py-3 px-4 bg-white hover:bg-gray-100 text-gray-950 font-mono text-xs uppercase tracking-wider font-bold flex items-center justify-center gap-3 transition-all duration-200 hover:scale-[1.01]"
           >
             <Github size={16} />
             <span>Continue with GitHub</span>
@@ -44,7 +44,7 @@ export default function AuthModal() {
 
           <button
             onClick={() => signInInstantResearcher()}
-            className="w-full py-2.5 px-4 bg-ink-surface/80 hover:bg-ink-surface border border-ink-surface hover:border-tier-okf/50 text-tier-okf font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-200"
+            className="press w-full py-2.5 px-4 bg-ink-surface/80 hover:bg-ink-surface border border-white/[0.07] hover:border-white/[0.18] text-tier-okf font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-200"
           >
             <Zap size={14} className="text-tier-live" />
             <span>Continue in Instant Researcher Mode</span>

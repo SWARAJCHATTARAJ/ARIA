@@ -6,11 +6,11 @@ import CitationGraph from './CitationGraph';
 import VisualConceptCard from './VisualConceptCard';
 import PipelineSpine from './PipelineSpine';
 import AriaCoreIndicator, { AriaCoreState } from './AriaCoreIndicator';
-import { streamQuery } from '../utils/sseClient';
+import { streamQuery } from '../services/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim } from '../types';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL } from '../services/config';
 import { useSettingsContext } from '../context/SettingsContext';
-import { addHistoryEntry, addToCollection, isInCollection, getCompareDefault, getSettings, saveSettings, getByokKey, getByokProvider, setByokKey, clearByok, getCustomContext } from '../utils/storage';
+import { addHistoryEntry, addToCollection, isInCollection, getCompareDefault, getSettings, saveSettings, getByokKey, getByokProvider, setByokKey, clearByok, getCustomContext } from '../services/storage';
 import { ResearchMode, RESEARCH_MODE_OPTIONS, DISCIPLINE_OPTIONS } from '../types';
 
 const EXAMPLE_QUERIES = [
@@ -645,11 +645,12 @@ export default function ThreadView({
       {/* Thread Header */}
       <div className="px-4 md:px-8 py-3.5 border-b border-ink-surface flex justify-between items-center aria-matte z-10 shrink-0">
         <div className="flex items-center gap-3">
-          {/* Mobile hamburger: opens the sidebar drawer */}
+          {/* Mobile hamburger: opens the slide-over drawer (< 768px) */}
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="lg:hidden text-ink-muted hover:text-white transition-colors p-1"
+            className="press tip md:hidden text-ink-muted hover:text-white transition-colors p-2"
+            data-tip="Open navigation"
             aria-label="Open navigation menu"
           >
             <Menu size={18} />
@@ -682,11 +683,18 @@ export default function ThreadView({
                 isLoading ? 'text-amber-300' : 'text-emerald-400'
               }`}
             >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  isLoading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
-                }`}
-              />
+              <span className="relative flex h-1.5 w-1.5">
+                <span
+                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${
+                    isLoading ? 'bg-amber-400' : 'bg-emerald-400'
+                  }`}
+                />
+                <span
+                  className={`relative inline-flex h-1.5 w-1.5 rounded-full ${
+                    isLoading ? 'bg-amber-400' : 'bg-emerald-400'
+                  }`}
+                />
+              </span>
               {isLoading ? 'SYNCING' : 'ONLINE'}
             </span>
             <span className="text-[10px] text-tier-okf uppercase">
@@ -700,7 +708,7 @@ export default function ThreadView({
           {isLoading && (
             <button
               onClick={handleStopGeneration}
-              className="text-xs font-mono text-warning hover:bg-warning/10 border border-warning/40 px-2 py-1 rounded-none flex items-center gap-1.5 transition-colors"
+              className="press text-xs font-mono text-warning hover:bg-warning/10 border border-warning/40 px-2 py-1 rounded-none flex items-center gap-1.5 transition-colors"
               title="Stop streaming"
             >
               <StopCircle size={14} /> Stop
@@ -709,7 +717,7 @@ export default function ThreadView({
 
           <button
             onClick={onToggleFocus}
-            className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-xs font-mono px-2 py-1 rounded-none border border-ink-surface hover:border-gray-600"
+            className="press text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-xs font-mono px-2 py-1 rounded-none border border-white/[0.07] hover:border-white/[0.18]"
             title="Toggle Focus Mode"
           >
             {isFocusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -733,7 +741,7 @@ export default function ThreadView({
                 key={st}
                 className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono border transition-all ${
                   isActive
-                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.3)] animate-pulse font-bold'
+                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 animate-pulse font-bold'
                     : isDone
                     ? 'bg-ink-surface border-ink-surface text-gray-300'
                     : 'bg-ink-base border-ink-surface/40 text-gray-600'
@@ -779,7 +787,7 @@ export default function ThreadView({
                     <button
                       key={fixture.id}
                       onClick={() => executeQuery(fixture.query, fixture.id, fixture.recordedDate)}
-                      className="text-left p-3 bg-ink-base/80 hover:bg-ink-surface border border-ink-surface hover:border-tier-okf/50 transition-colors text-xs group"
+                      className="press aria-hover-glow text-left p-3 bg-[#101217] hover:bg-[#161922] border border-white/[0.07] hover:border-white/[0.18] transition-colors text-xs group"
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-[10px] text-tier-okf font-mono font-medium">
@@ -1023,14 +1031,20 @@ export default function ThreadView({
                     </div>
                   )}
                   {msg.content ? (
-                    <MarkdownRenderer
-                      content={msg.content}
-                      citations={msg.citations}
-                      onCitationClick={onCitationClick}
-                      isStreaming={msg.isStreaming}
-                      auditClaims={msg.telemetry?.audit?.claims?.filter((c): c is AuditClaim => typeof c === 'object' && c !== null)}
-                      answerFinal={msg.telemetry?.audit?.answer_final}
-                    />
+                    <>
+                      <MarkdownRenderer
+                        content={msg.content}
+                        citations={msg.citations}
+                        onCitationClick={onCitationClick}
+                        isStreaming={msg.isStreaming}
+                        auditClaims={msg.telemetry?.audit?.claims?.filter((c): c is AuditClaim => typeof c === 'object' && c !== null)}
+                        answerFinal={msg.telemetry?.audit?.answer_final}
+                      />
+                      {/* Crisp blinking rectangle cursor while generating */}
+                      {msg.isStreaming && (
+                        <span className="aria-cursor animate-pulse" aria-hidden="true" />
+                      )}
+                    </>
                   ) : msg.queuePosition ? (
                     <div className="font-mono text-xs text-amber-300 flex items-center gap-2 py-2">
                       <Loader2 size={14} className="animate-spin text-amber-300" />
@@ -1199,7 +1213,7 @@ export default function ThreadView({
               <button
                 type="submit"
                 disabled={!input.trim() || isLoading}
-                className="absolute right-2.5 top-2.5 p-2 text-cyan-400 hover:text-white hover:bg-cyan-500/20 disabled:opacity-30 disabled:hover:bg-transparent transition-all touch-spring"
+                className="press absolute right-2.5 top-2.5 p-2 text-cyan-400 hover:text-white hover:bg-cyan-500/20 disabled:opacity-30 disabled:hover:bg-transparent transition-all touch-spring"
                 aria-label="Send query"
               >
                 {isLoading ? <Loader2 size={16} className="animate-spin text-cyan-400" /> : <Send size={16} />}

@@ -4,7 +4,7 @@ import ConfidenceDial from './ConfidenceDial';
 import RetrievalVisuals from './RetrievalVisuals';
 import { Citation, MessageTelemetry, AuditClaim, ClaimStatus } from '../types';
 import { getTierGlyph, getTierColorClass } from './MarkdownRenderer';
-import { getMotionScale } from '../utils/motion';
+import { getMotionScale } from '../services/motion';
 
 interface SourcePanelProps {
   onClose: () => void;

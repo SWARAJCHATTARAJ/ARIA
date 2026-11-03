@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 import { useSettingsContext } from '../context/SettingsContext';
 import { useTheme } from '../context/ThemeContext';
-import { API_BASE_URL } from '../config';
-import { exportResearchHistory } from '../utils/storage';
+import { API_BASE_URL } from '../services/config';
+import { exportResearchHistory } from '../services/storage';
 
 interface HealthSample {
   latencyMs: number;
@@ -156,10 +156,10 @@ export default function SettingsView() {
                   key={m.id}
                   type="button"
                   onClick={() => onUpdateSettings({ researchMode: m.id })}
-                  className={`text-left p-3.5 border transition-all duration-200 text-xs flex flex-col justify-between ${
+                  className={`press aria-hover-glow text-left p-3.5 border transition-all duration-200 text-xs flex flex-col justify-between ${
                     isSelected
-                      ? 'bg-tier-okf/15 border-tier-okf text-white shadow-[0_0_15px_rgba(6,182,212,0.15)] ring-1 ring-tier-okf/50'
-                      : 'bg-ink-base/60 border-ink-surface hover:border-gray-600 text-gray-300 hover:text-white'
+                      ? 'bg-tier-okf/15 border-tier-okf text-white ring-1 ring-tier-okf/50'
+                      : 'bg-ink-base/60 border-white/[0.07] text-gray-300 hover:text-white'
                   }`}
                 >
                   <div>
@@ -237,7 +237,7 @@ export default function SettingsView() {
               onChange={(e) => onUpdateSettings({ customContext: e.target.value })}
               rows={3}
               placeholder="e.g. Focus specifically on recent 2024-2026 preprints. Exclude non-human trials. Frame findings around quantum decoherence limits..."
-              className="w-full bg-ink-base border border-ink-surface p-3 text-xs font-mono text-gray-200 placeholder-ink-muted focus:outline-none focus:border-tier-okf/50 focus:ring-1 focus:ring-tier-okf/50 transition-all resize-y"
+              className="aria-hover-glow w-full bg-ink-base border border-white/[0.07] p-3 text-xs font-mono text-gray-200 placeholder-ink-muted focus:outline-none focus:border-tier-okf/50 focus:ring-1 focus:ring-tier-okf/50 transition-all resize-y"
             />
             <p className="text-[10px] font-mono text-ink-muted mt-1">
               Automatically injected into every new synthesis prompt and research plan.
@@ -346,10 +346,10 @@ export default function SettingsView() {
                     setTheme(t.id);
                     onUpdateSettings({ themePreset: t.id });
                   }}
-                  className={`p-3.5 border text-left transition-all duration-200 flex flex-col justify-between ${
+                  className={`press aria-hover-glow p-3.5 border text-left transition-all duration-200 flex flex-col justify-between ${
                     isSelected
-                      ? 'border-tier-okf shadow-[0_0_20px_rgba(6,182,212,0.2)] ring-1 ring-tier-okf'
-                      : 'border-ink-surface hover:border-gray-600'
+                      ? 'border-tier-okf ring-1 ring-tier-okf'
+                      : 'border-white/[0.07]'
                   }`}
                   style={{ backgroundColor: t.bgHex }}
                 >

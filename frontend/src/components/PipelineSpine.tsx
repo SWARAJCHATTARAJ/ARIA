@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RotateCcw, Check } from 'lucide-react';
 import { PipelineStage } from '../types';
-import { getMotionScale } from '../utils/motion';
+import { getMotionScale } from '../services/motion';
 
 interface PipelineSpineProps {
   mode?: 'live' | 'home';

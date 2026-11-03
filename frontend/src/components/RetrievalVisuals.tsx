@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Citation } from '../types';
-import { getMotionScale, isReducedMotion } from '../utils/motion';
+import { getMotionScale, isReducedMotion } from '../services/motion';
 
 interface RetrievalVisualsProps {
   okfNodePaths?: string[];

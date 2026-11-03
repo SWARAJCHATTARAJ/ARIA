@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL } from '../services/config';
 
 /**
  * Native runtime detection: Tauri (Windows WebView2) & Capacitor (Android WebView).

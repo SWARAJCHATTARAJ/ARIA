@@ -674,3 +674,68 @@ html {
 .aria-drawer-open {
   transform: translate3d(0, 0, 0);
 }
+
+/* ======================================================================
+   MICRO-INTERACTIONS — tiny, high-end tactile details
+   ====================================================================== */
+
+/* Button press feedback: scale down slightly on click (transform-only) */
+.press {
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms ease,
+    background-color 150ms ease, color 150ms ease;
+  will-change: transform;
+}
+.press:active {
+  transform: scale(0.95);
+}
+
+/* Cards & inputs: brighten micro-borders + ultra-subtle ambient glow on hover
+   (static hover shadow, transition only touches box-shadow end-state) */
+.aria-hover-glow {
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.aria-hover-glow:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03), 0 14px 34px -16px rgba(0, 0, 0, 0.85);
+}
+
+/* Lightning-fast tooltip micro-fade for icon-only buttons */
+.tip {
+  position: relative;
+}
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #161922;
+  color: #f3f4f6;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-family: var(--obsidian-mono, "JetBrains Mono", monospace);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  white-space: nowrap;
+  border-radius: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  z-index: 100;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.9);
+}
+.tip:hover::after,
+.tip:focus-visible::after {
+  opacity: 1;
+}
+
+/* Crisp rectangular streaming cursor for active generation */
+.aria-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  background: #f3f4f6;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  box-shadow: 0 0 6px rgba(243, 244, 246, 0.45);
+}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { getMotionScale, isReducedMotion } from '../utils/motion';
+import { getMotionScale, isReducedMotion } from '../services/motion';
 
 interface ConfidenceDialProps {
   confidence?: number; // 0.0 - 1.0

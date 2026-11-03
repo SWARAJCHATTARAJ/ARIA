@@ -4,9 +4,9 @@ import {
   Activity, RefreshCw, Database, Search, ChevronRight, FileText, CheckCircle2,
   AlertTriangle, ExternalLink, Gauge, Github,
 } from 'lucide-react';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL } from '../services/config';
 import { OkfGraphData, RESEARCH_MODE_OPTIONS, DISCIPLINE_OPTIONS, AriaSettings, ThemePreset, AnimationIntensity, CitationFormat } from '../types';
-import { getHistory, deleteHistoryEntry, clearHistory, getCollections, removeFromCollection, getCompareDefault, setCompareDefault, getSettings, saveSettings, exportResearchHistory } from '../utils/storage';
+import { getHistory, deleteHistoryEntry, clearHistory, getCollections, removeFromCollection, getCompareDefault, setCompareDefault, getSettings, saveSettings, exportResearchHistory } from '../services/storage';
 
 function HubShell({ icon, title, subtitle, toolbar, children }: {
   icon: React.ReactNode;

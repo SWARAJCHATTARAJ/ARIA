@@ -23,7 +23,8 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
       {onOpenDrawer && (
         <button
           onClick={onOpenDrawer}
-          className="p-2 text-ink-muted hover:text-white transition-colors touch-spring"
+          className="press tip md:h-11 md:min-w-[44px] p-2 text-ink-muted hover:text-white hover:bg-[#161922] border border-transparent hover:border-white/[0.18] transition-colors"
+          data-tip="Menu"
           aria-label="Open navigation menu"
         >
           <Menu size={18} />
@@ -41,7 +42,7 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
         {/* OKF Space Quick Pill */}
         <button
           onClick={() => onTabChange('okf')}
-          className={`px-2.5 py-1 text-[11px] font-mono border flex items-center gap-1 transition-all touch-spring ${
+          className={`press px-2.5 py-1 text-[11px] font-mono border flex items-center gap-1 transition-all ${
             activeTab === 'okf'
               ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold'
               : 'bg-ink-surface/70 border-ink-surface text-ink-muted hover:text-white'
@@ -55,7 +56,7 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
         {/* Theme Cycle Button */}
         <button
           onClick={cycleNextTheme}
-          className="p-1.5 bg-ink-surface/70 border border-ink-surface hover:border-cyan-500/40 text-ink-muted hover:text-white transition-colors touch-spring"
+          className="press p-1.5 bg-[#101217] border border-white/[0.07] hover:border-white/[0.18] text-ink-muted hover:text-white transition-colors"
           title={`Cycle theme (Current: ${currentThemeObj.name})`}
           aria-label="Cycle theme"
         >
@@ -69,7 +70,7 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
         {onOpenCommandPalette && (
           <button
             onClick={onOpenCommandPalette}
-            className="p-1.5 bg-ink-surface/70 border border-ink-surface text-ink-muted hover:text-white touch-spring"
+            className="press p-1.5 bg-[#101217] border border-white/[0.07] hover:border-white/[0.18] text-ink-muted hover:text-white"
             title="Spotlight Search (Ctrl+K)"
             aria-label="Search"
           >
@@ -81,7 +82,7 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
         {user ? (
           <button
             onClick={() => onTabChange('settings')}
-            className="p-0.5 border border-cyan-500/40 rounded-full touch-spring"
+            className="press p-0.5 border border-white/[0.07] hover:border-white/[0.18] rounded-full"
             title={`Signed in as @${user.username}`}
           >
             {user.avatarUrl ? (
@@ -102,7 +103,7 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
         ) : (
           <button
             onClick={() => openAuthModal()}
-            className="px-2 py-1 bg-cyan-500/15 border border-cyan-400/40 text-[10px] font-mono font-semibold text-cyan-300 touch-spring"
+            className="press min-h-[32px] px-2 py-1 bg-cyan-500/15 border border-white/[0.07] hover:border-white/[0.18] text-[10px] font-mono font-semibold text-cyan-300"
             title="Sign In"
           >
             Sign In
@@ -132,7 +133,7 @@ export function MobileBottomNav({ activeTab, onTabChange }: MobileNavBarProps) {
             <button
               key={item.id}
               onClick={() => onTabChange(item.id)}
-              className={`relative flex flex-col items-center justify-center py-1 transition-all touch-spring ${
+              className={`press relative flex flex-col items-center justify-center py-1 transition-all touch-spring ${
                 isActive ? 'text-white font-semibold' : 'text-ink-muted hover:text-gray-300'
               }`}
               style={{ minHeight: '56px' }}

@@ -170,7 +170,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
         aria-hidden="true"
       />
 
-      <div className="relative w-full max-w-xl bg-ink-base border border-cyan-500/40 shadow-2xl rounded-none overflow-hidden z-10 neon-sheen">
+      <div className="relative w-full max-w-xl bg-[#050505] border border-white/[0.07] hover:border-white/[0.18] shadow-2xl rounded-none overflow-hidden z-10 neon-sheen">
         {/* Top Search Input */}
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-ink-surface bg-ink-surface/80">
           <Search size={18} className="text-cyan-400 shrink-0" />
@@ -202,7 +202,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
         {/* Results List */}
         <div
           ref={listRef}
-          className="max-h-80 overflow-y-auto hud-scroll p-2 divide-y divide-ink-surface/40"
+          className="max-h-80 overflow-y-auto hud-scroll aria-scroll p-2 divide-y divide-ink-surface/40"
         >
           {/* Quick Query item if text typed */}
           {query.trim() && (
@@ -211,7 +211,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
                 if (onStartQuery) onStartQuery(query.trim());
                 onClose();
               }}
-              className="p-2.5 text-xs font-mono flex items-center justify-between cursor-pointer bg-cyan-500/10 border border-cyan-400/40 text-cyan-300 mb-1 hover:bg-cyan-500/20"
+              className="press p-2.5 text-xs font-mono flex items-center justify-between cursor-pointer bg-cyan-500/10 border border-white/[0.18] text-cyan-300 mb-1 hover:bg-cyan-500/20"
             >
               <span className="flex items-center gap-2">
                 <Sparkles size={14} className="text-cyan-400 animate-pulse" />
@@ -236,7 +236,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
                 key={action.id}
                 onClick={() => action.onSelect()}
                 onMouseEnter={() => setSelectedIndex(idx)}
-                className={`p-2.5 text-xs font-mono flex items-center justify-between cursor-pointer transition-colors ${
+                className={`press p-2.5 text-xs font-mono flex items-center justify-between cursor-pointer transition-colors ${
                   isSelected
                     ? 'bg-cyan-500/15 border-l-2 border-cyan-400 text-white pl-3'
                     : 'text-gray-300 hover:bg-ink-surface/60'

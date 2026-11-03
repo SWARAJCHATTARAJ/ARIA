@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ExternalLink, Maximize2, X, ShieldCheck } from 'lucide-react';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL } from '../services/config';
 import { VisualCardData, Citation } from '../types';
 import CitationConstellation from './CitationConstellation';
 

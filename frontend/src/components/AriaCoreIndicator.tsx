@@ -1,5 +1,5 @@
 import React from 'react';
-import { getMotionScale } from '../utils/motion';
+import { getMotionScale } from '../services/motion';
 
 export type AriaCoreState = 'IDLE' | 'THINKING' | 'STREAMING' | 'COMPLETE';
 
