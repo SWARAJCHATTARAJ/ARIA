@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 import './styles/index.css';
 
 // Initialize motion scale for slow motion captures (?slow=1 sets --motion-scale: 5)
@@ -15,6 +16,8 @@ if (typeof window !== 'undefined') {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary surface="Application">
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

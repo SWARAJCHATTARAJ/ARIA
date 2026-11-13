@@ -204,7 +204,7 @@ function AppShell() {
             className="lg:hidden fixed inset-0 bg-black/60 z-40"
             onClick={() => setSourcePanelOpen(false)}
           />
-          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#0A0B0E] border-l border-white/[0.07] shadow-2xl flex-shrink-0 transition-transform duration-200 will-change-transform">
+          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#0C0C0F] border-l border-white/[0.07] shadow-2xl flex-shrink-0 transition-transform duration-200 will-change-transform">
             <SourcePanel
               onClose={() => setSourcePanelOpen(false)}
               activeQuery={hasQuery}

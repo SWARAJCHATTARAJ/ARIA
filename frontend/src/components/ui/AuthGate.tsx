@@ -1,6 +1,7 @@
 import React from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import ErrorBoundary from './ErrorBoundary';
 
 interface AuthGateProps {
   children: React.ReactNode;
@@ -34,7 +35,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
   }
 
   if (user) {
-    return <>{children}</>;
+    // Workspace-level boundary: a crash inside a view shows the recovery card
+    // (with the auth shell intact) instead of a blank black frame.
+    return <ErrorBoundary surface="Workspace">{children}</ErrorBoundary>;
   }
 
   const isSupabaseConfigured = Boolean(

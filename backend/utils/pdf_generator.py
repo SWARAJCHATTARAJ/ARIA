@@ -470,7 +470,7 @@ class AcademicTwoColumnPaper:
         self.page.insert_text(fitz.Point((self.PAGE_W - t1_len) / 2.0, cur_y), a1, fontname="tiro", fontsize=10.0, color=(0.14, 0.17, 0.20))
         cur_y += 13.0
 
-        a2 = "Department of Autonomous Verification & Multi-Tier Retrieval | Sentence-Level Entailment Audited"
+        a2 = "Department of Autonomous Verification & Multi-Tier Retrieval | Verbatim Quote & Entity Coverage Audited"
         t2_len = fitz.get_text_length(a2, fontname="tiit", fontsize=8.5)
         self.page.insert_text(fitz.Point((self.PAGE_W - t2_len) / 2.0, cur_y), a2, fontname="tiit", fontsize=8.5, color=(0.35, 0.38, 0.42))
         cur_y += 16.0
@@ -547,7 +547,7 @@ class AcademicTwoColumnPaper:
             )
 
         coverage_sentence = (
-            f"Sentence-level entailment auditing across the {self.tier_str} retrieval architecture "
+            f"Verbatim quote matching and entity coverage verification across the {self.tier_str} retrieval architecture "
             f"verified {len(supported_claims)} of {total_claims} detected factual claims "
             f"({verified_ratio:.0f}% verified) with {len(partial_claims)} partially supported claims, "
             f"yielding an audit confidence of {self.conf_pct}."
@@ -559,7 +559,7 @@ class AcademicTwoColumnPaper:
         term_words = [w.lower() for w in re.findall(r'\b[A-Za-z]{5,}\b', clean_title) if w.lower() not in
                       {"which", "where", "there", "about", "their", "would", "these", "those"}]
         seen = []
-        for t in term_words[:4] + ["autonomous verification", "multi-tier retrieval", "deterministic claim auditing", "zero-hallucination synthesis"]:
+        for t in term_words[:4] + ["autonomous verification", "multi-tier retrieval", "deterministic claim auditing", "verbatim quote verification"]:
             if t not in seen:
                 seen.append(t)
         return seen

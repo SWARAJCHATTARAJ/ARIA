@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
+import { User } from '@supabase/supabase-js';
 import { API_BASE_URL } from '../services/config';
+import { supabase } from '../lib/supabase';
 
 /**
  * Native runtime detection: Tauri (Windows WebView2) & Capacitor (Android WebView).
@@ -46,27 +47,9 @@ const AUTH_GUEST_KEY = 'aria-guest-session-v1';
 /** Strict-gate flag: the inner workspace renders if this is exactly 'true'. */
 export const ARIA_GUEST_FLAG_KEY = 'aria_guest';
 
-// Read Vite Supabase environment variables safely
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-let supabase: SupabaseClient | null = null;
-if (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http')) {
-  try {
-    supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        flowType: 'pkce',
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-      },
-    });
-  } catch {
-    // Supabase client init failed — the app falls back to the local guest session.
-    supabase = null;
-  }
-}
+/** Read Vite Supabase environment variables safely */
+export const supabaseUrlEnv = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+export const supabaseAnonKeyEnv = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 /** Instant local guest identity — never blocks or requires network. */
 export const GUEST_PROFILE: AuthUserProfile = {
@@ -136,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-  const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
+  const hasSupabaseConfig = Boolean(supabaseUrlEnv && supabaseAnonKeyEnv);
 
   // Initialize auth state
   useEffect(() => {
