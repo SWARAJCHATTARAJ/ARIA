@@ -5,8 +5,8 @@ import {
   AlertTriangle, ExternalLink, Gauge, Github,
 } from 'lucide-react';
 import { API_BASE_URL } from '../services/config';
-import { OkfGraphData, RESEARCH_MODE_OPTIONS, DISCIPLINE_OPTIONS, AriaSettings, ThemePreset, AnimationIntensity, CitationFormat } from '../types';
-import { getHistory, deleteHistoryEntry, clearHistory, getCollections, removeFromCollection, getCompareDefault, setCompareDefault, getSettings, saveSettings, exportResearchHistory } from '../services/storage';
+import { OkfGraphData } from '../types';
+import { getHistory, deleteHistoryEntry, clearHistory, getCollections, removeFromCollection } from '../services/storage';
 
 function HubShell({ icon, title, subtitle, toolbar, children }: {
   icon: React.ReactNode;
@@ -18,8 +18,7 @@ function HubShell({ icon, title, subtitle, toolbar, children }: {
   return (
     <div className="flex-1 overflow-y-auto hud-scroll">
       <div className="max-w-4xl mx-auto w-full p-4 md:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5 border-b border-ink-surface relative overflow-hidden">
-          <div className="hud-scanline" />
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5 border-b border-ink-surface relative">
           <div className="flex items-center gap-3 relative z-10">
             <div className="w-9 h-9 bg-ink-surface border border-ink-surface flex items-center justify-center text-tier-okf telemetry-glow">
               {icon}
@@ -87,7 +86,7 @@ export function HistoryView({ onOpenQuery }: { onOpenQuery?: (query: string) => 
                 <div className="flex items-center gap-2 mt-1 font-mono text-[10px] text-ink-muted">
                   <span>{new Date(h.timestamp).toLocaleString()}</span>
                   {typeof h.confidence === 'number' && h.confidence > 0 && (
-                    <span className="text-emerald-400/80">{Math.round(h.confidence * 100)}% verified</span>
+                    <span className="text-tier-okf/80">{Math.round(h.confidence * 100)}% verified</span>
                   )}
                 </div>
               </div>
@@ -95,7 +94,7 @@ export function HistoryView({ onOpenQuery }: { onOpenQuery?: (query: string) => 
                 {onOpenQuery && (
                   <button
                     onClick={() => onOpenQuery(h.query)}
-                    className="text-[10px] font-mono flex items-center gap-1 px-2 py-1 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf hover:text-emerald-300 hover:bg-tier-okf/25 transition-colors"
+                    className="text-[10px] font-mono flex items-center gap-1 px-2 py-1 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf hover:bg-tier-okf/25 transition-colors"
                     title="Re-run this query"
                   >
                     <ChevronRight size={11} /> Open
@@ -153,7 +152,7 @@ export function CollectionsView() {
                     <div className="flex items-center gap-2 mt-1 font-mono text-[10px] text-ink-muted">
                       <span>{new Date(c.timestamp).toLocaleString()}</span>
                       {typeof c.confidence === 'number' && (
-                        <span className={c.confidence >= 0.75 ? 'text-emerald-400/80' : 'text-amber-400/80'}>
+                        <span className={c.confidence >= 0.75 ? 'text-tier-okf/80' : 'text-tier-live/80'}>
                           {Math.round(c.confidence * 100)}% verified
                         </span>
                       )}
@@ -238,7 +237,7 @@ export function OkfSpaceView() {
         className={`text-[9px] font-mono px-1.5 py-0.5 border flex items-center gap-1 ${
           isVerified
             ? 'text-tier-okf border-tier-okf/40 bg-tier-okf/10'
-            : 'text-amber-400 border-amber-500/40 bg-amber-500/10'
+            : 'text-tier-live border-tier-live/40 bg-tier-live/10'
         }`}
       >
         {isVerified ? <CheckCircle2 size={9} /> : <AlertTriangle size={9} />}

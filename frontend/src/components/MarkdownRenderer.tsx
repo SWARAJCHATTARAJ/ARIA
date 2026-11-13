@@ -203,10 +203,10 @@ function MarkdownRendererInner({
       case 'audit_incomplete':
         return (
           <span
-            className="inline-flex items-center gap-1 border-b border-dotted border-amber-400/60 font-mono text-[10px] text-amber-300 ml-1.5 px-1 bg-ink-surface/40 select-none"
+            className="inline-flex items-center gap-1 border-b border-dotted border-tier-live/60 font-mono text-[10px] text-tier-live ml-1.5 px-1 bg-ink-surface/40 select-none"
             title={claim.note || 'Could not be checked'}
           >
-            <span className="font-bold text-amber-400">?</span>
+            <span className="font-bold text-tier-live">?</span>
             <span>could not be checked</span>
           </span>
         );
@@ -603,12 +603,12 @@ function InlineCitationPill({
       {/* Spring-animated floating citation card preview on hover / focus */}
       {showPreview && (
         <span
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-ink-base border border-cyan-500/50 shadow-2xl z-50 rounded-none pointer-events-auto text-left block animate-view-in"
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-ink-base border border-tier-okf/50 shadow-2xl z-50 rounded-none pointer-events-auto text-left block animate-view-in"
           style={{ filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.85))' }}
           onClick={(e) => e.stopPropagation()}
         >
           <span className="flex items-center justify-between text-[10px] font-mono mb-1.5 border-b border-ink-surface pb-1 text-ink-muted">
-            <span className="flex items-center gap-1 font-bold text-cyan-400">
+            <span className="flex items-center gap-1 font-bold text-tier-okf">
               <span>{glyph}</span>
               <span>{cit.tier || 'PRIMARY SOURCE'} #{citId + 1}</span>
             </span>
@@ -632,7 +632,7 @@ function InlineCitationPill({
               href={targetUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[10px] font-mono text-cyan-400 hover:underline mt-1"
+              className="inline-flex items-center gap-1 text-[10px] font-mono text-tier-okf hover:underline mt-1"
             >
               <span>View Source / DOI</span>
               <ExternalLink size={10} />

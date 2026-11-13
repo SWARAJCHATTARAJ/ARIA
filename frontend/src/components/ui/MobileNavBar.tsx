@@ -1,6 +1,5 @@
 import React from 'react';
-import { Home, PlusCircle, Clock, FolderGit2, Settings, BookOpen, Command, User, Github, Menu } from 'lucide-react';
-import { useTheme } from '../../context/ThemeContext';
+import { Home, PlusCircle, Clock, FolderGit2, Settings, BookOpen, Command, User, Menu } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AriaCoreIndicator from '../AriaCoreIndicator';
 
@@ -13,17 +12,15 @@ interface MobileNavBarProps {
 }
 
 export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onOpenDrawer }: MobileNavBarProps) {
-  const { theme, cycleNextTheme, themes } = useTheme();
   const { user, openAuthModal } = useAuth();
-  const currentThemeObj = themes.find((t) => t.id === theme) || themes[0];
 
   return (
-    <header className="md:hidden flex items-center justify-between px-3.5 py-2.5 bg-ink-base border-b border-ink-surface shrink-0 z-30 safe-pt select-none">
+    <header className="md:hidden flex items-center justify-between px-3.5 py-2.5 bg-[#09090B] border-b border-white/[0.07] shrink-0 z-30 safe-pt select-none">
       {/* Hamburger: opens slide-over drawer */}
       {onOpenDrawer && (
         <button
           onClick={onOpenDrawer}
-          className="press tip md:h-11 md:min-w-[44px] p-2 text-ink-muted hover:text-white hover:bg-[#161922] border border-transparent hover:border-white/[0.18] transition-colors"
+          className="press tip p-2 text-[#A1A1AA] hover:text-[#F4F4F6] hover:bg-[#16161C] border border-transparent hover:border-white/[0.16] transition-colors"
           data-tip="Menu"
           aria-label="Open navigation menu"
         >
@@ -33,44 +30,29 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
 
       {/* Brand: ARIA Core emblem + wordmark */}
       <div className="flex items-center gap-2" onClick={() => onTabChange('home')}>
-        <AriaCoreIndicator state="IDLE" size={20} className="text-cyan-300" />
+        <AriaCoreIndicator state="IDLE" size={20} className="text-tier-okf" />
         <img src="/aria-logo.svg" alt="ARIA" className="h-6 w-auto object-contain cursor-pointer" />
       </div>
 
-      {/* Right controls: OKF Space + Theme Toggle + Auth/Spotlight */}
+      {/* Right controls: OKF Space + Command Palette + Auth avatar */}
       <div className="flex items-center gap-1.5">
-        {/* OKF Space Quick Pill */}
         <button
           onClick={() => onTabChange('okf')}
           className={`press px-2.5 py-1 text-[11px] font-mono border flex items-center gap-1 transition-all ${
             activeTab === 'okf'
-              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold'
-              : 'bg-ink-surface/70 border-ink-surface text-ink-muted hover:text-white'
+              ? 'bg-[#16161C] border-white/[0.16] text-[#F4F4F6] font-bold'
+              : 'bg-[#111115] border-white/[0.07] text-[#A1A1AA] hover:text-[#F4F4F6]'
           }`}
           title="OKF Space Ontology"
         >
-          <BookOpen size={12} className={activeTab === 'okf' ? 'text-cyan-400' : ''} />
+          <BookOpen size={12} className={activeTab === 'okf' ? 'text-tier-okf' : ''} />
           <span>OKF</span>
         </button>
 
-        {/* Theme Cycle Button */}
-        <button
-          onClick={cycleNextTheme}
-          className="press p-1.5 bg-[#101217] border border-white/[0.07] hover:border-white/[0.18] text-ink-muted hover:text-white transition-colors"
-          title={`Cycle theme (Current: ${currentThemeObj.name})`}
-          aria-label="Cycle theme"
-        >
-          <span
-            className="block w-3 h-3 rounded-full border border-white/40"
-            style={{ backgroundColor: currentThemeObj.accentHex }}
-          />
-        </button>
-
-        {/* Command Palette */}
         {onOpenCommandPalette && (
           <button
             onClick={onOpenCommandPalette}
-            className="press p-1.5 bg-[#101217] border border-white/[0.07] hover:border-white/[0.18] text-ink-muted hover:text-white"
+            className="press p-1.5 bg-[#111115] border border-white/[0.07] hover:border-white/[0.16] text-[#A1A1AA] hover:text-[#F4F4F6]"
             title="Spotlight Search (Ctrl+K)"
             aria-label="Search"
           >
@@ -82,8 +64,8 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
         {user ? (
           <button
             onClick={() => onTabChange('settings')}
-            className="press p-0.5 border border-white/[0.07] hover:border-white/[0.18] rounded-full"
-            title={`Signed in as @${user.username}`}
+            className="press p-0.5 border border-white/[0.07] hover:border-white/[0.16] rounded-full"
+            title={`Signed in as ${user.provider === 'guest' ? 'Guest' : `@${user.username}`}`}
           >
             {user.avatarUrl ? (
               <img
@@ -95,7 +77,7 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
                 }}
               />
             ) : (
-              <div className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-[10px]">
+              <div className="w-5 h-5 rounded-full bg-[#16161C] text-[#A1A1AA] flex items-center justify-center text-[10px]">
                 <User size={11} />
               </div>
             )}
@@ -103,10 +85,10 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
         ) : (
           <button
             onClick={() => openAuthModal()}
-            className="press min-h-[32px] px-2 py-1 bg-cyan-500/15 border border-white/[0.07] hover:border-white/[0.18] text-[10px] font-mono font-semibold text-cyan-300"
-            title="Sign In"
+            className="press min-h-[32px] px-2 py-1 bg-[#F4F4F6] text-[#09090B] hover:bg-white text-[10px] font-mono font-semibold"
+            title="Sign in"
           >
-            Sign In
+            Sign in
           </button>
         )}
       </div>
@@ -124,7 +106,7 @@ export function MobileBottomNav({ activeTab, onTabChange }: MobileNavBarProps) {
   ];
 
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 bg-ink-base/95 border-t border-ink-surface z-40 safe-pb select-none">
+    <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[#09090B]/95 border-t border-white/[0.07] z-40 safe-pb select-none">
       <div className="grid grid-cols-5 h-14">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -134,21 +116,20 @@ export function MobileBottomNav({ activeTab, onTabChange }: MobileNavBarProps) {
               key={item.id}
               onClick={() => onTabChange(item.id)}
               className={`press relative flex flex-col items-center justify-center py-1 transition-all touch-spring ${
-                isActive ? 'text-white font-semibold' : 'text-ink-muted hover:text-gray-300'
+                isActive ? 'text-[#F4F4F6] font-semibold' : 'text-[#A1A1AA]'
               }`}
               style={{ minHeight: '56px' }}
             >
-              {/* Active Neon Top Bar Indicator */}
               {isActive && (
-                <span className="absolute top-0 inset-x-3 h-[2px] bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                <span className="absolute top-0 inset-x-3 h-[2px] bg-[#F4F4F6]" />
               )}
               <Icon
                 size={19}
                 className={`transition-transform duration-200 ${
-                  isActive ? 'text-cyan-400 scale-110' : ''
+                  isActive ? 'text-tier-okf scale-110' : ''
                 }`}
               />
-              <span className={`text-[10px] font-mono mt-1 ${isActive ? 'text-cyan-300 font-bold' : ''}`}>
+              <span className={`text-[10px] font-mono mt-1 ${isActive ? 'text-[#F4F4F6] font-bold' : ''}`}>
                 {item.label}
               </span>
             </button>

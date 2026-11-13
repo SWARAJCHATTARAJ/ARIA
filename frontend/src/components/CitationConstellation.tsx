@@ -13,13 +13,13 @@ interface CitationConstellationProps {
 function tierColor(tier?: string): string {
   switch (tier) {
     case 'OKF':
-      return '#5B8DB8';
+      return '#60A5FA';
     case 'RAG':
-      return '#8A82A8';
+      return '#A78BFA';
     case 'LIVE':
-      return '#D9A441';
+      return '#F59E0B';
     default:
-      return '#8A95A5';
+      return '#A1A1AA';
   }
 }
 
@@ -87,8 +87,8 @@ export default function CitationConstellation({
       <svg viewBox={`0 0 ${width} ${height}`} className={`w-full select-none ${compact ? 'h-auto' : 'h-auto max-h-[170px]'}`}>
         <defs>
           <radialGradient id="cc-glow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#5B8DB8" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="#5B8DB8" stopOpacity="0" />
+            <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#60A5FA" stopOpacity="0" />
           </radialGradient>
         </defs>
 
@@ -106,14 +106,13 @@ export default function CitationConstellation({
             stroke={n.color}
             strokeWidth={1.4}
             strokeOpacity={0.55}
-            className="constellation-link"
           />
         ))}
 
         {/* Citation nodes on the orbit */}
         {nodes.map((n) => (
-          <g key={`node-${n.id}`} className="constellation-node">
-            <circle cx={n.x} cy={n.y} r={9} fill="#0A0E14" stroke={n.color} strokeWidth={1.6} />
+          <g key={`node-${n.id}`}>
+            <circle cx={n.x} cy={n.y} r={9} fill="#111115" stroke={n.color} strokeWidth={1.6} />
             <text
               x={n.x}
               y={n.y + 3}
@@ -140,7 +139,7 @@ export default function CitationConstellation({
 
         {/* Central query node */}
         <g>
-          <circle cx={cx} cy={cy} r={15} fill="#0A0E14" stroke="#5B8DB8" strokeWidth={2} />
+          <circle cx={cx} cy={cy} r={15} fill="#111115" stroke="#60A5FA" strokeWidth={2} />
           <text
             x={cx}
             y={cy + 3}

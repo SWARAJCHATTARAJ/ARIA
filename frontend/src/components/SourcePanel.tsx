@@ -37,13 +37,13 @@ function getReviewBadge(status?: string) {
       );
     case 'scholarly':
       return (
-        <span className="text-[9px] font-mono text-sky-400 border border-sky-500/40 px-1.5 py-0.5 bg-sky-500/10">
+        <span className="text-[9px] font-mono text-tier-okf border border-tier-okf/40 px-1.5 py-0.5 bg-tier-okf/10">
           SCHOLARLY
         </span>
       );
     case 'preprint':
       return (
-        <span className="text-[9px] font-mono text-purple-400 border border-purple-500/40 px-1.5 py-0.5 bg-purple-500/10">
+        <span className="text-[9px] font-mono text-tier-rag border border-tier-rag/40 px-1.5 py-0.5 bg-tier-rag/10">
           PREPRINT
         </span>
       );
@@ -67,13 +67,13 @@ function getClaimStatusBadge(status: ClaimStatus) {
   switch (status) {
     case 'supported':
       return (
-        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 shrink-0 flex items-center gap-1">
+        <span className="text-[9px] font-mono text-tier-okf bg-tier-okf/10 border border-tier-okf/30 px-1.5 py-0.5 shrink-0 flex items-center gap-1">
           <CheckCircle2 size={10} /> Supported
         </span>
       );
     case 'partially_supported':
       return (
-        <span className="text-[9px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/40 px-1.5 py-0.5 shrink-0 flex items-center gap-1">
+        <span className="text-[9px] font-mono text-tier-live bg-tier-live/10 border border-tier-live/40 px-1.5 py-0.5 shrink-0 flex items-center gap-1">
           <AlertTriangle size={10} /> Partial
         </span>
       );
@@ -85,7 +85,7 @@ function getClaimStatusBadge(status: ClaimStatus) {
       );
     case 'audit_incomplete':
       return (
-        <span className="text-[9px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/40 px-1.5 py-0.5 shrink-0 flex items-center gap-1">
+        <span className="text-[9px] font-mono text-tier-live bg-tier-live/10 border border-tier-live/40 px-1.5 py-0.5 shrink-0 flex items-center gap-1">
           <HelpCircle size={10} /> could not be checked
         </span>
       );
@@ -102,10 +102,10 @@ function getClaimStatusBadge(status: ClaimStatus) {
 function getClaimNoteClass(status: ClaimStatus): string {
   switch (status) {
     case 'supported':
-      return 'text-emerald-400/90 border-l border-emerald-500/40';
+      return 'text-tier-okf/90 border-l border-tier-okf/40';
     case 'partially_supported':
     case 'audit_incomplete':
-      return 'text-amber-300/90 border-l border-amber-500/40';
+      return 'text-tier-live/90 border-l border-tier-live/40';
     case 'unsupported':
     case 'uncited':
     default:
@@ -211,7 +211,7 @@ export default function SourcePanel({
           <div className="w-2 h-2 rounded-none bg-tier-okf" />
           <h3 className="font-mono text-xs uppercase tracking-wider text-ink-muted">Sources and audit</h3>
           {isMockActive && (
-            <span className="font-mono text-[9px] px-1.5 py-0.2 uppercase tracking-wider bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold flex items-center gap-1">
+            <span className="font-mono text-[9px] px-1.5 py-0.2 uppercase tracking-wider bg-tier-live/20 border border-tier-live/40 text-tier-live font-bold flex items-center gap-1">
               <AlertTriangle size={10} /> MOCK DATA
             </span>
           )}
@@ -243,7 +243,7 @@ export default function SourcePanel({
                 if (cardEl) {
                   cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                   cardEl.animate([
-                    { borderColor: '#5B8DB8', backgroundColor: 'rgba(91,141,184,0.25)' },
+                    { borderColor: '#60A5FA', backgroundColor: 'rgba(96,165,250,0.25)' },
                     { borderColor: '', backgroundColor: '' }
                   ], { duration: 800 * getMotionScale(), easing: 'cubic-bezier(.2,.8,.2,1)' });
                 }
@@ -301,7 +301,7 @@ export default function SourcePanel({
                         claim.status === 'unsupported'
                           ? 'border-warning/50 bg-warning/5'
                           : claim.status === 'partially_supported' || claim.status === 'audit_incomplete'
-                          ? 'border-amber-500/40 bg-amber-500/5'
+                          ? 'border-tier-live/40 bg-tier-live/5'
                           : 'border-ink-surface/70'
                       }`}
                       style={{ animationDelay: `${Math.min(idx * 70, 350)}ms` }}
@@ -463,8 +463,8 @@ export default function SourcePanel({
                           >
                             {copiedId === cit.id ? (
                               <>
-                                <Check size={10} className="text-emerald-400" />
-                                <span className="text-emerald-400">Copied</span>
+                                <Check size={10} className="text-tier-okf" />
+                                <span className="text-tier-okf">Copied</span>
                               </>
                             ) : (
                               <>

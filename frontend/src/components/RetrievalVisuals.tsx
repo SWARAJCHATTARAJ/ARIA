@@ -121,7 +121,7 @@ function RetrievalVisualsInner({
                   <div
                     className={`w-2.5 h-2.5 rounded-full border transition-all duration-200 ${
                       isPassed
-                        ? 'bg-tier-okf border-tier-okf shadow-[0_0_6px_rgba(91,141,184,0.6)]'
+                        ? 'bg-tier-okf border-tier-okf'
                         : 'bg-ink-surface border-gray-600'
                     } ${isCurrent ? 'scale-125' : ''}`}
                     title={path}
@@ -187,7 +187,7 @@ function RetrievalVisualsInner({
               return (
                 <div
                   key={idx}
-                  className="flex items-center gap-1.5 transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] animate-[fadeIn_160ms_ease-out]"
+                  className="flex items-center gap-1.5 transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)]"
                 >
                   <div
                     className={`w-2 h-2 border border-tier-live rounded-none transition-colors duration-200 ${

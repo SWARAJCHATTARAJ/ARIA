@@ -1,279 +1,209 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { ArrowRight, Activity, Sparkles, Cpu, ShieldCheck, Database, Layers, ExternalLink } from 'lucide-react';
-import AriaCoreIndicator from './AriaCoreIndicator';
-import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
-import { useHeroLattice } from '../hooks/useHeroLattice';
+import React, { useState } from 'react';
 
 interface HomeProps {
-  onStart: () => void;
+  /** Hands the query to the New Question workspace and executes it. */
+  onStartQuery: (query: string) => void;
 }
 
-const FLOW_STAGES = [
-  { id: 'PLAN', label: 'PLAN', desc: 'Disambiguate & expand intent', tag: 'Semantic Router' },
-  { id: 'RETRIEVE', label: 'RETRIEVE', desc: '§ OKF · ▲ RAG · ● LIVE', tag: 'Tri-Tier Engine' },
-  { id: 'WRITE', label: 'WRITE', desc: 'Strict evidence synthesis', tag: 'Causal Grounding' },
-  { id: 'CHECK', label: 'ENTROPY AUDIT', desc: 'Sentence-by-sentence verification', tag: 'NLI Entailment' },
+const LEGEND = [
+  { glyph: '§', label: 'OKF Structured', color: '#60A5FA' },
+  { glyph: '▲', label: 'RAG Vector', color: '#A78BFA' },
+  { glyph: '●', label: 'LIVE Academic', color: '#F59E0B' },
 ];
 
-export default function Home({ onStart }: HomeProps) {
-  const { requireAuth, user, openAuthModal } = useAuth();
-  const { theme } = useTheme();
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  useHeroLattice(canvasRef, theme);
-  const [simStage, setSimStage] = useState(0);
-  const [telemetryMs, setTelemetryMs] = useState(142);
+const BENCHMARKS = [
+  'What is the definition and taxonomy of autonomous systems in artificial intelligence?',
+  'What are the off-target mitigation strategies for CRISPR gene editing?',
+  'How do multi-agent consensus protocols handle Byzantine fault tolerance?',
+];
 
-  // 1. Stage cycler & simulated millisecond telemetry
-  useEffect(() => {
-    const stageTimer = setInterval(() => {
-      setSimStage((prev) => (prev + 1) % FLOW_STAGES.length);
-    }, 2400);
+const PIPELINE_STEPS = [
+  {
+    index: '01',
+    name: 'PLAN',
+    tag: 'SEMANTIC ROUTER',
+    detail: 'Query decomposition & routing.',
+  },
+  {
+    index: '02',
+    name: 'RETRIEVE',
+    tag: 'OKF · RAG · LIVE',
+    detail: 'Parallel search across structured notes, vector chunks, and live academic papers.',
+  },
+  {
+    index: '03',
+    name: 'WRITE',
+    tag: 'INLINE CITATION',
+    detail: 'Source-grounded academic synthesis.',
+  },
+  {
+    index: '04',
+    name: 'CHECK',
+    tag: 'LLM JUDGE AUDIT',
+    detail: 'Verbatim quote matching, entity coverage checks, and unsupported-claim pruning.',
+  },
+];
 
-    const msTimer = setInterval(() => {
-      setTelemetryMs(120 + Math.floor(Math.random() * 45));
-    }, 800);
+export default function Home({ onStartQuery }: HomeProps) {
+  const [omniQuery, setOmniQuery] = useState('');
+  const [expandedStep, setExpandedStep] = useState<string | null>(null);
 
-    return () => {
-      clearInterval(stageTimer);
-      clearInterval(msTimer);
-    };
-  }, []);
-
-  // 2. 60fps hardware-accelerated interactive lattice (extracted to hooks/)
-
-  const handleCtaClick = () => {
-    requireAuth(() => {
-      onStart();
-    });
+  const submitQuery = (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    onStartQuery(trimmed);
   };
 
-  const currentStage = FLOW_STAGES[simStage];
+  const handleOmniSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitQuery(omniQuery);
+  };
+
+  const handleOmniKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitQuery(omniQuery);
+    }
+  };
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-between overflow-y-auto overflow-x-hidden p-4 md:p-12 hud-grid select-none">
-      {/* 60fps Interactive Neural Canvas Background */}
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 w-full h-full pointer-events-none z-0"
-      />
+    <div className="relative w-full h-full flex flex-col overflow-y-auto overflow-x-hidden hud-scroll">
+      {/* Top bar: engine pill + tier legend */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 md:px-10 pt-5 pb-2 shrink-0">
+        <div className="ui-card inline-flex items-center gap-2.5 px-3 py-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#10B981] shrink-0" />
+          <span className="font-mono text-[10px] tracking-[0.14em] text-[#A1A1AA] uppercase">
+            ARIA RESEARCH ENGINE · TRI-TIER RETRIEVAL
+          </span>
+        </div>
 
-      {/* Ambient floating spotlights */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden z-0" aria-hidden="true">
-        <div className="absolute -top-32 -left-20 w-[380px] md:w-[500px] h-[380px] md:h-[500px] bg-cyan-500/10 rounded-full blur-3xl animate-spotlight" />
-        <div
-          className="absolute top-1/2 -right-32 w-[360px] md:w-[540px] h-[360px] md:h-[540px] bg-indigo-500/10 rounded-full blur-3xl animate-spotlight"
-          style={{ animationDelay: '3s' }}
-        />
+        <div className="flex flex-wrap items-center gap-4">
+          {LEGEND.map((l) => (
+            <span key={l.label} className="flex items-center gap-1.5 font-mono text-[10px] tracking-wider">
+              <span style={{ color: l.color }} className="font-bold">
+                {l.glyph}
+              </span>
+              <span className="text-[#A1A1AA]">{l.label}</span>
+            </span>
+          ))}
+        </div>
       </div>
 
-      {/* Orbital Rings - centered and fully responsive */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-0 overflow-hidden" aria-hidden="true">
-        <div className="w-[300px] sm:w-[480px] md:w-[700px] h-[300px] sm:h-[480px] md:h-[700px] rounded-full border border-dashed border-cyan-500/20 animate-orbit-spin" />
-        <div
-          className="absolute w-[220px] sm:w-[340px] md:w-[460px] h-[220px] sm:h-[340px] md:h-[460px] rounded-full border border-cyan-400/25 animate-orbit-spin"
-          style={{ animationDirection: 'reverse', animationDuration: '22s' }}
-        />
-      </div>
-
-      {/* Main Content Grid */}
-      <div className="max-w-6xl w-full my-auto grid grid-cols-1 lg:grid-cols-12 gap-8 md:gap-12 items-center relative z-10 py-4">
-        {/* Left Hero Column */}
-        <div className="lg:col-span-6 space-y-5 text-left">
-          {/* Badge */}
-          <div className="animate-rise-in inline-flex items-center gap-2 px-3 py-1 bg-ink-surface/90 border border-white/10 text-[10px] font-mono uppercase tracking-widest text-gray-300 aria-reticle">
-            <AriaCoreIndicator state="IDLE" size={14} className="text-cyan-300" />
-            <span className="w-2 h-2 rounded-full bg-emerald-400 pulse-telemetry" />
-            <span>Autonomous Verification Engine v2.0</span>
-          </div>
-
-          {/* Heading with responsive fluid clamp */}
-          <h1
-            className="animate-rise-in font-bold text-white tracking-tight leading-[1.12]"
-            style={{ fontSize: 'clamp(1.9rem, 5.2vw, 3.6rem)', animationDelay: '80ms' }}
-          >
-            Every claim, checked against its source.
+      {/* Main two-column workbench */}
+      <div className="flex-1 w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center px-4 md:px-10 py-8">
+        {/* Left column: hero + omnibox + benchmarks */}
+        <div className="lg:col-span-7 space-y-6 animate-view-enter">
+          <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-[#F4F4F6] leading-[1.1]">
+            Every claim, traced to its primary source.
           </h1>
 
-          {/* Description */}
-          <p
-            className="animate-rise-in text-ink-muted text-sm sm:text-base md:text-lg leading-relaxed max-w-lg"
-            style={{ animationDelay: '160ms' }}
-          >
-            Ask complex research questions. ARIA orchestrates multi-tier retrieval, synthesizes grounded academic answers, and verifies every claim with sentence-level NLI entailment audits.
+          <p className="text-sm sm:text-base text-[#A1A1AA] leading-relaxed max-w-xl">
+            ARIA orchestrates multi-tier retrieval across structured knowledge notes, vector
+            literature, and live academic indices—verifying synthesized answers through verbatim
+            quote matching and entity coverage checks.
           </p>
 
-          {/* Action CTAs */}
-          <div
-            className="animate-rise-in pt-2 flex flex-wrap items-center gap-3"
-            style={{ animationDelay: '240ms' }}
-          >
+          {/* Direct search omnibox */}
+          <form onSubmit={handleOmniSubmit} className="ui-card flex items-stretch gap-2 p-2 max-w-xl">
+            <input
+              type="text"
+              value={omniQuery}
+              onChange={(e) => setOmniQuery(e.target.value)}
+              onKeyDown={handleOmniKeyDown}
+              placeholder="Ask a research question..."
+              aria-label="Ask a research question"
+              className="flex-1 min-w-0 bg-transparent px-3 text-sm text-[#F4F4F6] placeholder-[#52525B] focus:outline-none"
+              style={{ fontSize: '16px' }}
+            />
             <button
-              onClick={handleCtaClick}
-              className="group press relative px-7 py-3.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-white/[0.07] hover:border-white/[0.18] text-white font-mono text-xs uppercase tracking-widest transition-all duration-300 ease-out hover:scale-[1.02] flex items-center gap-3 touch-spring"
+              type="submit"
+              disabled={!omniQuery.trim()}
+              className="ui-btn shrink-0 px-4 py-2.5 bg-[#F4F4F6] text-[#09090B] hover:bg-white font-medium text-sm flex items-center gap-2 disabled:opacity-40 disabled:hover:bg-[#F4F4F6]"
             >
-              <Sparkles size={14} className="text-cyan-300 animate-pulse" />
-              <span>Ask a question</span>
-              <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform text-cyan-300" />
+              <span>Ask Question</span>
+              <span aria-hidden="true">-&gt;</span>
             </button>
+          </form>
 
-            {!user && (
+          {/* Benchmark query cards */}
+          <div className="space-y-2 pt-1">
+            {BENCHMARKS.map((query) => (
               <button
-                onClick={() => openAuthModal()}
-                className="px-4 py-3 bg-ink-surface/80 hover:bg-ink-surface border border-ink-surface hover:border-cyan-500/40 text-ink-muted hover:text-white font-mono text-xs uppercase tracking-wider transition-colors touch-spring"
+                key={query}
+                type="button"
+                onClick={() => submitQuery(query)}
+                className="ui-card ui-card-interactive block w-full text-left px-4 py-3 text-xs text-[#A1A1AA] hover:text-[#F4F4F6]"
               >
-                Sign In / OAuth
+                "{query}"
               </button>
-            )}
-          </div>
-
-          {/* Engine Latency Telemetry */}
-          <div
-            className="animate-rise-in flex flex-wrap items-center gap-2 font-mono text-[10px] text-ink-muted pt-1"
-            style={{ animationDelay: '320ms' }}
-          >
-            <span className="flex items-center gap-1.5 border border-ink-surface px-2.5 py-1 bg-ink-base/80">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" /> OKF (Structured)
-            </span>
-            <span className="flex items-center gap-1.5 border border-ink-surface px-2.5 py-1 bg-ink-base/80">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" /> RAG (Vector)
-            </span>
-            <span className="flex items-center gap-1.5 border border-ink-surface px-2.5 py-1 bg-ink-base/80">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> LIVE (Academic)
-            </span>
-            <span className="text-cyan-400 font-semibold">T+{telemetryMs}ms live</span>
+            ))}
           </div>
         </div>
 
-        {/* Right Column: Holographic Pipeline Architecture Flow Simulator */}
-        <div className="lg:col-span-6 w-full flex justify-center">
-          <div className="w-full max-w-md bg-ink-surface/40 border border-cyan-500/30 p-5 md:p-6 relative overflow-hidden shadow-2xl">
-            <div className="hud-scanline" />
-
-            {/* Header */}
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-ink-surface relative z-10">
-              <div className="flex items-center gap-2">
-                <Cpu size={14} className="text-cyan-400 animate-pulse" />
-                <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-white">
-                  Pipeline Architecture Flow
-                </span>
-              </div>
-              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-1.5 py-0.5">
-                Deterministic
+        {/* Right column: interactive 4-stage pipeline inspector */}
+        <div className="lg:col-span-5 w-full animate-view-enter" style={{ animationDelay: '60ms' }}>
+          <div
+            className="w-full max-w-md lg:ml-auto p-5 md:p-6"
+            style={{ background: '#0D0D11', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px' }}
+          >
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/[0.07]">
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#A1A1AA]">
+                Pipeline Inspector
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-wider text-[#52525B]">
+                4 stages
               </span>
             </div>
 
-            {/* 3D Wave SVG Flow */}
-            <div className="relative w-full h-24 mb-4 flex items-center justify-center">
-              <svg viewBox="0 0 400 100" className="w-full h-full overflow-visible">
-                <defs>
-                  <linearGradient id="pipelineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.8" />
-                    <stop offset="50%" stopColor="#6366f1" stopOpacity="0.9" />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity="1" />
-                  </linearGradient>
-                </defs>
-                {/* Background track */}
-                <path
-                  d="M 20 50 Q 110 10, 200 50 T 380 50"
-                  fill="none"
-                  stroke="#1e293b"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                />
-                {/* Flowing animated wave */}
-                <path
-                  d="M 20 50 Q 110 10, 200 50 T 380 50"
-                  fill="none"
-                  stroke="url(#pipelineGrad)"
-                  strokeWidth="3.5"
-                  strokeLinecap="round"
-                  strokeDasharray="14 16"
-                  className="animate-packet-flow"
-                />
-                {/* Stage node circles */}
-                {[20, 140, 260, 380].map((cx, i) => (
-                  <circle
-                    key={i}
-                    cx={cx}
-                    cy={i % 2 === 0 ? 50 : 38}
-                    r={i === simStage ? 6 : 4}
-                    className={`transition-all duration-300 ${
-                      i <= simStage ? 'fill-cyan-400 stroke-white' : 'fill-gray-700 stroke-gray-900'
-                    }`}
-                    strokeWidth="2"
-                  />
-                ))}
-              </svg>
-            </div>
-
-            {/* Stages Stack */}
-            <div className="space-y-2 relative z-10">
-              {FLOW_STAGES.map((stage, idx) => {
-                const isActive = idx === simStage;
-                const isPassed = idx < simStage;
+            <div className="space-y-2">
+              {PIPELINE_STEPS.map((step) => {
+                const isExpanded = expandedStep === step.index;
                 return (
-                  <div
-                    key={stage.id}
-                    className={`flex items-center justify-between p-2 text-left border transition-all duration-300 ${
-                      isActive
-                        ? 'bg-cyan-500/10 border-cyan-400/60 shadow-[0_0_12px_rgba(6,182,212,0.18)]'
-                        : isPassed
-                        ? 'bg-ink-base/60 border-ink-surface text-gray-300'
-                        : 'bg-ink-base/30 border-ink-surface/40 opacity-40 text-gray-500'
-                    }`}
+                  <button
+                    key={step.index}
+                    type="button"
+                    onMouseEnter={() => setExpandedStep(step.index)}
+                    onMouseLeave={() => setExpandedStep(null)}
+                    onFocus={() => setExpandedStep(step.index)}
+                    onClick={() => setExpandedStep(isExpanded ? null : step.index)}
+                    aria-expanded={isExpanded}
+                    className={`block w-full text-left p-3.5 transition-all duration-150 ease-out ${
+                      isExpanded
+                        ? 'border-white/[0.16] bg-[#16161C]'
+                        : 'border-white/[0.07] bg-transparent hover:bg-[#16161C]'
+                    } border`}
+                    style={{ borderRadius: '8px' }}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          isActive
-                            ? 'bg-cyan-300 pulse-telemetry'
-                            : isPassed
-                            ? 'bg-emerald-400'
-                            : 'bg-gray-600'
-                        }`}
-                      />
-                      <span className={`font-mono text-xs font-bold ${isActive ? 'text-cyan-300' : 'text-gray-200'}`}>
-                        {stage.label}
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-mono text-xs tracking-wider min-w-0 truncate">
+                        <span className="text-[#52525B]">{step.index}</span>
+                        <span className="text-[#F4F4F6] font-semibold"> · {step.name}</span>
                       </span>
-                      <span className="font-sans text-[11px] text-ink-muted hidden sm:inline">
-                        — {stage.desc}
+                      <span className="font-mono text-[9px] uppercase tracking-wider text-[#52525B] shrink-0">
+                        {step.tag}
                       </span>
                     </div>
-                    <span className="font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-ink-base/90 border border-ink-surface text-ink-muted">
-                      {stage.tag}
-                    </span>
-                  </div>
+                    <div
+                      className={`overflow-hidden transition-all duration-200 ease-out ${
+                        isExpanded ? 'max-h-16 opacity-100 mt-2' : 'max-h-0 opacity-0 mt-0'
+                      }`}
+                    >
+                      <p className="text-[11px] text-[#A1A1AA] leading-relaxed">{step.detail}</p>
+                    </div>
+                  </button>
                 );
               })}
             </div>
-
-            {/* Footer Telemetry */}
-            <div className="mt-4 pt-3 border-t border-ink-surface flex items-center justify-between text-[10px] font-mono text-ink-muted relative z-10">
-              <span className="flex items-center gap-1.5 text-cyan-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                Active: {currentStage.label}
-              </span>
-              <span>T+{(telemetryMs / 1000).toFixed(3)}s · Entailment Armed</span>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Trust & Methodology footer strip */}
-      <div className="w-full max-w-6xl pt-4 pb-2 border-t border-ink-surface/70 flex flex-wrap items-center justify-between text-ink-muted text-xs font-mono relative z-10">
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1 text-emerald-400">
-            <ShieldCheck size={13} /> Strict Zero-Hallucination Gate
-          </span>
-          <span className="hidden md:inline">·</span>
-          <span className="hidden md:inline">Citations anchored via DOI &amp; arXiv</span>
-        </div>
-        <div className="flex items-center gap-2 text-[10px]">
-          <span>v2.0-PROD</span>
-          <span>·</span>
-          <span>Open Knowledge Fabric</span>
-        </div>
+      {/* Footer strip */}
+      <div className="w-full max-w-6xl mx-auto px-4 md:px-10 pb-5 pt-4 border-t border-white/[0.07] flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] text-[#52525B] shrink-0">
+        <span>
+          Unsupported claims are flagged or pruned via quote &amp; coverage checks · Citations anchored via DOI &amp; arXiv
+        </span>
+        <span>ARIA · Open Knowledge Fabric</span>
       </div>
     </div>
   );

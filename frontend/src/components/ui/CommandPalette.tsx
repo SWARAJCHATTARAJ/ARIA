@@ -7,16 +7,10 @@ import {
   FolderGit2,
   BookOpen,
   Settings,
-  Palette,
-  Cpu,
   Sparkles,
   ArrowRight,
   X,
-  FileDown,
 } from 'lucide-react';
-import { useTheme, ThemeId } from '../../context/ThemeContext';
-import { useSettingsContext } from '../../context/SettingsContext';
-import { ResearchMode } from '../../types';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -27,7 +21,7 @@ interface CommandPaletteProps {
 
 interface PaletteAction {
   id: string;
-  category: 'Navigation' | 'Theme' | 'Research Mode' | 'Action';
+  category: 'Navigation' | 'Action';
   label: string;
   sublabel?: string;
   icon: React.ReactNode;
@@ -40,9 +34,6 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  const { theme, setTheme, themes } = useTheme();
-  const { settings, onUpdateSettings, researchModes } = useSettingsContext();
-
   useEffect(() => {
     if (isOpen) {
       setQuery('');
@@ -53,11 +44,10 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
 
   // Actions list
   const actions: PaletteAction[] = [
-    // Navigation
     {
       id: 'nav-home',
       category: 'Navigation',
-      label: 'Go to Home (Hero & Verification Overview)',
+      label: 'Go to Home (Research Workbench)',
       icon: <Home size={15} />,
       onSelect: () => { onNavigate('home'); onClose(); },
     },
@@ -92,33 +82,10 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
     {
       id: 'nav-settings',
       category: 'Navigation',
-      label: 'Open Settings (Controls, BYOK, Appearance)',
+      label: 'Open Settings',
       icon: <Settings size={15} />,
       onSelect: () => { onNavigate('settings'); onClose(); },
     },
-
-    // Themes
-    ...themes.map((t) => ({
-      id: `theme-${t.id}`,
-      category: 'Theme' as const,
-      label: `Switch Theme: ${t.name}`,
-      sublabel: t.tagline,
-      icon: <Palette size={15} style={{ color: t.accentHex }} />,
-      onSelect: () => { setTheme(t.id); onClose(); },
-    })),
-
-    // Research Modes
-    ...researchModes.map((rm) => ({
-      id: `mode-${rm.id}`,
-      category: 'Research Mode' as const,
-      label: `Research Mode: ${rm.label}`,
-      sublabel: rm.hint,
-      icon: <Cpu size={15} />,
-      onSelect: () => {
-        onUpdateSettings({ researchMode: rm.id });
-        onClose();
-      },
-    })),
   ];
 
   // Filtering
@@ -163,17 +130,20 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-black/75 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 bg-black/75 backdrop-blur-sm animate-fade-in">
       <div
         className="fixed inset-0"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      <div className="relative w-full max-w-xl bg-[#050505] border border-white/[0.07] hover:border-white/[0.18] shadow-2xl rounded-none overflow-hidden z-10">
+      <div
+        className="relative w-full max-w-xl overflow-hidden z-10 animate-view-enter"
+        style={{ background: '#111115', border: '1px solid rgba(255,255,255,0.09)', borderRadius: '10px' }}
+      >
         {/* Top Search Input */}
-        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-ink-surface bg-ink-surface/80">
-          <Search size={18} className="text-cyan-400 shrink-0" />
+        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/[0.07] bg-[#0C0C0F]">
+          <Search size={18} className="text-[#52525B] shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -182,19 +152,20 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
               setQuery(e.target.value);
               setSelectedIndex(0);
             }}
-            placeholder="Search commands, views, themes, or ask a question..."
-            className="w-full bg-transparent text-sm md:text-base font-sans text-white placeholder-ink-muted focus:outline-none"
+            placeholder="Search views, or ask a question..."
+            className="w-full bg-transparent text-sm md:text-base font-sans text-[#F4F4F6] placeholder-[#52525B] focus:outline-none"
             style={{ fontSize: '16px' }}
           />
           {query && (
             <button
               onClick={() => setQuery('')}
-              className="text-ink-muted hover:text-white p-1"
+              className="text-[#52525B] hover:text-[#F4F4F6] p-1"
+              aria-label="Clear query"
             >
               <X size={15} />
             </button>
           )}
-          <span className="text-[10px] font-mono text-ink-muted border border-ink-surface px-1.5 py-0.5 shrink-0 hidden sm:inline">
+          <span className="text-[10px] font-mono text-[#52525B] border border-white/[0.07] px-1.5 py-0.5 shrink-0 hidden sm:inline">
             ESC
           </span>
         </div>
@@ -202,7 +173,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
         {/* Results List */}
         <div
           ref={listRef}
-          className="max-h-80 overflow-y-auto hud-scroll aria-scroll p-2 divide-y divide-ink-surface/40"
+          className="max-h-80 overflow-y-auto hud-scroll aria-scroll p-2 divide-y divide-white/[0.05]"
         >
           {/* Quick Query item if text typed */}
           {query.trim() && (
@@ -211,21 +182,21 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
                 if (onStartQuery) onStartQuery(query.trim());
                 onClose();
               }}
-              className="press p-2.5 text-xs font-mono flex items-center justify-between cursor-pointer bg-cyan-500/10 border border-white/[0.18] text-cyan-300 mb-1 hover:bg-cyan-500/20"
+              className="press p-2.5 text-xs font-mono flex items-center justify-between cursor-pointer bg-[#16161C] border border-white/[0.16] text-[#F4F4F6] mb-1"
             >
               <span className="flex items-center gap-2">
-                <Sparkles size={14} className="text-cyan-400 animate-pulse" />
+                <Sparkles size={14} className="text-tier-okf" />
                 <span>Ask ARIA: &quot;{query.trim()}&quot;</span>
               </span>
-              <span className="text-[10px] text-cyan-400 flex items-center gap-1">
+              <span className="text-[10px] text-[#52525B] flex items-center gap-1">
                 Enter ↵
               </span>
             </div>
           )}
 
           {filtered.length === 0 && !query.trim() && (
-            <div className="p-6 text-center text-xs font-mono text-ink-muted">
-              Type to search actions, themes, or views.
+            <div className="p-6 text-center text-xs font-mono text-[#52525B]">
+              Type to search views or actions.
             </div>
           )}
 
@@ -238,28 +209,28 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
                 onMouseEnter={() => setSelectedIndex(idx)}
                 className={`press p-2.5 text-xs font-mono flex items-center justify-between cursor-pointer transition-colors ${
                   isSelected
-                    ? 'bg-cyan-500/15 border-l-2 border-cyan-400 text-white pl-3'
-                    : 'text-gray-300 hover:bg-ink-surface/60'
+                    ? 'bg-[#16161C] border-l-2 border-tier-okf text-[#F4F4F6] pl-3'
+                    : 'text-[#A1A1AA] hover:bg-[#16161C]/60'
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className={`${isSelected ? 'text-cyan-400' : 'text-ink-muted'}`}>
+                  <span className={isSelected ? 'text-tier-okf' : 'text-[#52525B]'}>
                     {action.icon}
                   </span>
                   <div className="min-w-0">
                     <div className="truncate font-medium">{action.label}</div>
                     {action.sublabel && (
-                      <div className="truncate text-[10px] text-ink-muted">
+                      <div className="truncate text-[10px] text-[#52525B]">
                         {action.sublabel}
                       </div>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[9px] uppercase tracking-wider text-ink-muted bg-ink-base/80 px-1.5 py-0.5 border border-ink-surface">
+                  <span className="text-[9px] uppercase tracking-wider text-[#52525B] bg-[#0C0C0F] px-1.5 py-0.5 border border-white/[0.07]">
                     {action.category}
                   </span>
-                  {isSelected && <ArrowRight size={12} className="text-cyan-400" />}
+                  {isSelected && <ArrowRight size={12} className="text-tier-okf" />}
                 </div>
               </div>
             );
@@ -267,9 +238,9 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onStartQue
         </div>
 
         {/* Footer shortcuts */}
-        <div className="px-4 py-2 bg-ink-surface/90 border-t border-ink-surface flex items-center justify-between text-[10px] font-mono text-ink-muted">
+        <div className="px-4 py-2 bg-[#0C0C0F] border-t border-white/[0.07] flex items-center justify-between text-[10px] font-mono text-[#52525B]">
           <span>Navigate with ↑ ↓ · Select with ↵</span>
-          <span>ARIA Spotlight v2</span>
+          <span>ARIA Spotlight</span>
         </div>
       </div>
     </div>

@@ -4,15 +4,13 @@ import ConfidenceDial from './ConfidenceDial';
 import MarkdownRenderer, { getTierGlyph, getTierColorClass } from './MarkdownRenderer';
 import CitationGraph from './CitationGraph';
 import VisualConceptCard from './VisualConceptCard';
-import PipelineSpine from './PipelineSpine';
 import AriaCoreIndicator, { AriaCoreState } from './AriaCoreIndicator';
 import LiveElapsed from './ui/LiveElapsed';
 import { streamQuery } from '../services/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim } from '../types';
 import { API_BASE_URL } from '../services/config';
 import { useSettingsContext } from '../context/SettingsContext';
-import { addHistoryEntry, addToCollection, isInCollection, getCompareDefault, getSettings, saveSettings, getByokKey, getByokProvider, setByokKey, clearByok, getCustomContext } from '../services/storage';
-import { ResearchMode, RESEARCH_MODE_OPTIONS, DISCIPLINE_OPTIONS } from '../types';
+import { addHistoryEntry, addToCollection, isInCollection } from '../services/storage';
 
 const EXAMPLE_QUERIES = [
   {
@@ -64,8 +62,6 @@ interface ThreadViewProps {
   onPendingQueryConsumed?: () => void;
   /** parent toggles the sources drawer (used for auto-expansion on audit completion) */
   onSourcesExpand?: () => void;
-  /** navigate to another tab (e.g. settings) */
-  onNavigateTab?: (tab: string) => void;
 }
 
 export default function ThreadView({
@@ -83,7 +79,6 @@ export default function ThreadView({
   pendingQuery,
   onPendingQueryConsumed,
   onSourcesExpand,
-  onNavigateTab,
 }: ThreadViewProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -96,8 +91,9 @@ export default function ThreadView({
   const [isExportingPdf, setIsExportingPdf] = useState<Record<string, boolean>>({});
   const [bookmarkedQueries, setBookmarkedQueries] = useState<Record<string, boolean>>({});
 
-  // Read settings once from global SettingsContext (no local state for research mode/discipline)
+  // Read interface settings once from global SettingsContext (density + motion only)
   const { settings } = useSettingsContext();
+  const densityClass = settings.compactDensity ? 'density-compact' : 'density-standard';
 
   const handleDownloadPdf = async (msg: Message) => {
     try {
@@ -496,9 +492,9 @@ export default function ThreadView({
     if (onUpdateActiveCitations) onUpdateActiveCitations([]);
     if (onUpdateActiveTelemetry) onUpdateActiveTelemetry(currentTelemetry);
 
-    // Read researchMode and discipline from global SettingsContext
-    const researchMode = settings.researchMode;
-    const discipline = settings.discipline;
+    // Default research parameters (mode selectors were removed from Settings)
+    const researchMode = 'deep_academic' as const;
+    const discipline = 'auto';
 
     streamQuery({
       query: queryText.trim(),
@@ -507,7 +503,7 @@ export default function ThreadView({
       mockFixtureKey: mockKey,
       researchMode,
       discipline,
-      customContext: settings.customContext || '',
+      customContext: '',
       customHeaders: {},
 
       onMockState: (isMock) => {
@@ -672,50 +668,6 @@ export default function ThreadView({
     return msg.telemetry?.stage === 'streaming' ? 'STREAMING' : 'THINKING';
   };
 
-  const formatModeLabel = (mode?: string) => {
-    switch (mode) {
-      case 'fast_brief':
-        return 'Fast Executive Brief';
-      case 'deep_academic':
-        return 'Deep Academic Paper';
-      case 'critique':
-        return 'Debate & Critique';
-      case 'quantitative':
-        return 'Quantitative & Data';
-      case 'first_principles':
-        return 'First-Principles';
-      default:
-        return 'Deep Academic';
-    }
-  };
-
-  const formatDisciplineLabel = (disc?: string) => {
-    switch (disc) {
-      case 'auto':
-        return 'All Disciplines (Auto)';
-      case 'cs':
-        return 'Computer Science & AI';
-      case 'physics':
-        return 'Physics';
-      case 'chemistry':
-        return 'Chemistry';
-      case 'life':
-        return 'Botany & Life Sciences';
-      case 'medicine':
-        return 'Medicine';
-      case 'humanities':
-        return 'Arts & Humanities';
-      case 'music':
-        return 'Music';
-      case 'law':
-        return 'Law';
-      case 'economics':
-        return 'Economics';
-      default:
-        return 'All Disciplines (Auto)';
-    }
-  };
-
   return (
     <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative h-full overflow-hidden select-text">
       {/* Thread Header */}
@@ -726,13 +678,13 @@ export default function ThreadView({
               <AriaCoreIndicator
                 state={coreState}
                 size={16}
-                className="text-cyan-300 shrink-0"
+                className="text-tier-okf shrink-0"
               />
               <h2 className="text-xs font-mono font-bold text-white tracking-wider uppercase">
                 New question
               </h2>
               {isMockActive && (
-                <span className="font-mono text-[9px] px-1.5 py-0.2 uppercase tracking-wider bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold flex items-center gap-1">
+                <span className="font-mono text-[9px] px-1.5 py-0.2 uppercase tracking-wider bg-tier-live/20 border border-tier-live/50 text-tier-live font-bold flex items-center gap-1">
                   <AlertTriangle size={10} /> MOCK DATA
                 </span>
               )}
@@ -743,30 +695,27 @@ export default function ThreadView({
         <div className="flex items-center gap-2">
           {/* ARIA Telemetry Strip: system id, link state, engine badge, latency */}
           <div className="aria-telemetry hidden sm:inline-flex" aria-label="System telemetry">
-            <span className="text-[10px] text-gray-400">SYS // ARIA-2.0</span>
+            <span className="text-[10px] text-[#A1A1AA]">SYS // ARIA-2.0</span>
             <span
               className={`flex items-center gap-1 text-[10px] ${
-                isLoading ? 'text-amber-300' : 'text-emerald-400'
+                isLoading ? 'text-tier-live' : 'text-[#10B981]'
               }`}
             >
               <span className="relative flex h-1.5 w-1.5">
                 <span
                   className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${
-                    isLoading ? 'bg-amber-400' : 'bg-emerald-400'
+                    isLoading ? 'bg-tier-live' : 'bg-[#10B981]'
                   }`}
                 />
                 <span
                   className={`relative inline-flex h-1.5 w-1.5 rounded-full ${
-                    isLoading ? 'bg-amber-400' : 'bg-emerald-400'
+                    isLoading ? 'bg-tier-live' : 'bg-[#10B981]'
                   }`}
                 />
               </span>
               {isLoading ? 'SYNCING' : 'ONLINE'}
             </span>
-            <span className="text-[10px] text-tier-okf uppercase">
-              {formatModeLabel(settings.researchMode).split(' ')[0]}
-            </span>
-            <span className="text-[10px] text-gray-500 tabular-nums">
+            <span className="text-[10px] text-[#52525B] tabular-nums">
               <LiveElapsed running={isLoading} mode="ms" />
             </span>
           </div>
@@ -793,7 +742,7 @@ export default function ThreadView({
       </div>
 
       {/* Mobile / Tablet Horizontal Pipeline Status Pill Bar (< 1280px) */}
-      <div className="xl:hidden px-4 py-2 bg-ink-base/95 border-b border-ink-surface flex items-center justify-between overflow-x-auto hud-scroll shrink-0">
+      <div className="xl:hidden px-4 py-2 bg-[#09090B]/95 border-b border-white/[0.07] flex items-center justify-between overflow-x-auto hud-scroll shrink-0">
         <div className="flex items-center gap-1.5 sm:gap-2">
           {(['routing', 'retrieving', 'streaming', 'auditing'] as const).map((st, idx) => {
             const labels = ['PLAN', 'RETRIEVE', 'WRITE', 'CHECK'];
@@ -805,15 +754,23 @@ export default function ThreadView({
             return (
               <div
                 key={st}
-                className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono border transition-all ${
+                className={`flex items-center gap-1.5 px-2 py-1 text-[10px] font-mono border transition-colors ${
                   isActive
-                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 animate-pulse font-bold'
+                    ? 'bg-[#111115] border-white/[0.16] text-[#F4F4F6] font-bold'
                     : isDone
-                    ? 'bg-ink-surface border-ink-surface text-gray-300'
-                    : 'bg-ink-base border-ink-surface/40 text-gray-600'
+                    ? 'bg-[#0C0C0F] border-white/[0.07] text-[#A1A1AA]'
+                    : 'bg-[#09090B] border-white/[0.05] text-[#52525B]'
                 }`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-cyan-400' : isDone ? 'bg-emerald-400' : 'bg-gray-700'}`} />
+                <span
+                  className={`w-[7px] h-[7px] rounded-full shrink-0 ${
+                    isActive
+                      ? 'bg-tier-okf aria-dot-pulse'
+                      : isDone
+                      ? 'bg-[#60A5FA]'
+                      : 'border border-[#3F3F46] bg-transparent'
+                  }`}
+                />
                 <span>{labels[idx]}</span>
               </div>
             );
@@ -823,7 +780,7 @@ export default function ThreadView({
           <LiveElapsed
             running={isLoading}
             mode="s"
-            className="pl-2 shrink-0 font-mono text-[9px] text-cyan-400 animate-pulse"
+            className="pl-2 shrink-0 font-mono text-[9px] text-[#A1A1AA]"
           />
         )}
       </div>
@@ -867,7 +824,7 @@ export default function ThreadView({
                             : fixture.label}
                         </span>
                         {canReplayFixtures && (fixture.id === 'retraction' || fixture.id === 'conflict') && (
-                          <span className="text-[9px] text-amber-400/80 uppercase border border-amber-400/30 px-1 py-0.2 font-mono">
+                          <span className="text-[9px] text-tier-live/80 uppercase border border-tier-live/30 px-1 py-0.2 font-mono">
                             test fixture
                           </span>
                         )}
@@ -918,8 +875,8 @@ export default function ThreadView({
 
                     {/* Verification Status Badge */}
                     {msg.telemetry?.audit?.confidence !== undefined && (
-                      <div className="flex items-center gap-1 text-emerald-400 font-mono text-[10px] bg-emerald-950/50 border border-emerald-500/40 px-2 py-0.5">
-                        <CheckCircle2 size={11} className="text-emerald-400" />
+                      <div className="flex items-center gap-1 text-tier-okf font-mono text-[10px] bg-tier-okf/10 border border-tier-okf/40 px-2 py-0.5">
+                        <CheckCircle2 size={11} className="text-tier-okf" />
                         <span>{Math.round((msg.telemetry.audit.confidence ?? 0.85) * 100)}% Source-Verified</span>
                       </div>
                     )}
@@ -959,7 +916,7 @@ export default function ThreadView({
 
                     {/* Mock badge on message if mock active */}
                     {isMockActive && (
-                      <span className="font-mono text-[9px] px-1 py-0.2 bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold">
+                      <span className="font-mono text-[9px] px-1 py-0.2 bg-tier-live/15 border border-tier-live/40 text-tier-live font-semibold">
                         MOCK
                       </span>
                     )}
@@ -972,19 +929,19 @@ export default function ThreadView({
                         onClick={() => setIsCitationGraphOpen(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
                         className={`px-2 py-1 text-[11px] font-mono flex items-center gap-1.5 border transition-all ${
                           isCitationGraphOpen[msg.id]
-                            ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300 shadow-sm'
+                            ? 'bg-tier-okf/15 border-tier-okf/60 text-tier-okf'
                             : 'bg-ink-base border-ink-surface hover:border-gray-500 text-gray-300 hover:text-white'
                         }`}
                         title="Toggle Interactive Citation Graph"
                       >
-                        <Network size={12} className={isCitationGraphOpen[msg.id] ? 'text-emerald-400 animate-pulse' : ''} />
+                        <Network size={12} className={isCitationGraphOpen[msg.id] ? 'text-tier-okf animate-pulse' : ''} />
                         <span>Citation Graph</span>
                       </button>
 
                       <button
                         onClick={() => handleDownloadPdf(msg)}
                         disabled={isExportingPdf[msg.id]}
-                        className="px-2.5 py-1 text-[11px] font-mono flex items-center gap-1.5 bg-tier-okf/15 hover:bg-tier-okf/25 border border-tier-okf/40 hover:border-tier-okf text-tier-okf hover:text-emerald-300 transition-all disabled:opacity-50"
+                        className="px-2.5 py-1 text-[11px] font-mono flex items-center gap-1.5 bg-tier-okf/15 hover:bg-tier-okf/25 border border-tier-okf/40 hover:border-tier-okf text-tier-okf transition-all disabled:opacity-50"
                         title="Download IEEE / arXiv Two-Column Academic Research Paper (PDF)"
                       >
                         {isExportingPdf[msg.id] ? (
@@ -1041,7 +998,7 @@ export default function ThreadView({
                                       }
                                     }}
                                   >
-                                    <span className="font-mono text-[9px] px-1 py-0.2 bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 font-bold shrink-0 mt-0.5">
+                                    <span className="font-mono text-[9px] px-1 py-0.2 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf font-bold shrink-0 mt-0.5">
                                       {cov}%
                                     </span>
                                     <span className="leading-snug">
@@ -1099,7 +1056,7 @@ export default function ThreadView({
                 )}
 
                 {/* Markdown Rendered Content with split-buffered citations, GFM tables & claim audit pass */}
-                <div className={`thread-content font-sans text-gray-200 max-w-[68ch] density-${settings.fontDensity} leading-[1.65]`}>
+                <div className={`thread-content font-sans text-gray-200 max-w-[68ch] ${densityClass} leading-[1.65]`}>
                   {msg.recordedDate && (
                     <div className="mb-3 px-2.5 py-1 text-[11px] font-mono bg-tier-okf/10 border border-tier-okf/40 text-tier-okf flex items-center gap-1.5">
                       <span>Recorded answer, {msg.recordedDate}, no live query</span>
@@ -1121,8 +1078,8 @@ export default function ThreadView({
                       )}
                     </>
                   ) : msg.queuePosition ? (
-                    <div className="font-mono text-xs text-amber-300 flex items-center gap-2 py-2">
-                      <Loader2 size={14} className="animate-spin text-amber-300" />
+                    <div className="font-mono text-xs text-tier-live flex items-center gap-2 py-2">
+                      <Loader2 size={14} className="animate-spin text-tier-live" />
                       <span>{msg.queuePosition} ahead of you, your question starts soon</span>
                     </div>
                   ) : msg.isStreaming ? (
@@ -1160,8 +1117,8 @@ export default function ThreadView({
                         >
                           {copiedMsgId === msg.id ? (
                             <>
-                              <Check size={12} className="text-emerald-400" />
-                              <span className="text-emerald-400">Copied</span>
+                              <Check size={12} className="text-tier-okf" />
+                              <span className="text-tier-okf">Copied</span>
                             </>
                           ) : (
                             <>
@@ -1219,7 +1176,7 @@ export default function ThreadView({
                         {isBackendReachable && !isMockActive && (
                           <div className="flex items-center gap-2.5">
                             {feedbackSent[msg.id] ? (
-                              <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 select-none">
+                              <span className="text-[10px] font-mono text-tier-okf flex items-center gap-1 select-none">
                                 <Check size={12} /> Saved
                               </span>
                             ) : (
@@ -1260,20 +1217,29 @@ export default function ThreadView({
         <div ref={messagesEndRef} />
       </div>
 
-        {/* Sleek Glowing Prompt Input Box + Single-Line Read-Only Badge Underneath */}
-        <div className="p-3 md:p-4 bg-ink-base/95 border-t border-ink-surface shrink-0 z-20 safe-pb">
+        {/* Clean Prompt Input Box */}
+        <div className="p-3 md:p-4 bg-[#09090B]/95 border-t border-white/[0.07] shrink-0 z-20 safe-pb">
           <form onSubmit={handleSubmit} className="relative">
             <div
-              className={`relative border bg-ink-elevated transition-colors aria-reticle ${
-                isLoading
-                  ? 'aria-laser aria-laser-active border-white/20'
-                  : 'border-white/10 focus-within:border-white/25'
-              }`}
+              className="relative bg-[#111115] border transition-colors"
+              style={{ borderColor: 'rgba(255,255,255,0.09)', borderRadius: '10px' }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.24)';
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.09)';
+              }}
             >
               <textarea
                 ref={textareaRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  // Smooth auto-resize: grow with content up to max-height
+                  const el = e.currentTarget;
+                  el.style.height = 'auto';
+                  el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -1282,33 +1248,22 @@ export default function ThreadView({
                 }}
                 placeholder="Ask any research question (e.g. quantum biology, CRISPR off-target effects)..."
                 rows={2}
-                className="w-full bg-transparent px-3.5 py-3 pr-12 text-sm md:text-base font-sans text-gray-100 placeholder-ink-muted focus:outline-none resize-none max-h-36 overflow-y-auto leading-relaxed"
+                className="w-full bg-transparent px-3.5 py-3 pr-12 text-sm md:text-base font-sans text-[#F4F4F6] placeholder-[#52525B] focus:outline-none resize-none max-h-36 overflow-y-auto leading-relaxed"
                 style={{ fontSize: '16px' }}
               />
               <button
                 type="submit"
                 disabled={!input.trim() || isLoading}
-                className="press absolute right-2.5 top-2.5 p-2 text-cyan-400 hover:text-white hover:bg-cyan-500/20 disabled:opacity-30 disabled:hover:bg-transparent transition-all touch-spring"
+                className="press absolute right-2.5 top-2.5 p-2 text-[#A1A1AA] hover:text-[#F4F4F6] hover:bg-[#16161C] disabled:opacity-30 disabled:hover:bg-transparent transition-all touch-spring"
                 aria-label="Send query"
               >
-                {isLoading ? <Loader2 size={16} className="animate-spin text-cyan-400" /> : <Send size={16} />}
+                {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
               </button>
             </div>
           </form>
 
-          {/* Tiny single-line read-only status badge underneath */}
-          <div className="mt-2 flex items-center justify-between text-[11px] font-mono text-ink-muted select-none">
-            <button
-              type="button"
-              onClick={() => onNavigateTab ? onNavigateTab('settings') : null}
-              className="group inline-flex items-center gap-1.5 hover:text-white transition-colors cursor-pointer text-left"
-              title="Configure research parameters in Settings"
-            >
-              <span>
-                Mode: <strong className="text-gray-300 font-semibold">{formatModeLabel(settings.researchMode)}</strong> · Branch: <strong className="text-gray-300 font-semibold">{formatDisciplineLabel(settings.discipline)}</strong> · <span className="text-cyan-400 group-hover:underline">Configure in Settings ⚙</span>
-              </span>
-            </button>
-            <span className="hidden sm:inline text-[10px] text-gray-500">
+          <div className="mt-2 flex items-center justify-end text-[10px] font-mono text-[#52525B] select-none">
+            <span className="hidden sm:inline">
               Press Enter ↵ to search · Shift + Enter for newline
             </span>
           </div>

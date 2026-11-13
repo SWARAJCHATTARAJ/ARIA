@@ -10,7 +10,6 @@ import AuthModal from './components/ui/AuthModal';
 import { AuthGate } from './components/ui/AuthGate';
 import CommandPalette from './components/ui/CommandPalette';
 import { Citation, MessageTelemetry } from './types';
-import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, isNativeRuntime } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
@@ -24,10 +23,10 @@ function ConnectivityBanner() {
   if (!offline) return null;
   return (
     <div
-      className="fixed top-0 inset-x-0 z-[60] aria-matte border-b border-amber-500/40 safe-pt flex items-center justify-center gap-2 py-1.5 font-mono text-[10px] uppercase tracking-widest text-amber-300 aria-cascade"
+      className="fixed top-0 inset-x-0 z-[60] aria-matte border-b border-tier-live/40 safe-pt flex items-center justify-center gap-2 py-1.5 font-mono text-[10px] uppercase tracking-widest text-tier-live aria-cascade"
       role="status"
     >
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+      <span className="w-1.5 h-1.5 rounded-full bg-tier-live animate-pulse" />
       Offline — session persisted · reconnecting when available
     </div>
   );
@@ -47,16 +46,14 @@ export default function App() {
   }
 
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <AuthGate>
-          <SettingsProvider>
-            <ConnectivityBanner />
-            <AppShell />
-          </SettingsProvider>
-        </AuthGate>
-      </AuthProvider>
-    </ThemeProvider>
+    <AuthProvider>
+      <AuthGate>
+        <SettingsProvider>
+          <ConnectivityBanner />
+          <AppShell />
+        </SettingsProvider>
+      </AuthGate>
+    </AuthProvider>
   );
 }
 
@@ -115,7 +112,7 @@ function AppShell() {
   return (
     <div
       data-runtime={isNativeRuntime ? 'native' : 'web'}
-      className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-ink-base text-gray-200 font-sans overflow-hidden relative hud-grid select-none"
+      className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-ink-base text-gray-200 font-sans overflow-hidden relative select-none"
     >
       {/* Mobile Top Bar (< 768px) */}
       <MobileTopBar
@@ -172,9 +169,9 @@ function AppShell() {
       {/* Center Thread Workspace: keyed per-tab for view transitions */}
       <main
         key={activeTab}
-        className="flex-1 flex flex-col h-full md:border-r border-ink-surface bg-ink-base transition-all w-full overflow-hidden pb-14 md:pb-0 animate-view-in relative"
+        className="flex-1 flex flex-col h-full md:border-r border-ink-surface bg-ink-base transition-all w-full overflow-hidden pb-14 md:pb-0 animate-view-enter relative"
       >
-        {activeTab === 'home' && <Home onStart={() => handleTabChange('query')} />}
+        {activeTab === 'home' && <Home onStartQuery={handleOpenQuery} />}
         {activeTab === 'query' && (
           <ThreadView
             onCitationClick={handleCitationClick}
@@ -190,7 +187,6 @@ function AppShell() {
             pendingQuery={pendingQuery}
             onPendingQueryConsumed={() => setPendingQuery(null)}
             onSourcesExpand={handleSourcesExpand}
-            onNavigateTab={handleTabChange}
             onToggleSidebar={() => setIsMobileDrawerOpen(true)}
           />
         )}

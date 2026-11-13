@@ -173,11 +173,11 @@ function CitationGraphInner({
                   rx="3"
                   className={`transition-all duration-200 ${
                     isSelected
-                      ? 'fill-emerald-950/90 stroke-emerald-400 stroke-2'
-                      : 'fill-ink-surface/80 stroke-ink-surface hover:stroke-emerald-500/70 stroke-1'
+                      ? 'fill-tier-okf/20 stroke-tier-okf stroke-2'
+                      : 'fill-ink-surface/80 stroke-ink-surface hover:stroke-tier-okf/70 stroke-1'
                   }`}
                 />
-                <text x="-65" y="-3" className="fill-emerald-400 font-mono text-[9px] font-bold">
+                <text x="-65" y="-3" className="fill-tier-okf font-mono text-[9px] font-bold">
                   [[c:{sp.id}]] {tier}
                 </text>
                 <text x="-65" y="11" className="fill-gray-200 font-sans text-[8.5px] truncate">
@@ -192,9 +192,9 @@ function CitationGraphInner({
             const cov = cp.claim.coverage ?? (cp.claim.status === 'supported' ? 1.0 : 0.5);
             const isSupported = cp.claim.status === 'supported';
             const isSelected = selectedClaim?.claim_id === cp.claim.claim_id;
-            const strokeColor = isSupported ? 'stroke-emerald-500/80' : 'stroke-amber-500/80';
+            const strokeColor = isSupported ? 'stroke-tier-okf/80' : 'stroke-tier-live/80';
             const fillColor = isSelected
-              ? isSupported ? 'fill-emerald-950' : 'fill-amber-950'
+              ? isSupported ? 'fill-tier-okf/15' : 'fill-tier-live/15'
               : 'fill-ink-surface/80';
 
             return (
@@ -216,7 +216,7 @@ function CitationGraphInner({
                   cx="-68"
                   cy="0"
                   r="5"
-                  className={isSupported ? 'fill-emerald-400' : 'fill-amber-400'}
+                  className={isSupported ? 'fill-tier-okf' : 'fill-tier-live'}
                 />
                 <text x="-56" y="-3" className="fill-gray-200 font-mono text-[9px] font-medium">
                   Claim #{cp.claim.claim_id} ({Math.round(cov * 100)}%)
@@ -236,9 +236,9 @@ function CitationGraphInner({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {selectedClaim.status === 'supported' ? (
-                <CheckCircle2 size={14} className="text-emerald-400" />
+                <CheckCircle2 size={14} className="text-tier-okf" />
               ) : (
-                <AlertCircle size={14} className="text-amber-400" />
+                <AlertCircle size={14} className="text-tier-live" />
               )}
               <span className="font-mono font-bold text-[11px] text-gray-200">
                 Claim #{selectedClaim.claim_id} — {selectedClaim.status.toUpperCase()} (
@@ -256,8 +256,8 @@ function CitationGraphInner({
             "{selectedClaim.text}"
           </div>
           {selectedClaim.evidence && (
-            <div className="text-[11px] text-emerald-300 font-sans bg-emerald-950/30 border border-emerald-800/40 p-2">
-              <span className="font-mono text-[9px] uppercase tracking-wider text-emerald-400/80 block mb-0.5">
+            <div className="text-[11px] text-tier-okf font-sans bg-tier-okf/10 border border-tier-okf/30 p-2">
+              <span className="font-mono text-[9px] uppercase tracking-wider text-tier-okf/80 block mb-0.5">
                 Verbatim Evidence Quote from Source:
               </span>
               "{selectedClaim.evidence}"

@@ -1,11 +1,7 @@
-import { CollectionEntry, HistoryEntry, AriaSettings, DEFAULT_SETTINGS } from '../types';
+import { CollectionEntry, HistoryEntry } from '../types';
 
 const HISTORY_KEY = 'aria-history-v1';
 const COLLECTION_KEY = 'aria-collections-v1';
-const COMPARE_DEFAULT_KEY = 'aria-compare-default';
-const SETTINGS_KEY = 'aria-settings-v2';
-const BYOK_KEY = 'aria-byok-key';
-const BYOK_PROVIDER_KEY = 'aria-byok-provider';
 
 function readList<T>(key: string): T[] {
   try {
@@ -73,108 +69,4 @@ export function removeFromCollection(id: string): void {
 
 export function isInCollection(query: string): boolean {
   return getCollections().some((c) => c.query === query);
-}
-
-// -------------------------------------------------------------- settings
-export function getCompareDefault(): boolean {
-  try {
-    return localStorage.getItem(COMPARE_DEFAULT_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function setCompareDefault(value: boolean): void {
-  try {
-    localStorage.setItem(COMPARE_DEFAULT_KEY, value ? '1' : '0');
-  } catch {
-    // ignore
-  }
-}
-
-// --------------------------------------------------------------------------
-// Research Control Center settings (v3 Part 3): persisted in localStorage
-// --------------------------------------------------------------------------
-export function getSettings(): AriaSettings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
-    const parsed = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...parsed, compareDefault: parsed.compareDefault ?? getCompareDefault() };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
-}
-
-export function saveSettings(patch: Partial<AriaSettings>): AriaSettings {
-  const next = { ...getSettings(), ...patch };
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-  return next;
-}
-
-export function getByokKey(): string {
-  try {
-    return localStorage.getItem(BYOK_KEY) || '';
-  } catch {
-    return '';
-  }
-}
-
-export function setByokKey(provider: string, apiKey: string): void {
-  try {
-    if (apiKey) localStorage.setItem(BYOK_KEY, apiKey);
-    else localStorage.removeItem(BYOK_KEY);
-    localStorage.setItem(BYOK_PROVIDER_KEY, provider);
-  } catch {
-    // ignore
-  }
-}
-
-export function clearByok(): void {
-  try {
-    localStorage.removeItem(BYOK_KEY);
-    localStorage.removeItem(BYOK_PROVIDER_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-export function getByokProvider(): string {
-  try {
-    return localStorage.getItem(BYOK_PROVIDER_KEY) || '';
-  } catch {
-    return '';
-  }
-}
-
-const CUSTOM_CONTEXT_KEY = 'aria-user-context';
-
-export function getCustomContext(): string {
-  try {
-    return localStorage.getItem(CUSTOM_CONTEXT_KEY) || '';
-  } catch {
-    return '';
-  }
-}
-
-export function setCustomContext(value: string): void {
-  try {
-    if (value && value.trim()) localStorage.setItem(CUSTOM_CONTEXT_KEY, value.trim());
-    else localStorage.removeItem(CUSTOM_CONTEXT_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-export function exportResearchHistory(): string {
-  const payload = {
-    exported_at: new Date().toISOString(),
-    history: getHistory(),
-    collections: getCollections(),
-  };
-  return JSON.stringify(payload, null, 2);
 }

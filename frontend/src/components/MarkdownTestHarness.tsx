@@ -86,7 +86,7 @@ Unknown Citation 42: This marker also has no citation [[c:42]] and must be dropp
       {/* Test Page Header */}
       <div className="border-b border-ink-surface pb-4 flex justify-between items-center">
         <div>
-          <span className="font-mono text-[10px] text-amber-400 uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 border border-amber-500/30">
+          <span className="font-mono text-[10px] text-tier-live uppercase tracking-widest bg-tier-live/10 px-2 py-0.5 border border-tier-live/30">
             Dev-Only Test Page
           </span>
           <h1 className="text-lg font-mono font-bold text-white mt-1">
@@ -172,7 +172,7 @@ Unknown Citation 42: This marker also has no citation [[c:42]] and must be dropp
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
           <div className="p-3 bg-ink-base border border-ink-surface space-y-1">
             <span className="text-[10px] text-ink-muted uppercase">Raw In-Flight Buffer:</span>
-            <div className="text-amber-300 font-bold break-all">"{splitSteps[splitStepIdx]}"</div>
+            <div className="text-tier-live font-bold break-all">"{splitSteps[splitStepIdx]}"</div>
           </div>
           <div className="p-3 bg-ink-base border border-ink-surface space-y-1">
             <span className="text-[10px] text-ink-muted uppercase">Rendered on Screen (isStreaming=true):</span>

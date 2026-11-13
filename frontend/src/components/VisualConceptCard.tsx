@@ -71,7 +71,7 @@ function VisualConceptCardInner({ query, citations = [] }: VisualConceptCardProp
             <Maximize2 size={13} />
           </button>
           <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] font-mono">
-            <span className="text-emerald-400 flex items-center gap-1 font-medium bg-black/60 px-1.5 py-0.5 border border-emerald-500/30">
+            <span className="text-tier-okf flex items-center gap-1 font-medium bg-black/60 px-1.5 py-0.5 border border-tier-okf/30">
               <ShieldCheck size={11} /> Verified Wikipedia Concept
             </span>
             {data.page_url && (
