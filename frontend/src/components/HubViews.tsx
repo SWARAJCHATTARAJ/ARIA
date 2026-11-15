@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Clock, FolderGit2, BookOpen, Settings as SettingsIcon, Trash2, X,
-  Activity, RefreshCw, Database, Search, ChevronRight, FileText, CheckCircle2,
-  AlertTriangle, ExternalLink, Gauge, Github,
+  Clock, FolderGit2, BookOpen, Trash2, X,
+  RefreshCw, Database, Search, CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import { API_BASE_URL } from '../services/config';
 import { OkfGraphData } from '../types';
@@ -16,19 +16,19 @@ function HubShell({ icon, title, subtitle, toolbar, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex-1 overflow-y-auto hud-scroll">
-      <div className="max-w-4xl mx-auto w-full p-4 md:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5 border-b border-ink-surface relative">
-          <div className="flex items-center gap-3 relative z-10">
-            <div className="w-9 h-9 bg-ink-surface border border-ink-surface flex items-center justify-center text-tier-okf telemetry-glow">
+    <div className="flex-1 overflow-y-auto hud-scroll bg-[#0A0A0B] text-[#EDEDED]">
+      <div className="max-w-4xl mx-auto w-full p-6 md:p-8">
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 mb-6 border-b border-[#262629]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-[6px] bg-[#141416] border border-[#262629] flex items-center justify-center text-[#5E8BFF]">
               {icon}
             </div>
             <div>
-              <h2 className="text-sm font-mono font-bold text-white tracking-wider uppercase">{title}</h2>
-              <p className="text-[11px] font-mono text-ink-muted mt-0.5">{subtitle}</p>
+              <h1 className="text-[24px] font-semibold text-[#EDEDED]">{title}</h1>
+              <p className="text-[12px] font-mono text-[#8B8B8E] mt-0.5">{subtitle}</p>
             </div>
           </div>
-          {toolbar && <div className="relative z-10">{toolbar}</div>}
+          {toolbar && <div>{toolbar}</div>}
         </div>
         {children}
       </div>
@@ -38,9 +38,9 @@ function HubShell({ icon, title, subtitle, toolbar, children }: {
 
 function EmptyState({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-24 text-center gap-3 opacity-70">
-      <div className="w-10 h-10 border border-ink-surface flex items-center justify-center text-ink-muted">{icon}</div>
-      <p className="font-mono text-xs text-ink-muted">{text}</p>
+    <div className="flex flex-col items-center justify-center py-20 text-center gap-3 text-[#8B8B8E]">
+      <div className="w-10 h-10 rounded-[6px] border border-[#262629] bg-[#141416] flex items-center justify-center text-[#8B8B8E]">{icon}</div>
+      <p className="text-[14px]">{text}</p>
     </div>
   );
 }
@@ -74,38 +74,37 @@ export function HistoryView({ onOpenQuery }: { onOpenQuery?: (query: string) => 
       {entries.length === 0 ? (
         <EmptyState icon={<Clock size={18} />} text="No research threads saved yet. Every completed query is stored here automatically." />
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {entries.map((h) => (
             <div
               key={h.id}
-              className="group p-3 bg-ink-surface/40 border border-ink-surface hover:border-tier-okf/50 transition-colors flex items-start gap-3 telemetry-glow"
+              className="p-4 bg-[#141416] border border-[#262629] hover:border-[#38383C] rounded-[8px] transition-colors flex items-start gap-4"
             >
-              <FileText size={14} className="text-tier-okf shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-sans text-gray-200 truncate">{h.query}</p>
-                <div className="flex items-center gap-2 mt-1 font-mono text-[10px] text-ink-muted">
+                <p className="text-[14px] text-[#EDEDED] font-medium truncate">{h.query}</p>
+                <div className="flex items-center gap-3 mt-1.5 font-mono text-[12px] text-[#8B8B8E]">
                   <span>{new Date(h.timestamp).toLocaleString()}</span>
                   {typeof h.confidence === 'number' && h.confidence > 0 && (
-                    <span className="text-tier-okf/80">{Math.round(h.confidence * 100)}% verified</span>
+                    <span className="text-[#34D399]">{Math.round(h.confidence * 100)}% verified</span>
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 {onOpenQuery && (
                   <button
                     onClick={() => onOpenQuery(h.query)}
-                    className="text-[10px] font-mono flex items-center gap-1 px-2 py-1 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf hover:bg-tier-okf/25 transition-colors"
-                    title="Re-run this query"
+                    className="btn-secondary text-[12px] py-1 px-3"
+                    title="Open query"
                   >
-                    <ChevronRight size={11} /> Open
+                    Open
                   </button>
                 )}
                 <button
                   onClick={() => { deleteHistoryEntry(h.id); setEntries(getHistory()); }}
-                  className="p-1.5 text-ink-muted hover:text-warning transition-colors"
+                  className="p-1.5 text-[#8B8B8E] hover:text-[#EF4444] rounded-[6px] hover:bg-[#1B1B1E] transition-colors"
                   title="Delete entry"
                 >
-                  <Trash2 size={12} />
+                  <Trash2 size={14} />
                 </button>
               </div>
             </div>
@@ -135,41 +134,39 @@ export function CollectionsView() {
           text="No bookmarked reports yet. Use the bookmark action under any completed answer to save it here."
         />
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {entries.map((c) => {
             const isOpen = preview === c.id;
             return (
               <div
                 key={c.id}
-                className="p-3 bg-ink-surface/40 border border-ink-surface hover:border-tier-okf/50 transition-colors telemetry-glow"
+                className="p-4 bg-[#141416] border border-[#262629] hover:border-[#38383C] rounded-[8px] transition-colors space-y-3"
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start justify-between gap-4">
                   <button
                     onClick={() => setPreview(isOpen ? null : c.id)}
                     className="flex-1 min-w-0 text-left"
                   >
-                    <p className="text-xs font-sans text-gray-200 truncate">{c.query}</p>
-                    <div className="flex items-center gap-2 mt-1 font-mono text-[10px] text-ink-muted">
-                      <span>{new Date(c.timestamp).toLocaleString()}</span>
+                    <p className="text-[14px] font-medium text-[#EDEDED] truncate">{c.query}</p>
+                    <div className="flex items-center gap-3 mt-1.5 font-mono text-[12px] text-[#8B8B8E]">
+                      <span>{new Date(c.timestamp).toLocaleDateString()}</span>
                       {typeof c.confidence === 'number' && (
-                        <span className={c.confidence >= 0.75 ? 'text-tier-okf/80' : 'text-tier-live/80'}>
-                          {Math.round(c.confidence * 100)}% verified
-                        </span>
+                        <span className="text-[#34D399]">{Math.round(c.confidence * 100)}% verified</span>
                       )}
                     </div>
                   </button>
                   <button
-                    onClick={() => { removeFromCollection(c.id); setEntries(getCollections()); setPreview(null); }}
-                    className="p-1.5 text-ink-muted hover:text-warning transition-colors shrink-0"
-                    title="Remove from collection"
+                    onClick={() => { removeFromCollection(c.id); setEntries(getCollections()); }}
+                    className="p-1.5 text-[#8B8B8E] hover:text-[#EF4444] rounded-[6px] hover:bg-[#1B1B1E] transition-colors shrink-0"
+                    title="Remove from collections"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={14} />
                   </button>
                 </div>
+
                 {isOpen && (
-                  <div className="mt-2 pt-2 border-t border-ink-surface/70 text-xs font-sans text-gray-300 leading-relaxed max-h-72 overflow-y-auto hud-scroll pr-1">
-                    {c.content.slice(0, 1200)}
-                    {c.content.length > 1200 && <span className="text-ink-muted italic"> …</span>}
+                  <div className="p-4 bg-[#0A0A0B] border border-[#262629] rounded-[6px] text-[14px] text-[#EDEDED] leading-relaxed max-h-96 overflow-y-auto hud-scroll">
+                    {c.content}
                   </div>
                 )}
               </div>

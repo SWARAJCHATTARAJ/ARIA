@@ -6,20 +6,7 @@ interface PipelineSpineProps {
   stage?: PipelineStage;
   tiersFired?: string[];
   isComplete?: boolean;
-  /** vertical (default, desktop spine) or horizontal (mobile compact progress strip) */
   orientation?: 'vertical' | 'horizontal';
-}
-
-const DOT_CLASSES = {
-  done: 'w-[7px] h-[7px] rounded-full bg-[#60A5FA]',
-  active: 'w-[7px] h-[7px] rounded-full bg-[#60A5FA] aria-dot-pulse',
-  pending: 'w-[7px] h-[7px] rounded-full border border-[#3F3F46] bg-transparent',
-} as const;
-
-function dotState(isActive: boolean, isDone: boolean): keyof typeof DOT_CLASSES {
-  if (isDone) return 'done';
-  if (isActive) return 'active';
-  return 'pending';
 }
 
 function PipelineSpineInner({
@@ -29,7 +16,6 @@ function PipelineSpineInner({
   isComplete = false,
   orientation = 'vertical',
 }: PipelineSpineProps) {
-  // Determine stage states based on mode
   const isPlanActive = mode === 'home' ? false : stage === 'routing';
   const isPlanDone = mode === 'home' ? false : stage === 'retrieving' || stage === 'streaming' || stage === 'auditing' || isComplete;
 
@@ -42,9 +28,6 @@ function PipelineSpineInner({
   const isCheckActive = mode === 'home' ? false : stage === 'auditing';
   const isCheckDone = mode === 'home' ? false : isComplete;
 
-  // Active tiers check
-  const activeTiers = tiersFired;
-
   const stages = [
     { id: 'plan', name: 'PLAN', isActive: isPlanActive, isDone: isPlanDone },
     { id: 'retrieve', name: 'RETRIEVE', isActive: isRetrieveActive, isDone: isRetrieveDone, hasSubrows: true },
@@ -52,28 +35,33 @@ function PipelineSpineInner({
     { id: 'check', name: 'CHECK', isActive: isCheckActive, isDone: isCheckDone },
   ];
 
-  // Horizontal compact strip for narrow viewports (tier glyphs inline)
   if (orientation === 'horizontal') {
     return (
-      <div className="w-full select-none flex items-center justify-between gap-1 px-3 py-1.5">
+      <div className="w-full select-none flex items-center justify-between gap-2 px-4 py-2 bg-[#141416] border-b border-[#262629]">
         {stages.map((st, idx) => (
           <React.Fragment key={st.id}>
             {idx > 0 && (
               <div
-                className={`flex-1 h-[1.5px] min-w-[6px] transition-colors duration-200 ${
-                  st.isDone || st.isActive ? 'bg-[#60A5FA]/60' : 'bg-[#27272A]'
+                className={`flex-1 h-[1px] min-w-[8px] ${
+                  st.isDone || st.isActive ? 'bg-[#5E8BFF]' : 'bg-[#262629]'
                 }`}
               />
             )}
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className={DOT_CLASSES[dotState(st.isActive, st.isDone)]} />
+            <div className="flex items-center gap-2 shrink-0">
               <span
-                className={`font-mono text-[9px] tracking-wider ${
+                className={`w-2 h-2 rounded-full ${
+                  st.isActive || st.isDone
+                    ? 'bg-[#5E8BFF]'
+                    : 'border border-[#262629] bg-transparent'
+                }`}
+              />
+              <span
+                className={`font-mono text-[12px] ${
                   st.isActive
-                    ? 'text-[#F4F4F6] font-bold'
+                    ? 'text-[#EDEDED] font-semibold'
                     : st.isDone
-                    ? 'text-[#A1A1AA]'
-                    : 'text-[#52525B]'
+                    ? 'text-[#8B8B8E]'
+                    : 'text-[#8B8B8E]/50'
                 }`}
               >
                 {st.name}
@@ -81,20 +69,6 @@ function PipelineSpineInner({
             </div>
           </React.Fragment>
         ))}
-        {/* Tier glyphs inline at the end: § OKF, ▲ RAG, ● LIVE */}
-        <div className="flex items-center gap-1 ml-1 shrink-0 pl-1.5 border-l border-white/[0.07]">
-          {(['OKF', 'RAG', 'LIVE'] as const).map((t) => (
-            <span
-              key={t}
-              className={`font-mono text-[9px] font-bold ${
-                activeTiers.includes(t) ? 'opacity-100' : 'opacity-30'
-              } ${t === 'OKF' ? 'text-tier-okf' : t === 'RAG' ? 'text-tier-rag' : 'text-tier-live'}`}
-              title={t}
-            >
-              {t === 'OKF' ? '§' : t === 'RAG' ? '▲' : '●'}
-            </span>
-          ))}
-        </div>
       </div>
     );
   }
@@ -102,58 +76,58 @@ function PipelineSpineInner({
   return (
     <div className="flex flex-col items-start select-none w-full">
       <div className="relative flex flex-col gap-6 pl-2">
-        {/* Continuous background neutral spine line */}
-        <div className="absolute left-[3.5px] top-2 bottom-2 w-[1px] bg-[#27272A]" />
+        <div className="absolute left-[3.5px] top-2 bottom-2 w-[1px] bg-[#262629]" />
 
         {stages.map((st) => {
           const isCurrent = st.isActive;
           const isDone = st.isDone;
-          const dot = dotState(isCurrent, isDone);
 
           return (
-            <div key={st.id} className="relative flex flex-col gap-1.5 z-10">
+            <div key={st.id} className="relative flex flex-col gap-2 z-10">
               <div className="flex items-center gap-3">
-                {/* 7px status dot: pulses ONLY while this stage is executing */}
-                <span className={DOT_CLASSES[dot]} />
-
-                {/* Stage Name */}
                 <span
-                  className={`font-mono text-[11px] tracking-wider transition-colors duration-200 ${
+                  className={`w-2 h-2 rounded-full ${
+                    isCurrent || isDone
+                      ? 'bg-[#5E8BFF]'
+                      : 'border border-[#262629] bg-transparent'
+                  }`}
+                />
+
+                <span
+                  className={`font-mono text-[12px] tracking-wider ${
                     isCurrent
-                      ? 'text-[#F4F4F6] font-bold'
+                      ? 'text-[#EDEDED] font-semibold'
                       : isDone
-                      ? 'text-[#A1A1AA]'
-                      : 'text-[#52525B]'
+                      ? 'text-[#8B8B8E]'
+                      : 'text-[#8B8B8E]/50'
                   }`}
                 >
                   {st.name}
                 </span>
               </div>
 
-              {/* RETRIEVE Sub-rows: § OKF, ▲ RAG, ● LIVE (tier colors appear ONLY here) */}
               {st.hasSubrows && (
-                <div className="ml-5 pl-2 border-l border-white/[0.07] flex flex-col gap-1 py-0.5">
-                  {(['OKF', 'RAG', 'LIVE'] as const).map((t) => (
-                    <div
-                      key={t}
-                      className={`flex items-center gap-2 font-mono text-[10px] transition-opacity duration-300 ${
-                        activeTiers.includes(t) ? 'opacity-100 font-semibold' : 'opacity-40'
-                      }`}
-                    >
-                      <span
-                        className={`${t === 'OKF' ? 'text-tier-okf' : t === 'RAG' ? 'text-tier-rag' : 'text-tier-live'} font-bold`}
+                <div className="ml-5 pl-2 border-l border-[#262629] flex flex-col gap-1 py-1">
+                  {(['OKF', 'RAG', 'LIVE'] as const).map((t) => {
+                    const active = tiersFired.includes(t);
+                    return (
+                      <div
+                        key={t}
+                        className={`flex items-center gap-2 font-mono text-[12px] ${
+                          active ? 'opacity-100' : 'opacity-40'
+                        }`}
                       >
-                        {t === 'OKF' ? '§' : t === 'RAG' ? '▲' : '●'}
-                      </span>
-                      <span
-                        className={
-                          activeTiers.includes(t) ? 'text-[#F4F4F6]' : 'text-[#52525B]'
-                        }
-                      >
-                        {t}
-                      </span>
-                    </div>
-                  ))}
+                        <span
+                          style={{
+                            color: t === 'OKF' ? '#5E8BFF' : t === 'RAG' ? '#A78BFA' : '#34D399',
+                          }}
+                          className="font-semibold"
+                        >
+                          {t}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -164,8 +138,6 @@ function PipelineSpineInner({
   );
 }
 
-// Memoized: heavy render trees (markdown / graphs / SVG) only re-render
-// when their props actually change during a streaming update.
 const PipelineSpineMemo = React.memo(PipelineSpineInner);
 PipelineSpineMemo.displayName = 'PipelineSpine';
 export default PipelineSpineMemo;

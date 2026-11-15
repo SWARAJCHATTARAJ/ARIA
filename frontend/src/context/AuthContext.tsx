@@ -1,13 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User } from '@supabase/supabase-js';
-import { API_BASE_URL } from '../services/config';
+import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
-/**
- * Native runtime detection: Tauri (Windows WebView2) & Capacitor (Android WebView).
- * Used so OAuth redirects and session recovery resolve inside native WebViews
- * without hanging on a blank screen or redirecting to an unreachable localhost.
- */
 export const isTauriRuntime =
   typeof window !== 'undefined' &&
   Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
@@ -22,236 +16,194 @@ export interface AuthUserProfile {
   username: string;
   email?: string;
   avatarUrl: string;
-  provider: 'github' | 'instant' | 'guest';
-  /** Optional access role — 'guest' for local/offline sessions. */
-  role?: 'user' | 'guest';
+  provider: 'github' | 'email';
 }
 
 interface AuthContextType {
   user: AuthUserProfile | null;
+  session: Session | null;
+  accessToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  isAuthModalOpen: boolean;
-  hasSupabaseConfig: boolean;
-  openAuthModal: (onSuccessCallback?: () => void) => void;
-  closeAuthModal: () => void;
-  signInWithGitHub: () => Promise<void>;
-  signInInstantResearcher: () => void;
+  signInWithGitHub: () => Promise<{ error: Error | null }>;
+  signInWithEmail: (email: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
-  requireAuth: (action: () => void) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTH_GUEST_KEY = 'aria-guest-session-v1';
-/** Strict-gate flag: the inner workspace renders if this is exactly 'true'. */
-export const ARIA_GUEST_FLAG_KEY = 'aria_guest';
-
-/** Read Vite Supabase environment variables safely */
-export const supabaseUrlEnv = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-export const supabaseAnonKeyEnv = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-/** Instant local guest identity — never blocks or requires network. */
-export const GUEST_PROFILE: AuthUserProfile = {
-  id: 'guest',
-  name: 'Guest Researcher',
-  username: 'guest',
-  email: 'guest@aria.local',
-  avatarUrl: '',
-  provider: 'guest',
-  role: 'guest',
-};
-
-/** One canonical Supabase user → profile mapper (used at init and on auth events). */
-function buildGitHubProfile(sbUser: User): AuthUserProfile {
+function mapSupabaseUser(sbUser: User): AuthUserProfile {
   const meta = sbUser.user_metadata || {};
+  const isGitHub = sbUser.app_metadata?.provider === 'github' || Boolean(meta.user_name);
+  
   return {
     id: sbUser.id,
-    name: meta.full_name || meta.name || meta.user_name || 'Researcher',
-    username:
-      meta.user_name || meta.preferred_username || sbUser.email?.split('@')[0] || 'researcher',
+    name: meta.full_name || meta.name || meta.user_name || (sbUser.email ? sbUser.email.split('@')[0] : 'Researcher'),
+    username: meta.user_name || meta.preferred_username || (sbUser.email ? sbUser.email.split('@')[0] : 'researcher'),
     email: sbUser.email,
-    avatarUrl: meta.avatar_url || 'https://avatars.githubusercontent.com/u/9919?s=200&v=4',
-    provider: 'github',
+    avatarUrl: meta.avatar_url || '',
+    provider: isGitHub ? 'github' : 'email',
   };
-}
-
-function writeGuestSession() {
-  try {
-    localStorage.setItem(AUTH_GUEST_KEY, JSON.stringify(GUEST_PROFILE));
-    localStorage.setItem(ARIA_GUEST_FLAG_KEY, 'true');
-  } catch {
-    // ignore — storage unavailable means the gate re-evaluates on next load
-  }
-}
-
-function clearGuestSession() {
-  try {
-    localStorage.removeItem(AUTH_GUEST_KEY);
-    localStorage.removeItem(ARIA_GUEST_FLAG_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-/** Hydrate a persisted guest profile (if the strict gate flag or profile exists). */
-function readGuestProfile(): AuthUserProfile | null {
-  try {
-    const raw = localStorage.getItem(AUTH_GUEST_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as AuthUserProfile;
-      if (parsed && typeof parsed.id === 'string') {
-        // Legacy sessions (profile written before the flag existed) upgrade here
-        localStorage.setItem(ARIA_GUEST_FLAG_KEY, 'true');
-        return parsed;
-      }
-    }
-    if (localStorage.getItem(ARIA_GUEST_FLAG_KEY) === 'true') return GUEST_PROFILE;
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUserProfile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-  const hasSupabaseConfig = Boolean(supabaseUrlEnv && supabaseAnonKeyEnv);
-
-  // Initialize auth state
   useEffect(() => {
     let mounted = true;
 
     async function initAuth() {
-      // 1. Check Supabase session if available
-      if (supabase) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user && mounted) {
-            setUser(buildGitHubProfile(session.user));
-            setIsLoading(false);
-            return;
-          }
-        } catch {
-          // Supabase unreachable — fall through to local gate state so the
-          // user is never stuck on a hanging auth check.
-        }
+      if (!supabase) {
+        if (mounted) setIsLoading(false);
+        return;
       }
 
-      // 2. Local gate state: persisted guest session (aria_guest_mode flag)
-      if (mounted) {
-        const guest = readGuestProfile();
-        setUser(guest);
-        setIsLoading(false);
+      try {
+        // If redirect URL contains tokens in the hash fragment (magic link / OAuth callback)
+        if (typeof window !== 'undefined' && window.location.hash.includes('access_token=')) {
+          const params = new URLSearchParams(window.location.hash.substring(1));
+          const access_token = params.get('access_token');
+          const refresh_token = params.get('refresh_token');
+          if (access_token && refresh_token) {
+            const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
+            if (!error && data?.session?.user && mounted) {
+              setSession(data.session);
+              setAccessToken(data.session.access_token);
+              setUser(mapSupabaseUser(data.session.user));
+              setIsLoading(false);
+              try {
+                window.history.replaceState(null, '', window.location.pathname);
+              } catch {
+                // ignore
+              }
+              return;
+            }
+          }
+        }
+
+        const { data: { session: existingSession } } = await supabase.auth.getSession();
+        if (mounted) {
+          if (existingSession?.user) {
+            setSession(existingSession);
+            setAccessToken(existingSession.access_token);
+            setUser(mapSupabaseUser(existingSession.user));
+          } else {
+            setSession(null);
+            setAccessToken(null);
+            setUser(null);
+          }
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error('Failed to resolve Supabase session:', err);
+        if (mounted) {
+          setSession(null);
+          setAccessToken(null);
+          setUser(null);
+          setIsLoading(false);
+        }
       }
     }
 
     initAuth();
 
-    // 3. Listen to Supabase auth state changes — login / logout transition the
-    //    gate view instantly, never requiring a manual page refresh.
+    const handleHashChange = () => {
+      initAuth();
+    };
+    window.addEventListener('hashchange', handleHashChange);
+
     if (supabase) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
         if (!mounted) return;
-        if (session?.user) {
-          setUser(buildGitHubProfile(session.user));
-          if (pendingAction) {
-            pendingAction();
-            setPendingAction(null);
-          }
+        if (currentSession?.user) {
+          setSession(currentSession);
+          setAccessToken(currentSession.access_token);
+          setUser(mapSupabaseUser(currentSession.user));
         } else {
-          // No Supabase session: fall back to the persisted local guest state
-          try {
-            setUser(readGuestProfile());
-          } catch {
-            setUser(null);
-          }
+          setSession(null);
+          setAccessToken(null);
+          setUser(null);
         }
+        setIsLoading(false);
       });
 
       return () => {
         mounted = false;
+        window.removeEventListener('hashchange', handleHashChange);
         subscription.unsubscribe();
       };
     }
 
     return () => {
       mounted = false;
+      window.removeEventListener('hashchange', handleHashChange);
     };
-  }, [pendingAction]);
+  }, []);
 
-  const openAuthModal = (onSuccess?: () => void) => {
-    if (onSuccess) setPendingAction(() => onSuccess);
-    setIsAuthModalOpen(true);
-  };
-
-  const closeAuthModal = () => {
-    setIsAuthModalOpen(false);
-  };
-
-  const signInWithGitHub = async () => {
+  const signInWithGitHub = async (): Promise<{ error: Error | null }> => {
     if (!supabase) {
-      // If Supabase is not configured, fall back to Instant Researcher Mode
-      signInInstantResearcher();
-      return;
+      return { error: new Error('Supabase client is not configured.') };
     }
 
     try {
-      // Native WebViews (Tauri / Capacitor) must round-trip the OAuth callback
-      // through the hosted production origin; window.location.origin there is
-      // an unreachable scheme (tauri://localhost / https://localhost).
-      const redirectTo = isNativeRuntime
-        ? API_BASE_URL || window.location.origin
-        : window.location.origin;
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo,
+          redirectTo: window.location.origin,
         },
       });
       if (error) throw error;
-    } catch {
-      // Supabase OAuth failed / user aborted — fall back to the instant
-      // guest session so the click handler never appears to hang.
-      signInInstantResearcher();
+      return { error: null };
+    } catch (err: any) {
+      return { error: err instanceof Error ? err : new Error(String(err)) };
     }
   };
 
-  const signInInstantResearcher = () => {
-    writeGuestSession();
-    setUser(GUEST_PROFILE);
-    setIsAuthModalOpen(false);
-    if (pendingAction) {
-      pendingAction();
-      setPendingAction(null);
+  const signInWithEmail = async (email: string): Promise<{ error: Error | null }> => {
+    if (!supabase) {
+      return { error: new Error('Supabase client is not configured.') };
     }
-  };
 
-  const signOut = async () => {
-    clearGuestSession();
-    if (supabase) {
-      try {
-        await supabase.auth.signOut();
-      } catch {
-        // ignore — signOut failure should never block the UI
+    try {
+      const trimmed = email.trim();
+      if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+        throw new Error('Please enter a valid email address.');
       }
+
+      const { error } = await supabase.auth.signInWithOtp({
+        email: trimmed,
+        options: {
+          emailRedirectTo: window.location.origin,
+        },
+      });
+      if (error) throw error;
+      return { error: null };
+    } catch (err: any) {
+      return { error: err instanceof Error ? err : new Error(String(err)) };
     }
-    setUser(null);
   };
 
-  const requireAuth = (action: () => void) => {
-    if (user) {
-      action();
-    } else if (!hasSupabaseConfig) {
-      // No auth backend configured: enter instantly as a local guest
-      // instead of stalling in a broken login flow.
-      signInInstantResearcher();
-      action();
-    } else {
-      openAuthModal(action);
+  const signOut = async (): Promise<void> => {
+    try {
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
+    } catch (err) {
+      console.error('Error during signOut:', err);
+    } finally {
+      // Unconditionally wipe session state
+      setSession(null);
+      setAccessToken(null);
+      setUser(null);
+      try {
+        localStorage.removeItem('aria-guest-session-v1');
+        localStorage.removeItem('aria_guest');
+      } catch {
+        // ignore
+      }
     }
   };
 
@@ -259,16 +211,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
+        session,
+        accessToken,
         isAuthenticated: Boolean(user),
         isLoading,
-        isAuthModalOpen,
-        hasSupabaseConfig,
-        openAuthModal,
-        closeAuthModal,
         signInWithGitHub,
-        signInInstantResearcher,
+        signInWithEmail,
         signOut,
-        requireAuth,
       }}
     >
       {children}

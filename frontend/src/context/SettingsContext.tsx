@@ -1,9 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 /**
- * Interface & Motion settings — the only persisted user preferences.
- * Research-mode / discipline / BYOK controls were removed; the research
- * pipeline always runs its default configuration.
+ * Interface & Motion settings — persisted user preferences.
  */
 export interface WorkspaceSettings {
   /** Compact reading density for rendered answer threads. */

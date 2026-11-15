@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
 from datetime import datetime
 from utils.supabase_client import insert_okf_doc, list_okf_docs
+from utils.api_security import verify_supabase_jwt
 
 router = APIRouter(prefix="/api/okf", tags=["okf"])
 
@@ -19,20 +20,27 @@ class OKFDoc(BaseModel):
     user_id: Optional[str] = None
 
 @router.post("/sync")
-async def sync_personal_okf(doc: OKFDoc):
+async def sync_personal_okf(doc: OKFDoc, request: Request):
     """
     Syncs a new personal OKF note to Supabase okf_docs table.
+    Requires authenticated user.
     """
+    auth_header = request.headers.get("authorization", "")
+    token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    user_payload = await verify_supabase_jwt(token)
+    user_id = user_payload.get("id") or user_payload.get("sub")
+
     payload = {
         "file_path": doc.title,
         "type": doc.type,
         "topic": ", ".join(doc.topic) if doc.topic else "General",
         "source": doc.source or "Quick Capture",
         "related_links": doc.related or [],
-        "content": doc.content
+        "content": doc.content,
+        "user_id": user_id
     }
-    if doc.user_id:
-        payload["user_id"] = doc.user_id
 
     result = await insert_okf_doc(payload)
     if result:
@@ -50,10 +58,17 @@ async def sync_personal_okf(doc: OKFDoc):
         }
 
 @router.get("/list")
-async def list_personal_okf(user_id: Optional[str] = None):
+async def list_personal_okf(request: Request):
     """
-    Retrieves personal OKF notes from Supabase.
+    Retrieves personal OKF notes from Supabase for the authenticated user.
     """
+    auth_header = request.headers.get("authorization", "")
+    token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    user_payload = await verify_supabase_jwt(token)
+    user_id = user_payload.get("id") or user_payload.get("sub")
+
     docs = await list_okf_docs(user_id=user_id)
     return {
         "status": "success",

@@ -5,11 +5,10 @@ import logging
 import re
 import uuid
 import traceback
-import urllib.parse
 from typing import Optional, List, Dict, Any
 import httpx
 
-from fastapi import FastAPI, Depends, HTTPException, Header, Request, status, Response
+from fastapi import FastAPI, HTTPException, Request, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
@@ -17,10 +16,9 @@ from pydantic import BaseModel
 from config import settings
 from routers import export, okf
 from utils.api_security import (
-    get_client_ip,
     verify_supabase_jwt,
-    check_anonymous_rate_limit,
-    record_anonymous_request,
+    check_user_rate_limit,
+    record_user_request,
     validate_uuid,
     ALLOWED_VERDICTS,
     MAX_BODY_SIZE_BYTES,
@@ -35,26 +33,12 @@ app = FastAPI(title="ARIA API", version="2.0.0")
 app.include_router(export.router)
 app.include_router(okf.router)
 
-# Setup CORS
+# Setup CORS - locked to settings.get_allowed_origins_list()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://aria.swarajchattaraj.tech",
-        "https://swarajchattaraj.tech",
-        # Tauri desktop WebView origins (Windows/WebView2)
-        "tauri://localhost",
-        "http://tauri.localhost",
-        "https://tauri.localhost",
-        # Capacitor Android WebView origin
-        "https://localhost",
-        "http://localhost",
-        # Local development servers
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-    ],
+    allow_origins=settings.get_allowed_origins_list(),
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -108,10 +92,6 @@ class QueryRequest(BaseModel):
     thread_id: Optional[str] = None
     user_id: Optional[str] = None
     compare_mode: bool = False
-    # v3 Part 2: flexible research modes, discipline filters, custom context
-    research_mode: Optional[str] = None
-    discipline: Optional[str] = None
-    custom_context: Optional[str] = None
 
 class FeedbackRequest(BaseModel):
     message_id: str
@@ -124,8 +104,6 @@ class FeedbackRequest(BaseModel):
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "version": "2.0.0"}
-
-from pipeline.graph import app_graph
 
 @app.post("/api/query")
 async def query_pipeline(req: QueryRequest, request: Request):
@@ -146,47 +124,37 @@ async def query_pipeline(req: QueryRequest, request: Request):
         )
     validate_uuid(req.thread_id, "thread_id")
 
-    # v3 Part 2: normalize research mode + discipline, clamp custom context
-    from pipeline.nodes import RESEARCH_MODE_DEFAULT, normalize_research_mode, DISCIPLINES, MAX_CUSTOM_CONTEXT_CHARS
-    from pipeline import nodes as _nodes_pkg  # namespace for BYOK override accessors
-    effective_research_mode = normalize_research_mode(req.research_mode)
-    effective_discipline = str(req.discipline or "auto").strip().lower()
-    if effective_discipline not in DISCIPLINES:
-        effective_discipline = "auto"
-    effective_custom_context = (req.custom_context or "").strip()[:MAX_CUSTOM_CONTEXT_CHARS]
-
-    # v3 Part 2.3: BYOK per-request key override (X-Custom-API-Key / X-Custom-Provider)
-    byok_key = (request.headers.get("x-custom-api-key") or "").strip()
-    byok_provider = (request.headers.get("x-custom-provider") or "").strip().lower()
-    byok_active = False
-    if byok_key and byok_provider:
-        byok_active = _nodes_pkg.set_request_llm_override(byok_provider, byok_key)
-
-    # 2. Authentication & Rate Limiting
+    # 2. Mandatory Authentication & Per-User Rate Limiting
     auth_header = request.headers.get("authorization", "")
     token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
-    client_ip = get_client_ip(request)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please sign in to submit queries."
+        )
 
-    is_authenticated = False
-    if settings.jwt_auth_enabled and token:
-        user_payload = await verify_supabase_jwt(token)
-        if user_payload:
-            is_authenticated = True
+    user_payload = await verify_supabase_jwt(token)
+    user_id = user_payload.get("id") or user_payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user session."
+        )
 
-    if not is_authenticated:
-        allowed, retry_after, limit_msg = check_anonymous_rate_limit(client_ip, is_feedback=False)
-        if not allowed:
-            return Response(
-                content=limit_msg,
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                media_type="text/plain",
-                headers={
-                    "Retry-After": str(retry_after),
-                    "X-Content-Type-Options": "nosniff",
-                    "X-Request-ID": request_id
-                }
-            )
-        record_anonymous_request(client_ip, is_feedback=False)
+    # Enforce 10 queries/hr per user + global daily token cap
+    allowed, retry_after, limit_msg = check_user_rate_limit(user_id, is_feedback=False)
+    if not allowed:
+        return Response(
+            content=limit_msg,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            media_type="text/plain",
+            headers={
+                "Retry-After": str(retry_after),
+                "X-Content-Type-Options": "nosniff",
+                "X-Request-ID": request_id
+            }
+        )
+    record_user_request(user_id, is_feedback=False)
 
     # 3. Session memory configuration
     from utils.token_tracker import TokenTracker, token_rate_limiter
@@ -198,11 +166,8 @@ async def query_pipeline(req: QueryRequest, request: Request):
     initial_state = {
         "query": req.query,
         "thread_id": thread_id,
-        "user_id": req.user_id,
+        "user_id": user_id,
         "compare_mode": req.compare_mode,
-        "research_mode": effective_research_mode,
-        "discipline": effective_discipline,
-        "custom_context": effective_custom_context,
         "chat_history": [{"role": "user", "content": req.query}],
         "token_tracker": token_tracker
     }
@@ -250,7 +215,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 return
 
             # 1. Route Phase
-            from pipeline.nodes import route_query, plan_retrieval, retrieve_cascade, audit_answer, groq_llm
+            from pipeline.nodes import route_query, plan_retrieval, retrieve_cascade, audit_answer
             from langchain_core.messages import HumanMessage, SystemMessage
 
             route_res = await route_query(current_state)
@@ -278,13 +243,6 @@ async def query_pipeline(req: QueryRequest, request: Request):
             retrieval_end_time = time.time()
             retrieval_seconds = round(retrieval_end_time - retrieval_start_time, 2)
             current_state.update(retrieve_res)
-
-            # v3 Part 2.3: inject user-provided notes/links as primary grounding
-            # chunks "[0] User Provided Context" ahead of the retrieved literature.
-            if effective_custom_context:
-                user_chunks = _nodes_pkg.build_custom_context_chunks(effective_custom_context)
-                if user_chunks:
-                    current_state["retrieved_chunks"] = user_chunks + list(current_state.get("retrieved_chunks", []))
 
             chunks = current_state.get("retrieved_chunks", [])
             sources_summary = [
@@ -359,11 +317,8 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 f"[[c:{i}]] {chunk.get('title', 'Unknown')} ({chunk.get('venue', chunk.get('source', 'Unknown'))})\n{chunk.get('snippet', chunk.get('content', ''))}" 
                 for i, chunk in enumerate(chunks)
             ])
-            # v3 Part 2.1/2.2: shared mode/discipline-aware synthesis prompt builder
-            synthesis_prompt = _nodes_pkg.build_synthesis_prompt(
-                current_state.get("research_mode") or RESEARCH_MODE_DEFAULT,
-                current_state.get("discipline") or "auto"
-            )
+            from pipeline.nodes import build_synthesis_prompt
+            synthesis_prompt = build_synthesis_prompt()
             messages = [
                 SystemMessage(content=synthesis_prompt),
                 HumanMessage(content=f"Query: {current_state['query']}\n\nContext:\n{context}")
@@ -478,8 +433,6 @@ async def query_pipeline(req: QueryRequest, request: Request):
             yield f"data: {json.dumps({'event': 'done'})}\n\n"
         finally:
             await global_query_queue.release()
-            # Always drop the per-request BYOK override (module-global state)
-            _nodes_pkg.clear_request_llm_override()
 
     # SSE Heartbeat wrapper (Part 1.4):
     # Runs the pipeline producer as a background task and forwards its events.
@@ -609,37 +562,43 @@ async def submit_feedback(req: FeedbackRequest, request: Request):
     if req.route_engine and len(req.route_engine.strip()) > 50:
         raise HTTPException(status_code=400, detail="route_engine exceeds 50 characters.")
 
-    # 2. Authentication & Rate Limiting
+    # 2. Mandatory Authentication & Rate Limiting
     auth_header = request.headers.get("authorization", "")
     token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
-    client_ip = get_client_ip(request)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please sign in to submit feedback."
+        )
 
-    is_authenticated = False
-    if settings.jwt_auth_enabled and token:
-        user_payload = await verify_supabase_jwt(token)
-        if user_payload:
-            is_authenticated = True
+    user_payload = await verify_supabase_jwt(token)
+    user_id = user_payload.get("id") or user_payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user session."
+        )
 
-    if not is_authenticated:
-        allowed, retry_after, limit_msg = check_anonymous_rate_limit(client_ip, is_feedback=True)
-        if not allowed:
-            return Response(
-                content=limit_msg,
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                media_type="text/plain",
-                headers={
-                    "Retry-After": str(retry_after),
-                    "X-Content-Type-Options": "nosniff",
-                    "X-Request-ID": request_id
-                }
-            )
-        record_anonymous_request(client_ip, is_feedback=True)
+    allowed, retry_after, limit_msg = check_user_rate_limit(user_id, is_feedback=True)
+    if not allowed:
+        return Response(
+            content=limit_msg,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            media_type="text/plain",
+            headers={
+                "Retry-After": str(retry_after),
+                "X-Content-Type-Options": "nosniff",
+                "X-Request-ID": request_id
+            }
+        )
+    record_user_request(user_id, is_feedback=True)
 
     # 3. Store Feedback
     from utils.supabase_client import insert_feedback
     payload = {
         "message_id": req.message_id,
         "thread_id": req.thread_id,
+        "user_id": user_id,
         "verdict": clean_verdict,
         "query": req.query,
         "tiers": req.tiers or [],
@@ -885,10 +844,20 @@ class ExportPdfRequest(BaseModel):
     clickable_urls: bool = True
 
 @app.post("/api/export/pdf")
-async def export_pdf_report(req: ExportPdfRequest):
+async def export_pdf_report(req: ExportPdfRequest, request: Request):
     """
     Generates and returns a multi-page PDF research report via PyMuPDF (fitz).
+    Requires authenticated user JWT session.
     """
+    auth_header = request.headers.get("authorization", "")
+    token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please sign in to export PDF reports."
+        )
+    await verify_supabase_jwt(token)
+
     from utils.pdf_generator import generate_research_pdf
     try:
         pdf_bytes = generate_research_pdf(
@@ -920,7 +889,7 @@ async def export_pdf_report(req: ExportPdfRequest):
 @app.get("/api/okf/graph")
 async def get_okf_graph():
     """
-    Parses all 25 OKF markdown files in data/okf and returns nodes and directional related edges.
+    Parses OKF markdown files in data/okf and returns nodes and directional related edges.
     """
     from pipeline.okf_parser import parse_okf_file
     import os

@@ -3,7 +3,6 @@ import uuid
 import datetime
 from typing import Optional, Dict, List, Tuple
 from fastapi import Request, HTTPException, status
-from fastapi.responses import JSONResponse
 import httpx
 from jose import jwt, JWTError
 
@@ -15,16 +14,16 @@ logger = logging.getLogger(__name__)
 # Allowed feedback verdict values
 ALLOWED_VERDICTS = {"positive", "negative", "flagged", "accurate", "inaccurate", "conflict"}
 
-# Rate limiting storage (in-memory sliding window)
-# IP -> List[float] timestamps
-_ip_query_history: Dict[str, List[float]] = {}
-# IP -> List[float] timestamps for feedback
-_ip_feedback_history: Dict[str, List[float]] = {}
+# Per-user rate limiting storage (in-memory sliding window keyed by Supabase user UUID)
+_user_query_history: Dict[str, List[float]] = {}
+_user_feedback_history: Dict[str, List[float]] = {}
 
 # Daily global query count: (date_str, count)
 _daily_counter = {"date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"), "count": 0}
 
-MAX_QUERIES_PER_HOUR = 5
+MAX_USER_QUERIES_PER_HOUR = 10
+MAX_USER_FEEDBACK_PER_HOUR = 30
+MAX_QUERIES_PER_HOUR = 10  # Alias for backward compatibility
 MAX_BODY_SIZE_BYTES = 8192  # 8 KB
 MAX_QUERY_LENGTH = 500
 MAX_STREAM_DURATION_SECONDS = 180.0
@@ -53,7 +52,10 @@ async def verify_supabase_jwt(token: str) -> Optional[Dict]:
     Returns user payload dictionary if valid, raises HTTPException(401) if invalid or expired.
     """
     if not token:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required. Please sign in."
+        )
         
     # Check locally if JWT secret is available
     if settings.supabase_jwt_secret and settings.supabase_jwt_secret != "default":
@@ -103,30 +105,33 @@ async def verify_supabase_jwt(token: str) -> Optional[Dict]:
 
 from utils.token_tracker import token_rate_limiter
 
-def check_anonymous_rate_limit(client_ip: str, is_feedback: bool = False) -> Tuple[bool, int, str]:
+def check_user_rate_limit(user_id: str, is_feedback: bool = False) -> Tuple[bool, int, str]:
     """
-    Checks per-IP limit of 5 queries per hour plus global DAILY_TOKEN_CAP.
+    Checks per-user rate limit (10 queries/hr per user, 30 feedback/hr per user)
+    plus the global daily token capacity cap.
     Returns: (is_allowed, retry_after_seconds, error_message)
     """
-    if client_ip in ("127.0.0.1", "::1", "localhost"):
-        return True, 0, ""
+    if not user_id or not isinstance(user_id, str):
+        return False, 3600, "Valid user authentication is required."
 
     now = time.time()
     one_hour_ago = now - 3600.0
-    history_store = _ip_feedback_history if is_feedback else _ip_query_history
+    history_store = _user_feedback_history if is_feedback else _user_query_history
+    max_allowed = MAX_USER_FEEDBACK_PER_HOUR if is_feedback else MAX_USER_QUERIES_PER_HOUR
 
-    # Clean up entries older than 1 hour for this IP
-    timestamps = [t for t in history_store.get(client_ip, []) if t > one_hour_ago]
-    history_store[client_ip] = timestamps
+    # Clean up timestamps older than 1 hour for this user
+    timestamps = [t for t in history_store.get(user_id, []) if t > one_hour_ago]
+    history_store[user_id] = timestamps
 
-    # 1. Per-IP limit check (5 queries per hour)
-    if len(timestamps) >= MAX_QUERIES_PER_HOUR:
+    # 1. Per-user limit check (10 queries per hour)
+    if len(timestamps) >= max_allowed:
         oldest_in_window = timestamps[0]
         retry_after = max(1, int(3600 - (now - oldest_in_window)))
-        msg = f"Rate limit exceeded: Limit is {MAX_QUERIES_PER_HOUR} requests per hour. Try again in {retry_after}s."
+        action = "feedback submissions" if is_feedback else "queries"
+        msg = f"Rate limit exceeded: Limit is {max_allowed} {action} per hour per user. Try again in {retry_after}s."
         return False, retry_after, msg
 
-    # 2. Daily token capacity check (only for queries, not feedback)
+    # 2. Daily global token capacity check (only for queries, not feedback)
     if not is_feedback:
         allowed, retry_after, daily_msg = token_rate_limiter.check_daily_cap(settings.groq_writer_model)
         if not allowed:
@@ -134,13 +139,24 @@ def check_anonymous_rate_limit(client_ip: str, is_feedback: bool = False) -> Tup
 
     return True, 0, ""
 
-def record_anonymous_request(client_ip: str, is_feedback: bool = False) -> None:
-    """Records an anonymous request timestamp and increments daily counter."""
+def record_user_request(user_id: str, is_feedback: bool = False) -> None:
+    """Records an authenticated user's request timestamp and increments daily counter."""
+    if not user_id:
+        return
     now = time.time()
-    history_store = _ip_feedback_history if is_feedback else _ip_query_history
-    history_store.setdefault(client_ip, []).append(now)
+    history_store = _user_feedback_history if is_feedback else _user_query_history
+    history_store.setdefault(user_id, []).append(now)
     if not is_feedback:
         _daily_counter["count"] += 1
+
+# Backward compatibility shims for older test suites
+def check_anonymous_rate_limit(client_ip: str, is_feedback: bool = False) -> Tuple[bool, int, str]:
+    """Compatibility shim mapping IP to user check."""
+    return check_user_rate_limit(user_id=client_ip, is_feedback=is_feedback)
+
+def record_anonymous_request(client_ip: str, is_feedback: bool = False) -> None:
+    """Compatibility shim mapping IP to user record."""
+    record_user_request(user_id=client_ip, is_feedback=is_feedback)
 
 def validate_uuid(val: Optional[str], field_name: str = "thread_id") -> None:
     """Validates that a string is a valid UUID."""

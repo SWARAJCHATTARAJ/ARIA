@@ -1,15 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  Settings as SettingsIcon,
-  User,
-  Github,
-  LogIn,
-  LogOut,
-  Gauge,
   Eraser,
   Check,
-  Loader2,
-  Monitor,
+  LogOut,
 } from 'lucide-react';
 import { useSettingsContext } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
@@ -18,14 +11,13 @@ import { clearHistory, getHistory } from '../services/storage';
 
 export default function SettingsView() {
   const { settings, onUpdateSettings } = useSettingsContext();
-  const { user, signInInstantResearcher, signOut, openAuthModal } = useAuth();
+  const { user, signOut } = useAuth();
 
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [apiLatencyMs, setApiLatencyMs] = useState<number | null>(null);
   const [historyCount, setHistoryCount] = useState(() => getHistory().length);
   const [cleared, setCleared] = useState(false);
 
-  // Probe backend health once on mount for the ONLINE status dot
   useEffect(() => {
     let mounted = true;
     const checkHealth = async () => {
@@ -56,123 +48,73 @@ export default function SettingsView() {
     window.setTimeout(() => setCleared(false), 2000);
   }, []);
 
-  const authLabel = user
-    ? user.provider === 'guest'
-      ? 'Anonymous Guest Session'
-      : 'Authenticated via GitHub'
-    : 'Public Workspace';
-
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#09090B] overflow-y-auto hud-scroll select-text text-gray-200">
+    <div className="flex-1 flex flex-col h-full bg-[#0A0A0B] overflow-y-auto hud-scroll select-text text-[#EDEDED]">
       {/* Top Header */}
-      <div className="px-6 md:px-10 py-5 border-b border-white/[0.07] aria-matte sticky top-0 z-20 flex items-center justify-between">
+      <div className="px-8 py-4 border-b border-[#262629] bg-[#141416] shrink-0 flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <SettingsIcon size={18} className="text-tier-okf" />
-            <h1 className="text-base md:text-lg font-bold font-sans text-[#F4F4F6] tracking-tight">
-              Settings
-            </h1>
-          </div>
-          <p className="text-xs font-mono text-[#A1A1AA] mt-0.5">
-            Workspace identity, interface motion, and local cache.
+          <h1 className="text-[24px] font-semibold text-[#EDEDED]">
+            Settings
+          </h1>
+          <p className="text-[12px] font-mono text-[#8B8B8E] mt-0.5">
+            Workspace preferences, authentication state, and local cache.
           </p>
         </div>
       </div>
 
-      <div className="p-6 md:p-10 max-w-3xl mx-auto w-full space-y-4 pb-24">
-        {/* CARD 1: WORKSPACE IDENTITY & SESSION */}
-        <section className="ui-card p-5 md:p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <User size={16} className="text-tier-okf" />
-            <h2 className="text-xs font-mono uppercase tracking-wider text-[#F4F4F6] font-bold">
-              Workspace Identity &amp; Session
-            </h2>
-          </div>
+      <div className="p-8 max-w-3xl mx-auto w-full space-y-6 pb-24">
+        {/* CARD 0: AUTHENTICATED ACCOUNT */}
+        {user && (
+          <section className="p-6 bg-[#141416] border border-[#262629] rounded-[8px] space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#262629]">
+              <h2 className="text-[16px] font-semibold text-[#EDEDED]">
+                Authenticated Researcher
+              </h2>
+              <button
+                type="button"
+                onClick={() => signOut()}
+                className="btn-secondary text-[12px] py-1 px-3 text-[#EF4444] border-[#EF4444]/40 hover:border-[#EF4444]"
+              >
+                <LogOut size={14} />
+                <span>Sign Out</span>
+              </button>
+            </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              {user?.avatarUrl ? (
-                <img
-                  src={user.avatarUrl}
-                  alt={user.username}
-                  className="w-10 h-10 rounded-full border border-white/[0.16] object-cover shrink-0"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-[#16161C] border border-white/[0.07] text-[#A1A1AA] flex items-center justify-center shrink-0">
-                  <User size={18} />
-                </div>
-              )}
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-[#F4F4F6] truncate">
-                  {user
-                    ? user.provider === 'guest'
-                      ? 'Guest Researcher'
-                      : user.name || user.username
-                    : 'Public Workspace'}
-                </div>
-                <div className="text-[11px] font-mono text-[#A1A1AA] truncate flex items-center gap-1.5">
-                  {user?.provider === 'github' && <Github size={10} />}
-                  {authLabel}
-                </div>
+            <div className="p-4 bg-[#0A0A0B] border border-[#262629] rounded-[6px] font-mono text-[12px] space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-[#8B8B8E]">Name</span>
+                <span className="text-[#EDEDED] font-medium">{user.name}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[#8B8B8E]">Identity</span>
+                <span className="text-[#EDEDED]">{user.email || `@${user.username}`}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[#8B8B8E]">Provider</span>
+                <span className="text-[#5E8BFF] uppercase">{user.provider}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[#8B8B8E]">User ID</span>
+                <span className="text-[#8B8B8E] text-[12px] font-mono truncate max-w-[280px]">{user.id}</span>
               </div>
             </div>
+          </section>
+        )}
 
-            <div className="flex items-center gap-2">
-              {user ? (
-                <button
-                  type="button"
-                  onClick={() => signOut()}
-                  className="ui-btn px-3.5 py-2 bg-[#111115] hover:bg-[#16161C] border border-white/[0.09] hover:border-white/[0.16] text-[#F4F4F6] text-xs font-medium flex items-center gap-2"
-                >
-                  <LogOut size={13} />
-                  <span>Sign out</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => openAuthModal()}
-                  className="ui-btn px-3.5 py-2 bg-[#F4F4F6] hover:bg-white text-[#09090B] text-xs font-medium flex items-center gap-2"
-                >
-                  <LogIn size={13} />
-                  <span>Sign in</span>
-                </button>
-              )}
-              {user && user.provider === 'guest' && (
-                <button
-                  type="button"
-                  onClick={() => openAuthModal()}
-                  className="ui-btn px-3.5 py-2 bg-[#111115] hover:bg-[#16161C] border border-white/[0.09] hover:border-white/[0.16] text-[#A1A1AA] hover:text-[#F4F4F6] text-xs font-medium"
-                >
-                  Upgrade session
-                </button>
-              )}
-            </div>
-          </div>
-
-          <p className="text-[10px] font-mono text-[#52525B] mt-4">
-            Guest sessions live in this browser only. GitHub sign-in syncs history, collections, and
-            verified citations.
-          </p>
-        </section>
-
-        {/* CARD 2: INTERFACE & MOTION */}
-        <section className="ui-card p-5 md:p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Monitor size={16} className="text-tier-okf" />
-            <h2 className="text-xs font-mono uppercase tracking-wider text-[#F4F4F6] font-bold">
+        {/* CARD 1: INTERFACE & MOTION */}
+        <section className="p-6 bg-[#141416] border border-[#262629] rounded-[8px] space-y-4">
+          <div className="pb-3 border-b border-[#262629]">
+            <h2 className="text-[16px] font-semibold text-[#EDEDED]">
               Interface &amp; Motion
             </h2>
           </div>
 
           <div className="space-y-3">
-            <label className="flex items-center justify-between gap-4 p-3.5 bg-[#0C0C0F] border border-white/[0.07] cursor-pointer hover:border-white/[0.16] transition-colors">
+            <label className="flex items-center justify-between gap-4 p-4 bg-[#0A0A0B] border border-[#262629] rounded-[6px] cursor-pointer hover:border-[#38383C] transition-colors">
               <div>
-                <p className="text-xs font-sans text-[#F4F4F6] font-medium">Compact Reading Density</p>
-                <p className="text-[10px] font-mono text-[#52525B] mt-0.5">
-                  Tighter line-height and 13px type in answer threads.
+                <p className="text-[14px] font-medium text-[#EDEDED]">Compact Reading Density</p>
+                <p className="text-[12px] text-[#8B8B8E] mt-0.5">
+                  Tighter line-height in rendered answer threads.
                 </p>
               </div>
               <button
@@ -180,26 +122,23 @@ export default function SettingsView() {
                 role="switch"
                 aria-checked={settings.compactDensity}
                 onClick={() => onUpdateSettings({ compactDensity: !settings.compactDensity })}
-                className={`relative w-10 h-5.5 shrink-0 transition-colors duration-150 ${
-                  settings.compactDensity ? 'bg-tier-okf' : 'bg-[#27272A]'
+                className={`w-10 h-6 p-1 rounded-[6px] transition-colors ${
+                  settings.compactDensity ? 'bg-[#5E8BFF]' : 'bg-[#262629]'
                 }`}
-                style={{ borderRadius: '9999px', height: '22px' }}
               >
                 <span
-                  className="absolute top-[3px] left-[3px] w-4 h-4 bg-[#F4F4F6] transition-transform duration-150"
-                  style={{
-                    borderRadius: '9999px',
-                    transform: settings.compactDensity ? 'translateX(16px)' : 'translateX(0)',
-                  }}
+                  className={`block w-4 h-4 bg-white rounded-[4px] transition-transform ${
+                    settings.compactDensity ? 'translate-x-4' : 'translate-x-0'
+                  }`}
                 />
               </button>
             </label>
 
-            <label className="flex items-center justify-between gap-4 p-3.5 bg-[#0C0C0F] border border-white/[0.07] cursor-pointer hover:border-white/[0.16] transition-colors">
+            <label className="flex items-center justify-between gap-4 p-4 bg-[#0A0A0B] border border-[#262629] rounded-[6px] cursor-pointer hover:border-[#38383C] transition-colors">
               <div>
-                <p className="text-xs font-sans text-[#F4F4F6] font-medium">Reduced Motion</p>
-                <p className="text-[10px] font-mono text-[#52525B] mt-0.5">
-                  Collapse transitions and pulses to near-instant. Persisted locally.
+                <p className="text-[14px] font-medium text-[#EDEDED]">Reduced Motion</p>
+                <p className="text-[12px] text-[#8B8B8E] mt-0.5">
+                  Collapses transitions to instant durations. Persisted locally.
                 </p>
               </div>
               <button
@@ -207,87 +146,73 @@ export default function SettingsView() {
                 role="switch"
                 aria-checked={settings.reducedMotion}
                 onClick={() => onUpdateSettings({ reducedMotion: !settings.reducedMotion })}
-                className={`relative shrink-0 transition-colors duration-150 ${
-                  settings.reducedMotion ? 'bg-tier-okf' : 'bg-[#27272A]'
+                className={`w-10 h-6 p-1 rounded-[6px] transition-colors ${
+                  settings.reducedMotion ? 'bg-[#5E8BFF]' : 'bg-[#262629]'
                 }`}
-                style={{ borderRadius: '9999px', width: '40px', height: '22px' }}
               >
                 <span
-                  className="absolute top-[3px] left-[3px] w-4 h-4 bg-[#F4F4F6] transition-transform duration-150"
-                  style={{
-                    borderRadius: '9999px',
-                    transform: settings.reducedMotion ? 'translateX(16px)' : 'translateX(0)',
-                  }}
+                  className={`block w-4 h-4 bg-white rounded-[4px] transition-transform ${
+                    settings.reducedMotion ? 'translate-x-4' : 'translate-x-0'
+                  }`}
                 />
               </button>
             </label>
           </div>
         </section>
 
-        {/* CARD 3: SYSTEM & LOCAL CACHE */}
-        <section className="ui-card p-5 md:p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Gauge size={16} className="text-tier-okf" />
-            <h2 className="text-xs font-mono uppercase tracking-wider text-[#F4F4F6] font-bold">
+        {/* CARD 2: SYSTEM & LOCAL CACHE */}
+        <section className="p-6 bg-[#141416] border border-[#262629] rounded-[8px] space-y-4">
+          <div className="pb-3 border-b border-[#262629]">
+            <h2 className="text-[16px] font-semibold text-[#EDEDED]">
               System &amp; Local Cache
             </h2>
           </div>
 
-          <div className="p-3.5 bg-[#0C0C0F] border border-white/[0.07] font-mono text-xs space-y-2.5 mb-4">
+          <div className="p-4 bg-[#0A0A0B] border border-[#262629] rounded-[6px] font-mono text-[12px] space-y-2 mb-4">
             <div className="flex justify-between items-center">
-              <span className="text-[#52525B]">Backend API:</span>
-              <span className="flex items-center gap-1.5">
+              <span className="text-[#8B8B8E]">Backend API</span>
+              <span className="flex items-center gap-2">
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    apiStatus === 'online'
-                      ? 'bg-[#10B981]'
-                      : apiStatus === 'checking'
-                      ? 'bg-[#52525B] aria-dot-pulse'
-                      : 'bg-warning'
+                    apiStatus === 'online' ? 'bg-[#34D399]' : 'bg-[#EF4444]'
                   }`}
                 />
-                <span
-                  className={
-                    apiStatus === 'online'
-                      ? 'text-[#10B981] font-bold'
-                      : apiStatus === 'checking'
-                      ? 'text-[#A1A1AA]'
-                      : 'text-warning font-bold'
-                  }
-                >
-                  {apiStatus === 'checking' ? 'CHECKING' : apiStatus === 'online' ? 'ONLINE' : 'OFFLINE'}
+                <span className={apiStatus === 'online' ? 'text-[#34D399]' : 'text-[#EF4444]'}>
+                  {apiStatus === 'online' ? 'ONLINE' : 'OFFLINE'}
                 </span>
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-[#52525B]">Endpoint:</span>
-              <span className="text-[#A1A1AA] truncate max-w-[60%]">{API_BASE_URL}</span>
+              <span className="text-[#8B8B8E]">Endpoint</span>
+              <span className="text-[#EDEDED] truncate max-w-[60%]">{API_BASE_URL}</span>
             </div>
             {apiStatus === 'online' && apiLatencyMs !== null && (
               <div className="flex justify-between items-center">
-                <span className="text-[#52525B]">/health roundtrip:</span>
-                <span className="text-tier-okf">{apiLatencyMs} ms</span>
+                <span className="text-[#8B8B8E]">Latency</span>
+                <span className="text-[#5E8BFF]">{apiLatencyMs} ms</span>
               </div>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-[10px] font-mono text-[#52525B]">
-              {historyCount} completed quer{historyCount === 1 ? 'y' : 'ies'} stored in this browser
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <span className="text-[12px] font-mono text-[#8B8B8E]">
+              {historyCount} completed queries stored locally
+            </span>
             <button
               type="button"
               onClick={handleClearHistory}
               disabled={historyCount === 0}
-              className="ui-btn text-[11px] font-mono flex items-center gap-2 px-3 py-2 bg-[#111115] border border-white/[0.09] hover:border-warning/60 text-[#A1A1AA] hover:text-warning transition-colors disabled:opacity-40"
+              className="btn-secondary text-[12px] py-1.5 px-3"
             >
               {cleared ? (
                 <>
-                  <Check size={13} /> <span>History cleared</span>
+                  <Check size={14} className="text-[#34D399]" />
+                  <span>Cleared</span>
                 </>
               ) : (
                 <>
-                  <Eraser size={13} /> <span>Clear Local Query History</span>
+                  <Eraser size={14} />
+                  <span>Clear History</span>
                 </>
               )}
             </button>

@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     groq_judge_tpm: int = 7500
     groq_judge_tpd: int = 160000
     daily_token_cap: int = 160000
-    jwt_auth_enabled: bool = False
+    jwt_auth_enabled: bool = True
     supabase_url: str = "default"
     supabase_service_role_key: str = "default"
     redis_url: str = "redis://localhost:6379/0"

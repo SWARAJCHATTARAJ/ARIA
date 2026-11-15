@@ -1,94 +1,52 @@
 import React from 'react';
-import { Home, PlusCircle, Clock, FolderGit2, Settings, BookOpen, Command, User, Menu } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
-import AriaCoreIndicator from '../AriaCoreIndicator';
+import { Home, PlusCircle, Clock, FolderGit2, Settings, Command, Menu } from 'lucide-react';
 
 interface MobileNavBarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
   onOpenCommandPalette?: () => void;
-  /** opens the < 768px slide-over navigation drawer */
   onOpenDrawer?: () => void;
 }
 
 export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onOpenDrawer }: MobileNavBarProps) {
-  const { user, openAuthModal } = useAuth();
-
   return (
-    <header className="md:hidden flex items-center justify-between px-3.5 py-2.5 bg-[#09090B] border-b border-white/[0.07] shrink-0 z-30 safe-pt select-none">
-      {/* Hamburger: opens slide-over drawer */}
+    <header className="md:hidden flex items-center justify-between px-4 py-3 bg-[#141416] border-b border-[#262629] shrink-0 z-30 safe-pt select-none">
       {onOpenDrawer && (
         <button
           onClick={onOpenDrawer}
-          className="press tip p-2 text-[#A1A1AA] hover:text-[#F4F4F6] hover:bg-[#16161C] border border-transparent hover:border-white/[0.16] transition-colors"
-          data-tip="Menu"
+          className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#1B1B1E] transition-colors"
           aria-label="Open navigation menu"
         >
           <Menu size={18} />
         </button>
       )}
 
-      {/* Brand: ARIA Core emblem + wordmark */}
-      <div className="flex items-center gap-2" onClick={() => onTabChange('home')}>
-        <AriaCoreIndicator state="IDLE" size={20} className="text-tier-okf" />
-        <img src="/aria-logo.svg" alt="ARIA" className="h-6 w-auto object-contain cursor-pointer" />
+      <div className="flex items-center gap-2 cursor-pointer" onClick={() => onTabChange('home')}>
+        <span className="font-mono text-[14px] font-semibold text-[#EDEDED] tracking-wider">
+          ARIA
+        </span>
       </div>
 
-      {/* Right controls: OKF Space + Command Palette + Auth avatar */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2">
         <button
           onClick={() => onTabChange('okf')}
-          className={`press px-2.5 py-1 text-[11px] font-mono border flex items-center gap-1 transition-all ${
+          className={`px-2.5 py-1 text-[12px] font-mono rounded-[6px] border transition-colors ${
             activeTab === 'okf'
-              ? 'bg-[#16161C] border-white/[0.16] text-[#F4F4F6] font-bold'
-              : 'bg-[#111115] border-white/[0.07] text-[#A1A1AA] hover:text-[#F4F4F6]'
+              ? 'bg-[#1B1B1E] border-[#262629] text-[#EDEDED] font-semibold'
+              : 'bg-[#0A0A0B] border-[#262629] text-[#8B8B8E] hover:text-[#EDEDED]'
           }`}
-          title="OKF Space Ontology"
+          title="OKF Space"
         >
-          <BookOpen size={12} className={activeTab === 'okf' ? 'text-tier-okf' : ''} />
-          <span>OKF</span>
+          OKF
         </button>
 
         {onOpenCommandPalette && (
           <button
             onClick={onOpenCommandPalette}
-            className="press p-1.5 bg-[#111115] border border-white/[0.07] hover:border-white/[0.16] text-[#A1A1AA] hover:text-[#F4F4F6]"
-            title="Spotlight Search (Ctrl+K)"
+            className="p-1.5 bg-[#0A0A0B] border border-[#262629] rounded-[6px] text-[#8B8B8E] hover:text-[#EDEDED]"
             aria-label="Search"
           >
             <Command size={14} />
-          </button>
-        )}
-
-        {/* Auth Avatar / Sign In */}
-        {user ? (
-          <button
-            onClick={() => onTabChange('settings')}
-            className="press p-0.5 border border-white/[0.07] hover:border-white/[0.16] rounded-full"
-            title={`Signed in as ${user.provider === 'guest' ? 'Guest' : `@${user.username}`}`}
-          >
-            {user.avatarUrl ? (
-              <img
-                src={user.avatarUrl}
-                alt={user.username}
-                className="w-5 h-5 rounded-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <div className="w-5 h-5 rounded-full bg-[#16161C] text-[#A1A1AA] flex items-center justify-center text-[10px]">
-                <User size={11} />
-              </div>
-            )}
-          </button>
-        ) : (
-          <button
-            onClick={() => openAuthModal()}
-            className="press min-h-[32px] px-2 py-1 bg-[#F4F4F6] text-[#09090B] hover:bg-white text-[10px] font-mono font-semibold"
-            title="Sign in"
-          >
-            Sign in
           </button>
         )}
       </div>
@@ -106,7 +64,7 @@ export function MobileBottomNav({ activeTab, onTabChange }: MobileNavBarProps) {
   ];
 
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[#09090B]/95 border-t border-white/[0.07] z-40 safe-pb select-none">
+    <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[#141416] border-t border-[#262629] z-40 safe-pb select-none">
       <div className="grid grid-cols-5 h-14">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -115,21 +73,12 @@ export function MobileBottomNav({ activeTab, onTabChange }: MobileNavBarProps) {
             <button
               key={item.id}
               onClick={() => onTabChange(item.id)}
-              className={`press relative flex flex-col items-center justify-center py-1 transition-all touch-spring ${
-                isActive ? 'text-[#F4F4F6] font-semibold' : 'text-[#A1A1AA]'
+              className={`flex flex-col items-center justify-center py-1 transition-colors ${
+                isActive ? 'text-[#5E8BFF]' : 'text-[#8B8B8E] hover:text-[#EDEDED]'
               }`}
-              style={{ minHeight: '56px' }}
             >
-              {isActive && (
-                <span className="absolute top-0 inset-x-3 h-[2px] bg-[#F4F4F6]" />
-              )}
-              <Icon
-                size={19}
-                className={`transition-transform duration-200 ${
-                  isActive ? 'text-tier-okf scale-110' : ''
-                }`}
-              />
-              <span className={`text-[10px] font-mono mt-1 ${isActive ? 'text-[#F4F4F6] font-bold' : ''}`}>
+              <Icon size={18} />
+              <span className={`text-[12px] font-mono mt-1 ${isActive ? 'font-semibold text-[#EDEDED]' : ''}`}>
                 {item.label}
               </span>
             </button>

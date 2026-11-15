@@ -7,30 +7,54 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: {
-          base: '#09090B', // Canvas background
-          surface: '#0C0C0F', // Sidebar & secondary surface
-          card: '#111115', // Card surface
-          elevated: '#111115', // Interactive inputs & code blocks
-          hover: '#16161C', // Elevated / hover surface
-          secondary: '#A1A1AA', // Secondary text
-          muted: '#A1A1AA', // Secondary text (most common usage)
-          faint: '#52525B' // Muted text
+        canvas: '#0A0A0B',
+        panel: '#141416',
+        card: '#141416',
+        border: '#262629',
+        'text-primary': '#EDEDED',
+        'text-secondary': '#8B8B8E',
+        accent: {
+          DEFAULT: '#5E8BFF',
+          hover: '#4E7BF0',
         },
         tier: {
-          okf: '#60A5FA', // OKF (Structured) — steel blue
-          rag: '#A78BFA', // RAG (Vector) — soft violet
-          live: '#F59E0B' // LIVE (Academic) — warm amber
+          okf: '#5E8BFF',
+          rag: '#A78BFA',
+          live: '#34D399',
         },
-        online: '#10B981', // Online status dot only
+        // Mapped legacy aliases to exact non-negotiable palette
+        ink: {
+          base: '#0A0A0B',
+          surface: '#141416',
+          card: '#141416',
+          elevated: '#141416',
+          hover: '#1B1B1E',
+          secondary: '#8B8B8E',
+          muted: '#8B8B8E',
+          faint: '#8B8B8E',
+        },
         warning: {
-          DEFAULT: '#C95A5A' // Muted red for retractions/conflicts
-        }
+          DEFAULT: '#EF4444',
+        },
+      },
+      borderRadius: {
+        btn: '6px',
+        card: '8px',
+      },
+      fontSize: {
+        xs: ['12px', { lineHeight: '16px' }],
+        sm: ['14px', { lineHeight: '20px' }],
+        base: ['16px', { lineHeight: '24px' }],
+        '2xl': ['24px', { lineHeight: '32px' }],
+        hero: ['40px', { lineHeight: '48px' }],
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
-      }
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+      },
+      boxShadow: {
+        cardHover: '0 4px 12px rgba(0, 0, 0, 0.3)',
+      },
     },
   },
   plugins: [

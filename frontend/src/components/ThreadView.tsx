@@ -1,16 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, AlertTriangle, Maximize2, Minimize2, Check, Sparkles, StopCircle, Network, FileText, CheckCircle2, Bookmark, BookmarkCheck, ChevronDown, ChevronUp, KeyRound, Eraser } from 'lucide-react';
-import ConfidenceDial from './ConfidenceDial';
-import MarkdownRenderer, { getTierGlyph, getTierColorClass } from './MarkdownRenderer';
-import CitationGraph from './CitationGraph';
-import VisualConceptCard from './VisualConceptCard';
-import AriaCoreIndicator, { AriaCoreState } from './AriaCoreIndicator';
-import LiveElapsed from './ui/LiveElapsed';
+import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, Maximize2, Minimize2, Check, StopCircle, FileText, CheckCircle2 } from 'lucide-react';
+import MarkdownRenderer from './MarkdownRenderer';
 import { streamQuery } from '../services/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim } from '../types';
 import { API_BASE_URL } from '../services/config';
 import { useSettingsContext } from '../context/SettingsContext';
-import { addHistoryEntry, addToCollection, isInCollection } from '../services/storage';
+import { useAuth } from '../context/AuthContext';
+import { addHistoryEntry } from '../services/storage';
 
 const EXAMPLE_QUERIES = [
   {
@@ -73,12 +69,12 @@ export default function ThreadView({
   onUpdateActiveCitations,
   onMockStateChange,
   activeTelemetry,
-  activeCitations,
+  activeCitations: _activeCitations,
   isMockActive = false,
-  onToggleSidebar,
+  onToggleSidebar: _onToggleSidebar,
   pendingQuery,
   onPendingQueryConsumed,
-  onSourcesExpand,
+  onSourcesExpand: _onSourcesExpand,
 }: ThreadViewProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -87,13 +83,11 @@ export default function ThreadView({
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [feedbackSent, setFeedbackSent] = useState<Record<string, 'positive' | 'negative' | 'flagged'>>({});
   const [isBackendReachable, setIsBackendReachable] = useState<boolean>(false);
-  const [isCitationGraphOpen, setIsCitationGraphOpen] = useState<Record<string, boolean>>({});
   const [isExportingPdf, setIsExportingPdf] = useState<Record<string, boolean>>({});
-  const [bookmarkedQueries, setBookmarkedQueries] = useState<Record<string, boolean>>({});
 
   // Read interface settings once from global SettingsContext (density + motion only)
-  const { settings } = useSettingsContext();
-  const densityClass = settings.compactDensity ? 'density-compact' : 'density-standard';
+  const { settings: _settings } = useSettingsContext();
+  const { accessToken } = useAuth();
 
   const handleDownloadPdf = async (msg: Message) => {
     try {
@@ -106,9 +100,13 @@ export default function ThreadView({
         claims: msg.telemetry?.audit?.claims || [],
         sources: msg.citations || [],
       };
+      const exportHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (accessToken) {
+        exportHeaders['Authorization'] = `Bearer ${accessToken}`;
+      }
       const res = await fetch(`${API_BASE_URL}/api/export/pdf`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: exportHeaders,
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('PDF export failed');
@@ -168,11 +166,6 @@ export default function ThreadView({
       mounted = false;
     };
   }, []);
-
-  // Check if ?mock=1 is present in URL
-  const isMockUrl = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mock') === '1';
-  // Allow fixture replay only if ?mock=1 or running in dev mode
-  const canReplayFixtures = isMockUrl || import.meta.env.DEV;
 
   // Inform parent when queries exist
   useEffect(() => {
@@ -335,7 +328,6 @@ export default function ThreadView({
     finalConfidenceRef.current = undefined;
     lastQueryRef.current = queryText.trim();
 
-    let collectedCitations: Citation[] = [];
     let currentTelemetry: MessageTelemetry = { stage: 'routing' };
 
     // Reducer: apply one SSE event to the streaming message document
@@ -390,7 +382,6 @@ export default function ThreadView({
           };
           if (!updatedCitations.some((c) => c.id === newCit.id)) {
             updatedCitations.push(newCit);
-            collectedCitations = updatedCitations;
             if (onUpdateActiveCitations) onUpdateActiveCitations(updatedCitations);
           }
           break;
@@ -492,19 +483,17 @@ export default function ThreadView({
     if (onUpdateActiveCitations) onUpdateActiveCitations([]);
     if (onUpdateActiveTelemetry) onUpdateActiveTelemetry(currentTelemetry);
 
-    // Default research parameters (mode selectors were removed from Settings)
-    const researchMode = 'deep_academic' as const;
-    const discipline = 'auto';
+    const streamHeaders: Record<string, string> = {};
+    if (accessToken) {
+      streamHeaders['Authorization'] = `Bearer ${accessToken}`;
+    }
 
     streamQuery({
       query: queryText.trim(),
       compareMode: false,
       signal: abortController.signal,
       mockFixtureKey: mockKey,
-      researchMode,
-      discipline,
-      customContext: '',
-      customHeaders: {},
+      customHeaders: streamHeaders,
 
       onMockState: (isMock) => {
         if (onMockStateChange) onMockStateChange(isMock);
@@ -611,9 +600,13 @@ export default function ThreadView({
     }
 
     try {
+      const feedbackHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (accessToken) {
+        feedbackHeaders['Authorization'] = `Bearer ${accessToken}`;
+      }
       const res = await fetch(`${API_BASE_URL}/api/feedback`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: feedbackHeaders,
         body: JSON.stringify({
           message_id: msg.id,
           verdict: type,
@@ -654,76 +647,26 @@ export default function ThreadView({
     }
   };
 
-  // Map the pipeline stage to the ARIA Core emblem state for the app shell
-  const coreState: AriaCoreState = isLoading
-    ? activeTelemetry?.stage === 'streaming'
-      ? 'STREAMING'
-      : 'THINKING'
-    : activeTelemetry?.stage === 'complete'
-      ? 'COMPLETE'
-      : 'IDLE';
-
-  const messageCoreState = (msg: Message): AriaCoreState => {
-    if (!msg.isStreaming) return 'COMPLETE';
-    return msg.telemetry?.stage === 'streaming' ? 'STREAMING' : 'THINKING';
-  };
-
   return (
-    <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative h-full overflow-hidden select-text">
+    <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative h-full overflow-hidden select-text bg-[#0A0A0B]">
       {/* Thread Header */}
-      <div className="px-4 md:px-8 py-3.5 border-b border-ink-surface flex justify-between items-center aria-matte z-10 shrink-0">
+      <div className="px-6 py-4 border-b border-[#262629] flex justify-between items-center bg-[#141416] shrink-0">
         <div className="flex items-center gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <AriaCoreIndicator
-                state={coreState}
-                size={16}
-                className="text-tier-okf shrink-0"
-              />
-              <h2 className="text-xs font-mono font-bold text-white tracking-wider uppercase">
-                New question
-              </h2>
-              {isMockActive && (
-                <span className="font-mono text-[9px] px-1.5 py-0.2 uppercase tracking-wider bg-tier-live/20 border border-tier-live/50 text-tier-live font-bold flex items-center gap-1">
-                  <AlertTriangle size={10} /> MOCK DATA
-                </span>
-              )}
-            </div>
-          </div>
+          <h2 className="text-[14px] font-semibold text-[#EDEDED]">
+            New Question
+          </h2>
+          {isMockActive && (
+            <span className="text-[12px] font-mono px-2 py-0.5 rounded-[4px] bg-[#0A0A0B] border border-[#34D399] text-[#34D399]">
+              MOCK DATA
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
-          {/* ARIA Telemetry Strip: system id, link state, engine badge, latency */}
-          <div className="aria-telemetry hidden sm:inline-flex" aria-label="System telemetry">
-            <span className="text-[10px] text-[#A1A1AA]">SYS // ARIA-2.0</span>
-            <span
-              className={`flex items-center gap-1 text-[10px] ${
-                isLoading ? 'text-tier-live' : 'text-[#10B981]'
-              }`}
-            >
-              <span className="relative flex h-1.5 w-1.5">
-                <span
-                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${
-                    isLoading ? 'bg-tier-live' : 'bg-[#10B981]'
-                  }`}
-                />
-                <span
-                  className={`relative inline-flex h-1.5 w-1.5 rounded-full ${
-                    isLoading ? 'bg-tier-live' : 'bg-[#10B981]'
-                  }`}
-                />
-              </span>
-              {isLoading ? 'SYNCING' : 'ONLINE'}
-            </span>
-            <span className="text-[10px] text-[#52525B] tabular-nums">
-              <LiveElapsed running={isLoading} mode="ms" />
-            </span>
-          </div>
-
           {isLoading && (
             <button
               onClick={handleStopGeneration}
-              className="press text-xs font-mono text-warning hover:bg-warning/10 border border-warning/40 px-2 py-1 rounded-none flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1 bg-transparent hover:bg-[#1B1B1E] border border-[#EF4444]/40 text-[#EF4444] rounded-[6px] text-[12px] font-mono flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Stop streaming"
             >
               <StopCircle size={14} /> Stop
@@ -732,484 +675,165 @@ export default function ThreadView({
 
           <button
             onClick={onToggleFocus}
-            className="press text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-xs font-mono px-2 py-1 rounded-none border border-white/[0.07] hover:border-white/[0.18]"
-            title="Toggle Focus Mode"
+            className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#1B1B1E] transition-colors cursor-pointer"
+            title={isFocusMode ? "Exit Focus" : "Focus"}
           >
-            {isFocusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            <span className="hidden md:inline">{isFocusMode ? 'Exit Focus' : 'Focus'}</span>
+            {isFocusMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         </div>
-      </div>
-
-      {/* Mobile / Tablet Horizontal Pipeline Status Pill Bar (< 1280px) */}
-      <div className="xl:hidden px-4 py-2 bg-[#09090B]/95 border-b border-white/[0.07] flex items-center justify-between overflow-x-auto hud-scroll shrink-0">
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {(['routing', 'retrieving', 'streaming', 'auditing'] as const).map((st, idx) => {
-            const labels = ['PLAN', 'RETRIEVE', 'WRITE', 'CHECK'];
-            const stagesOrder = ['routing', 'retrieving', 'streaming', 'auditing', 'complete'];
-            const currentIdx = stagesOrder.indexOf(activeTelemetry?.stage || '');
-            const isActive = activeTelemetry?.stage === st;
-            const isDone = currentIdx > idx;
-
-            return (
-              <div
-                key={st}
-                className={`flex items-center gap-1.5 px-2 py-1 text-[10px] font-mono border transition-colors ${
-                  isActive
-                    ? 'bg-[#111115] border-white/[0.16] text-[#F4F4F6] font-bold'
-                    : isDone
-                    ? 'bg-[#0C0C0F] border-white/[0.07] text-[#A1A1AA]'
-                    : 'bg-[#09090B] border-white/[0.05] text-[#52525B]'
-                }`}
-              >
-                <span
-                  className={`w-[7px] h-[7px] rounded-full shrink-0 ${
-                    isActive
-                      ? 'bg-tier-okf aria-dot-pulse'
-                      : isDone
-                      ? 'bg-[#60A5FA]'
-                      : 'border border-[#3F3F46] bg-transparent'
-                  }`}
-                />
-                <span>{labels[idx]}</span>
-              </div>
-            );
-          })}
-        </div>
-        {isLoading && (
-          <LiveElapsed
-            running={isLoading}
-            mode="s"
-            className="pl-2 shrink-0 font-mono text-[9px] text-[#A1A1AA]"
-          />
-        )}
       </div>
 
       {/* Messages Area */}
       <div
         ref={messagesScrollRef}
-        className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 select-text aria-scroll"
+        className="flex-1 overflow-y-auto p-6 space-y-6 select-text hud-scroll"
       >
         {messages.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center py-8">
-            <div className="w-full max-w-2xl bg-ink-surface/20 rounded-none p-6 border border-ink-surface relative overflow-hidden aria-reticle">
-              <div
-                className="absolute inset-0 opacity-[0.03]"
-                style={{
-                  backgroundImage: 'repeating-linear-gradient(transparent, transparent 27px, #fff 28px)',
-                  backgroundPosition: '0 -1px',
-                }}
-              />
-              <div className="relative z-10 space-y-4">
-                <div className="font-mono text-xs uppercase tracking-widest text-tier-okf flex items-center gap-2">
-                  <AriaCoreIndicator state="IDLE" size={14} className="text-tier-okf" />
-                  <Sparkles size={14} /> Try one of these, or type your own.
-                </div>
-
-                {/* Example buttons: in production replay real recorded okf, rag, live answers with zero tokens; test fixtures stay dev-only */}
-                <div className="grid grid-cols-1 gap-2 pt-2">
-                  {(canReplayFixtures
-                    ? EXAMPLE_QUERIES
-                    : EXAMPLE_QUERIES.filter((q) => q.id === 'okf' || q.id === 'rag' || q.id === 'live')
-                  ).map((fixture) => (
-                    <button
-                      key={fixture.id}
-                      onClick={() => executeQuery(fixture.query, fixture.id, fixture.recordedDate)}
-                      className="press aria-hover-glow text-left p-3 bg-[#101217] hover:bg-[#161922] border border-white/[0.07] hover:border-white/[0.18] transition-colors text-xs group"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] text-tier-okf font-mono font-medium">
-                          {fixture.recordedDate
-                            ? `Recorded answer, ${fixture.recordedDate}, no live query`
-                            : fixture.label}
-                        </span>
-                        {canReplayFixtures && (fixture.id === 'retraction' || fixture.id === 'conflict') && (
-                          <span className="text-[9px] text-tier-live/80 uppercase border border-tier-live/30 px-1 py-0.2 font-mono">
-                            test fixture
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-gray-300 group-hover:text-white font-sans text-xs leading-relaxed block">
-                        "{fixture.query}"
-                      </span>
-                    </button>
-                  ))}
-                </div>
+          <div className="flex-1 flex flex-col items-center justify-center py-12">
+            <div className="w-full max-w-xl bg-[#141416] border border-[#262629] rounded-[8px] p-8 space-y-4">
+              <h3 className="text-[24px] font-semibold text-[#EDEDED]">
+                Ask a Research Question
+              </h3>
+              <p className="text-[14px] text-[#8B8B8E] leading-relaxed">
+                Multi-tier synthesis across structured notes, vector search, and academic papers with primary source citations.
+              </p>
+              <div className="space-y-2 pt-2">
+                {EXAMPLE_QUERIES.slice(0, 3).map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => executeQuery(item.query, item.id, item.recordedDate)}
+                    className="w-full text-left p-3 bg-[#0A0A0B] border border-[#262629] hover:border-[#38383C] rounded-[6px] text-[14px] text-[#8B8B8E] hover:text-[#EDEDED] transition-colors"
+                  >
+                    "{item.query}"
+                  </button>
+                ))}
               </div>
             </div>
           </div>
         )}
 
         {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`aria-cascade flex ${msg.role === 'user' ? 'justify-end' : 'flex-col gap-2 max-w-[95%]'}`}
-          >
+          <div key={msg.id} className="space-y-4">
             {msg.role === 'user' ? (
-              <div className="bg-ink-surface px-4 py-3 rounded-none border border-ink-surface/80 max-w-[85%] text-xs font-sans text-gray-100">
-                {msg.content}
+              <div className="flex justify-end">
+                <div className="p-4 bg-[#141416] border border-[#262629] rounded-[8px] text-[14px] text-[#EDEDED] max-w-2xl leading-relaxed">
+                  {msg.content}
+                </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                {/* Top Verification & Action Bar (Google AI Overview / Deep Research Style) */}
-                <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-ink-muted pb-2 border-b border-ink-surface/50">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    {/* Fired Tiers with glyphs */}
-                    <div className="flex items-center gap-1.5 border border-ink-surface px-2 py-0.5 rounded-none bg-ink-base">
-                      {(['OKF', 'RAG', 'LIVE'] as const).map((t) => {
-                        const glyph = getTierGlyph(t);
-                        const isFired = msg.telemetry?.retrieval?.tiers?.includes(t) || msg.citations?.some((c) => c.tier === t);
-                        return (
-                          <span
-                            key={t}
-                            className={`flex items-center gap-1 text-[10px] ${
-                              isFired ? 'opacity-100 font-bold' : 'opacity-30'
-                            }`}
-                          >
-                            <span className={getTierColorClass(t).split(' ')[0]}>{glyph}</span>
-                            <span>{t}</span>
-                          </span>
-                        );
-                      })}
-                    </div>
-
-                    {/* Verification Status Badge */}
-                    {msg.telemetry?.audit?.confidence !== undefined && (
-                      <div className="flex items-center gap-1 text-tier-okf font-mono text-[10px] bg-tier-okf/10 border border-tier-okf/40 px-2 py-0.5">
-                        <CheckCircle2 size={11} className="text-tier-okf" />
-                        <span>{Math.round((msg.telemetry.audit.confidence ?? 0.85) * 100)}% Source-Verified</span>
-                      </div>
-                    )}
-
-                    {/* Verified Claims Count */}
-                    {msg.telemetry?.audit?.claims && msg.telemetry.audit.claims.length > 0 && (
-                      <span className="text-[10px] text-gray-300 font-mono bg-ink-surface/50 border border-ink-surface px-1.5 py-0.5">
-                        {msg.telemetry.audit.claims.filter((c) => typeof c !== 'string' && c.status === 'supported').length} / {msg.telemetry.audit.claims.length} Claims Verified
-                      </span>
-                    )}
-
-                    {/* Confidence Dial */}
-                    <div className="flex items-center gap-1.5">
-                      <ConfidenceDial
-                        confidence={msg.telemetry?.audit?.confidence ?? 0.85}
-                        tierAgreement={msg.telemetry?.audit?.tier_agreement}
-                        size="sm"
-                      />
-                    </div>
-
-                    {/* Status Indicator with live elapsed-millisecond telemetry */}
-                    {msg.isStreaming && (
-                      <div className="flex items-center gap-1.5 text-tier-okf text-[10px]">
-                        <AriaCoreIndicator
-                          state={messageCoreState(msg)}
-                          size={14}
-                          className="text-tier-okf"
-                        />
+              <div className="p-6 bg-[#141416] border border-[#262629] rounded-[8px] space-y-4 w-full">
+                {/* Header Verification Strip */}
+                <div className="flex items-center justify-between pb-3 border-b border-[#262629] text-[12px] font-mono text-[#8B8B8E]">
+                  <div className="flex items-center gap-3">
+                    {msg.isStreaming ? (
+                      <div className="flex items-center gap-2 text-[#5E8BFF]">
+                        <Loader2 size={14} className="animate-spin" />
                         <span>{getStageLabel(msg.telemetry?.stage)}</span>
-                        <LiveElapsed
-                          running={true}
-                          mode="s"
-                          className="font-mono text-ink-muted"
-                        />
                       </div>
-                    )}
-
-                    {/* Mock badge on message if mock active */}
-                    {isMockActive && (
-                      <span className="font-mono text-[9px] px-1 py-0.2 bg-tier-live/15 border border-tier-live/40 text-tier-live font-semibold">
-                        MOCK
-                      </span>
+                    ) : (
+                      <div className="flex items-center gap-2 text-[#34D399]">
+                        <CheckCircle2 size={14} />
+                        <span>Verified ({msg.citations?.length || 0} Sources)</span>
+                      </div>
                     )}
                   </div>
 
-                  {/* Top Action Buttons: Citation Graph & PDF Report */}
                   {!msg.isStreaming && msg.content && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setIsCitationGraphOpen(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
-                        className={`px-2 py-1 text-[11px] font-mono flex items-center gap-1.5 border transition-all ${
-                          isCitationGraphOpen[msg.id]
-                            ? 'bg-tier-okf/15 border-tier-okf/60 text-tier-okf'
-                            : 'bg-ink-base border-ink-surface hover:border-gray-500 text-gray-300 hover:text-white'
-                        }`}
-                        title="Toggle Interactive Citation Graph"
-                      >
-                        <Network size={12} className={isCitationGraphOpen[msg.id] ? 'text-tier-okf animate-pulse' : ''} />
-                        <span>Citation Graph</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleDownloadPdf(msg)}
-                        disabled={isExportingPdf[msg.id]}
-                        className="px-2.5 py-1 text-[11px] font-mono flex items-center gap-1.5 bg-tier-okf/15 hover:bg-tier-okf/25 border border-tier-okf/40 hover:border-tier-okf text-tier-okf transition-all disabled:opacity-50"
-                        title="Download IEEE / arXiv Two-Column Academic Research Paper (PDF)"
-                      >
-                        {isExportingPdf[msg.id] ? (
-                          <>
-                            <Loader2 size={12} className="animate-spin" />
-                            <span>Exporting Paper...</span>
-                          </>
-                        ) : (
-                          <>
-                            <FileText size={12} />
-                            <span>Download Research Paper (PDF)</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleDownloadPdf(msg)}
+                      disabled={isExportingPdf[msg.id]}
+                      className="px-3 py-1 bg-transparent hover:bg-[#0A0A0B] border border-[#262629] hover:border-[#38383C] text-[#EDEDED] text-[12px] font-mono rounded-[6px] flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                    >
+                      {isExportingPdf[msg.id] ? (
+                        <>
+                          <Loader2 size={12} className="animate-spin" />
+                          <span>Exporting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileText size={12} />
+                          <span>PDF Report</span>
+                        </>
+                      )}
+                    </button>
                   )}
                 </div>
 
-                {/* Inline Interactive Citation Graph Drawer */}
-                {isCitationGraphOpen[msg.id] && (
-                  <CitationGraph
-                    query={msg.query || ''}
-                    citations={msg.citations}
-                    claims={msg.telemetry?.audit?.claims?.filter((c): c is AuditClaim => typeof c === 'object')}
-                    onCitationClick={onCitationClick}
-                    onClose={() => setIsCitationGraphOpen(prev => ({ ...prev, [msg.id]: false }))}
-                  />
-                )}
-
-                {/* Key Takeaways & Visual Concept Card (Top Overview Split Panel) */}
-                {!msg.isStreaming && msg.content && (
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 my-3 p-3.5 bg-ink-surface/20 border border-ink-surface/70 rounded-none">
-                    {/* Left: Key Verified Findings */}
-                    <div className="lg:col-span-7 flex flex-col justify-between space-y-2.5">
-                      <div>
-                        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-tier-okf font-semibold mb-2">
-                          <Sparkles size={12} /> Key Research Takeaways
-                        </div>
-                        <div className="space-y-2">
-                          {msg.telemetry?.audit?.claims && msg.telemetry.audit.claims.length > 0 ? (
-                            msg.telemetry.audit.claims
-                              .filter((c): c is AuditClaim => typeof c === 'object' && c !== null && c.status === 'supported')
-                              .slice(0, 3)
-                              .map((c, idx) => {
-                                const cov = Math.round((c.coverage ?? 1.0) * 100);
-                                return (
-                                  <div
-                                    key={idx}
-                                    className="flex items-start gap-2 text-xs font-sans text-gray-200 group cursor-pointer hover:text-white"
-                                    onClick={() => {
-                                      if (c.citation_ids && c.citation_ids.length > 0) {
-                                        const targetCit = msg.citations?.find(cit => cit.id === c.citation_ids![0]);
-                                        if (targetCit) onCitationClick(targetCit);
-                                      }
-                                    }}
-                                  >
-                                    <span className="font-mono text-[9px] px-1 py-0.2 bg-tier-okf/15 border border-tier-okf/40 text-tier-okf font-bold shrink-0 mt-0.5">
-                                      {cov}%
-                                    </span>
-                                    <span className="leading-snug">
-                                      {c.text}
-                                      {c.citation_ids && c.citation_ids.length > 0 && (
-                                        <span className="inline-flex gap-1 ml-1 align-middle">
-                                          {c.citation_ids.slice(0, 3).map((cid) => {
-                                            const cit = msg.citations?.find((x) => x.id === cid);
-                                            return (
-                                              <button
-                                                key={cid}
-                                                type="button"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  if (cit) onCitationClick(cit);
-                                                }}
-                                                className={`font-mono text-[9px] px-1 py-0.2 border rounded-none font-bold inline-flex items-center gap-0.5 hover:brightness-125 transition-all ${getTierColorClass(cit?.tier)}`}
-                                                title={cit?.title || `Citation #${cid + 1}`}
-                                              >
-                                                <span>{getTierGlyph(cit?.tier)}</span>
-                                                <span>{cid + 1}</span>
-                                              </button>
-                                            );
-                                          })}
-                                        </span>
-                                      )}
-                                    </span>
-                                  </div>
-                                );
-                              })
-                          ) : (
-                            <div className="text-xs font-sans text-gray-400 italic">
-                              Verified key findings extracted from authoritative academic literature and structured graph notes.
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="pt-2 text-[10px] font-mono text-ink-muted flex items-center gap-2">
-                        <span>Verified against {msg.citations?.length || 1} cited primary sources</span>
-                      </div>
-                    </div>
-
-                    {/* Right: Visual Concept / Diagram Card */}
-                    <div className="lg:col-span-5 flex items-center">
-                      <VisualConceptCard query={msg.query || ''} citations={msg.citations} />
-                    </div>
-                  </div>
-                )}
-
                 {/* Error Banner */}
                 {msg.error && (
-                  <div className="p-3 bg-warning/10 border border-warning/40 text-warning text-xs font-mono rounded-none">
+                  <div className="p-3 bg-[#0A0A0B] border border-[#EF4444]/40 text-[#EF4444] text-[12px] font-mono rounded-[6px]">
                     Error: {msg.error}
                   </div>
                 )}
 
-                {/* Markdown Rendered Content with split-buffered citations, GFM tables & claim audit pass */}
-                <div className={`thread-content font-sans text-gray-200 max-w-[68ch] ${densityClass} leading-[1.65]`}>
-                  {msg.recordedDate && (
-                    <div className="mb-3 px-2.5 py-1 text-[11px] font-mono bg-tier-okf/10 border border-tier-okf/40 text-tier-okf flex items-center gap-1.5">
-                      <span>Recorded answer, {msg.recordedDate}, no live query</span>
-                    </div>
-                  )}
+                {/* Markdown Content */}
+                <div className="text-[14px] text-[#EDEDED] leading-relaxed">
                   {msg.content ? (
-                    <>
-                      <MarkdownRenderer
-                        content={msg.content}
-                        citations={msg.citations}
-                        onCitationClick={onCitationClick}
-                        isStreaming={msg.isStreaming}
-                        auditClaims={msg.telemetry?.audit?.claims?.filter((c): c is AuditClaim => typeof c === 'object' && c !== null)}
-                        answerFinal={msg.telemetry?.audit?.answer_final}
-                      />
-                      {/* Crisp blinking rectangle cursor while generating */}
-                      {msg.isStreaming && (
-                        <span className="aria-cursor animate-pulse" aria-hidden="true" />
-                      )}
-                    </>
-                  ) : msg.queuePosition ? (
-                    <div className="font-mono text-xs text-tier-live flex items-center gap-2 py-2">
-                      <Loader2 size={14} className="animate-spin text-tier-live" />
-                      <span>{msg.queuePosition} ahead of you, your question starts soon</span>
-                    </div>
+                    <MarkdownRenderer
+                      content={msg.content}
+                      citations={msg.citations}
+                      onCitationClick={onCitationClick}
+                      isStreaming={msg.isStreaming}
+                      auditClaims={msg.telemetry?.audit?.claims?.filter((c): c is AuditClaim => typeof c === 'object' && c !== null)}
+                      answerFinal={msg.telemetry?.audit?.answer_final}
+                    />
                   ) : msg.isStreaming ? (
-                    <div className="font-mono text-xs text-ink-muted flex items-center gap-2 py-2">
-                      <Loader2 size={14} className="animate-spin text-white" />
-                      <span>Retrieving knowledge and synthesizing response...</span>
+                    <div className="flex items-center gap-2 py-4 text-[#8B8B8E] text-[14px]">
+                      <Loader2 size={16} className="animate-spin text-[#5E8BFF]" />
+                      <span>Synthesizing response from primary sources...</span>
                     </div>
                   ) : null}
-
-                  {/* Removed Sentences Notice */}
-                  {!msg.isStreaming && msg.telemetry?.audit?.removed_claims && msg.telemetry.audit.removed_claims.length > 0 && (
-                    <details className="mt-3 text-xs bg-ink-surface/40 border border-ink-surface rounded px-3 py-2 text-ink-muted">
-                      <summary className="cursor-pointer font-mono text-[11px] text-warning/90 hover:text-warning select-none">
-                        {msg.telemetry.audit.removed_claims.length} sentence{msg.telemetry.audit.removed_claims.length > 1 ? 's' : ''} removed because the sources did not support {msg.telemetry.audit.removed_claims.length > 1 ? 'them' : 'it'}
-                      </summary>
-                      <div className="mt-2 space-y-1.5 pl-2 border-l border-warning/30">
-                        {msg.telemetry.audit.removed_claims.map((rc, idx) => (
-                          <div key={idx} className="font-sans text-[12px] text-gray-300">
-                            <span className="line-through text-gray-400">"{rc.text}"</span>
-                            {rc.reason && <span className="block font-mono text-[10px] text-warning/80 mt-0.5">Reason: {rc.reason}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  )}
-
-                  {/* Action Bar */}
-                  {!msg.isStreaming && msg.content && (
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-ink-surface/50">
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => handleCopy(msg.id, msg.content)}
-                          className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase"
-                          title="Copy Markdown text"
-                        >
-                          {copiedMsgId === msg.id ? (
-                            <>
-                              <Check size={12} className="text-tier-okf" />
-                              <span className="text-tier-okf">Copied</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy size={12} />
-                              <span>Copy</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          onClick={() => handleDownloadBibtex(msg.citations)}
-                          disabled={!msg.citations || msg.citations.length === 0}
-                          className="text-ink-muted hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase disabled:opacity-30"
-                          title="Download .bib bibliography"
-                        >
-                          <Download size={12} /> .BIB
-                        </button>
-
-                        {/* Bookmark to Collections (local) */}
-                        {msg.query && (
-                          <button
-                            onClick={() => {
-                              const added = addToCollection({
-                                query: msg.query!,
-                                content: msg.content,
-                                confidence: msg.telemetry?.audit?.confidence,
-                              });
-                              setBookmarkedQueries((prev) => ({ ...prev, [msg.id]: added }));
-                            }}
-                            disabled={bookmarkedQueries[msg.id] || isInCollection(msg.query)}
-                            className={`transition-colors flex items-center gap-1.5 text-[10px] font-mono uppercase disabled:opacity-60 ${
-                              bookmarkedQueries[msg.id] || isInCollection(msg.query)
-                                ? 'text-tier-okf'
-                                : 'text-ink-muted hover:text-white'
-                            }`}
-                            title={
-                              bookmarkedQueries[msg.id] || isInCollection(msg.query)
-                                ? 'Already saved to Collections'
-                                : 'Bookmark this report to Collections'
-                            }
-                          >
-                            {bookmarkedQueries[msg.id] || isInCollection(msg.query) ? (
-                              <>
-                                <BookmarkCheck size={12} /> <span>Saved</span>
-                              </>
-                            ) : (
-                              <>
-                                <Bookmark size={12} /> <span>Save</span>
-                              </>
-                            )}
-                          </button>
-                        )}
-
-                        {/* Hide thumbs when backend is unreachable or in mock mode; show saved tick only on success */}
-                        {isBackendReachable && !isMockActive && (
-                          <div className="flex items-center gap-2.5">
-                            {feedbackSent[msg.id] ? (
-                              <span className="text-[10px] font-mono text-tier-okf flex items-center gap-1 select-none">
-                                <Check size={12} /> Saved
-                              </span>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => handleFeedback(msg, 'positive')}
-                                  className="text-ink-muted hover:text-white transition-colors p-1"
-                                  title="Accurate synthesis"
-                                >
-                                  <ThumbsUp size={13} />
-                                </button>
-                                <button
-                                  onClick={() => handleFeedback(msg, 'negative')}
-                                  className="text-ink-muted hover:text-warning transition-colors p-1"
-                                  title="Inaccurate / Hallucination"
-                                >
-                                  <ThumbsDown size={13} />
-                                </button>
-                                <button
-                                  onClick={() => handleFeedback(msg, 'flagged')}
-                                  className="text-ink-muted hover:text-warning transition-colors flex items-center gap-1 text-[10px] font-mono px-1 py-0.5"
-                                  title="Flag Tier Conflict"
-                                >
-                                  <AlertTriangle size={11} /> Flag Conflict
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
+
+                {/* Action Bar */}
+                {!msg.isStreaming && msg.content && (
+                  <div className="flex items-center justify-between pt-3 border-t border-[#262629]">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => handleCopy(msg.id, msg.content)}
+                        className="flex items-center gap-1.5 text-[12px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] transition-colors"
+                      >
+                        {copiedMsgId === msg.id ? <Check size={14} className="text-[#34D399]" /> : <Copy size={14} />}
+                        <span>{copiedMsgId === msg.id ? 'Copied' : 'Copy'}</span>
+                      </button>
+                      <button
+                        onClick={() => handleDownloadBibtex(msg.citations)}
+                        disabled={!msg.citations || msg.citations.length === 0}
+                        className="flex items-center gap-1.5 text-[12px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] transition-colors disabled:opacity-40"
+                      >
+                        <Download size={14} />
+                        <span>.BIB</span>
+                      </button>
+                    </div>
+
+                    {isBackendReachable && !isMockActive && (
+                      <div className="flex items-center gap-2">
+                        {feedbackSent[msg.id] ? (
+                          <span className="text-[12px] font-mono text-[#34D399] flex items-center gap-1">
+                            <Check size={14} /> Saved
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleFeedback(msg, 'positive')}
+                              className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] transition-colors"
+                              title="Helpful"
+                            >
+                              <ThumbsUp size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleFeedback(msg, 'negative')}
+                              className="p-1 text-[#8B8B8E] hover:text-[#EF4444] transition-colors"
+                              title="Unhelpful"
+                            >
+                              <ThumbsDown size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1217,57 +841,38 @@ export default function ThreadView({
         <div ref={messagesEndRef} />
       </div>
 
-        {/* Clean Prompt Input Box */}
-        <div className="p-3 md:p-4 bg-[#09090B]/95 border-t border-white/[0.07] shrink-0 z-20 safe-pb">
-          <form onSubmit={handleSubmit} className="relative">
-            <div
-              className="relative bg-[#111115] border transition-colors"
-              style={{ borderColor: 'rgba(255,255,255,0.09)', borderRadius: '10px' }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.24)';
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.09)';
-              }}
-            >
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  // Smooth auto-resize: grow with content up to max-height
-                  const el = e.currentTarget;
-                  el.style.height = 'auto';
-                  el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit(e);
-                  }
-                }}
-                placeholder="Ask any research question (e.g. quantum biology, CRISPR off-target effects)..."
-                rows={2}
-                className="w-full bg-transparent px-3.5 py-3 pr-12 text-sm md:text-base font-sans text-[#F4F4F6] placeholder-[#52525B] focus:outline-none resize-none max-h-36 overflow-y-auto leading-relaxed"
-                style={{ fontSize: '16px' }}
-              />
-              <button
-                type="submit"
-                disabled={!input.trim() || isLoading}
-                className="press absolute right-2.5 top-2.5 p-2 text-[#A1A1AA] hover:text-[#F4F4F6] hover:bg-[#16161C] disabled:opacity-30 disabled:hover:bg-transparent transition-all touch-spring"
-                aria-label="Send query"
-              >
-                {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-              </button>
-            </div>
-          </form>
-
-          <div className="mt-2 flex items-center justify-end text-[10px] font-mono text-[#52525B] select-none">
-            <span className="hidden sm:inline">
-              Press Enter ↵ to search · Shift + Enter for newline
-            </span>
-          </div>
-        </div>
+      {/* Prompt Input Box */}
+      <div className="p-4 bg-[#141416] border-t border-[#262629] shrink-0">
+        <form onSubmit={handleSubmit} className="flex gap-2 items-center max-w-4xl mx-auto">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value);
+              const el = e.currentTarget;
+              el.style.height = 'auto';
+              el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit(e);
+              }
+            }}
+            placeholder="Ask a research question..."
+            rows={1}
+            className="flex-1 bg-[#0A0A0B] border border-[#262629] focus:border-[#5E8BFF] focus:outline-none rounded-[6px] px-4 py-2.5 text-[14px] text-[#EDEDED] placeholder-[#8B8B8E] resize-none"
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || isLoading}
+            className="btn-primary shrink-0"
+            aria-label="Send query"
+          >
+            {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+          </button>
+        </form>
       </div>
-    );
-  }
+    </div>
+  );
+}

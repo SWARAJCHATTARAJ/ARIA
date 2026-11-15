@@ -3,42 +3,46 @@
 @tailwind utilities;
 
 /* ======================================================================
-   ARIA OBSIDIAN DESIGN SYSTEM — single locked palette
-   Canvas #09090B · Sidebar #0C0C0F · Card #111115 · Hover #16161C
-   Border rgba(255,255,255,0.07) · Hover border rgba(255,255,255,0.16)
-   Text #F4F4F6 / #A1A1AA / #52525B
-   Tier accents: OKF #60A5FA · RAG #A78BFA · LIVE #F59E0B · Online #10B981
+   ARIA PRODUCT DESIGN SYSTEM (Linear / Vercel / Stripe Standard)
+   Canvas: #0A0A0B
+   Panels/Cards: #141416
+   Borders: #262629
+   Text Primary: #EDEDED (Inter 400/600)
+   Text Secondary: #8B8B8E
+   Tiers (labels only): OKF #5E8BFF · RAG #A78BFA · LIVE #34D399
+   Accent: #5E8BFF
+   Type scale: 12px, 14px, 16px, 24px, 40px (Nothing between)
+   Base unit: 4px
    ====================================================================== */
 :root {
   color-scheme: dark;
 
-  --aria-canvas: #09090b;
-  --aria-surface: #0c0c0f;
-  --aria-card: #111115;
-  --aria-elevated: #16161c;
-  --aria-border: rgba(255, 255, 255, 0.07);
-  --aria-border-hover: rgba(255, 255, 255, 0.16);
-  --aria-text-primary: #f4f4f6;
-  --aria-text-secondary: #a1a1aa;
-  --aria-text-muted: #52525b;
+  --aria-canvas: #0a0a0b;
+  --aria-surface: #141416;
+  --aria-card: #141416;
+  --aria-elevated: #141416;
+  --aria-border: #262629;
+  --aria-border-hover: #38383c;
+  --aria-text-primary: #ededed;
+  --aria-text-secondary: #8b8b8e;
+  --aria-accent: #5e8bff;
+  --aria-accent-hover: #4e7bf0;
 
-  --aria-tier-okf: #60a5fa;
+  --aria-tier-okf: #5e8bff;
   --aria-tier-rag: #a78bfa;
-  --aria-tier-live: #f59e0b;
-  --aria-online: #10b981;
+  --aria-tier-live: #34d399;
 
-  --aria-radius: 10px;
-  --aria-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
   --motion-scale: 1;
-  --obsidian-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* Hard reset */
+/* Reset */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -50,505 +54,125 @@ body,
 #root {
   width: 100%;
   height: 100%;
-  background-color: var(--aria-canvas);
-  color: var(--aria-text-primary);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #0a0a0b;
+  color: #ededed;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-html,
-body {
-  min-height: 100dvh;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-button:active:not(:disabled) {
-  transform: scale(0.97);
-  transition: transform 90ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-/* Safe-area inset helpers */
+/* Safe-area insets */
 .safe-pt { padding-top: max(var(--sat), 8px); }
 .safe-pb { padding-bottom: max(var(--sab), 8px); }
 
 /* ======================================================================
-   REQUIRED GPU UTILITIES (transform / opacity only, 60fps)
+   PERMITTED ANIMATIONS ONLY
+   1) Fade + slide-up on new content (200ms ease-out)
+   2) Pipeline stage indicators lighting up in real time
+   3) Streaming text appearing token-by-token
+   4) Simple spinner only while waiting
+   NO idle/looping animations anywhere on any screen.
    ====================================================================== */
-@keyframes viewEnter {
+@keyframes fadeSlideUp {
   from {
     opacity: 0;
-    transform: translate3d(0, 6px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-.animate-view-enter {
-  animation: viewEnter 180ms var(--aria-ease) both;
-  will-change: transform, opacity;
-}
-
-.ui-card {
-  background: #111115;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 10px;
-  transition:
-    transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 150ms ease,
-    background-color 150ms ease;
-}
-
-.ui-card-interactive:hover {
-  background: #16161c;
-  border-color: rgba(255, 255, 255, 0.16);
-  transform: translate3d(0, -1px, 0);
-}
-
-.ui-btn {
-  transition:
-    transform 120ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 150ms ease,
-    border-color 150ms ease,
-    color 150ms ease;
-}
-
-.ui-btn:active {
-  transform: scale(0.98);
-}
-
-/* ======================================================================
-   KEPT UTILITIES (used by surviving components)
-   ====================================================================== */
-
-/* Precision HUD corner reticle — neutral white, no accent glow */
-.aria-reticle {
-  position: relative;
-}
-.aria-reticle::before {
-  content: '';
-  position: absolute;
-  top: -1px;
-  left: -1px;
-  width: 6px;
-  height: 6px;
-  border-top: 2px solid var(--aria-text-primary);
-  border-left: 2px solid var(--aria-text-primary);
-  opacity: 0.35;
-  transition: opacity 200ms ease;
-  pointer-events: none;
-}
-.aria-reticle::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 6px;
-  height: 6px;
-  border-bottom: 2px solid var(--aria-text-primary);
-  border-right: 2px solid var(--aria-text-primary);
-  opacity: 0.35;
-  transition: opacity 200ms ease;
-  pointer-events: none;
-}
-.aria-reticle:hover::before,
-.aria-reticle:focus-within::before,
-.aria-reticle:hover::after,
-.aria-reticle:focus-within::after {
-  opacity: 0.9;
-}
-
-/* Snappy 180ms entrance cascade */
-@keyframes ariaCascade {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 6px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-.aria-cascade {
-  animation: ariaCascade calc(0.18s * var(--motion-scale, 1)) var(--aria-ease) both;
-}
-
-/* Staggered entrance for audit/citation lists (paired with inline delay) */
-@keyframes staggerIn {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 6px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-.animate-stagger {
-  animation: staggerIn 240ms var(--aria-ease) both;
-}
-
-/* Rise / view entrances kept for SourcePanel & App shell */
-@keyframes riseIn {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
-.animate-rise-in {
-  animation: riseIn calc(0.55s * var(--motion-scale, 1)) var(--aria-ease) both;
+
+.animate-view-enter,
+.animate-fade-slide {
+  animation: fadeSlideUp calc(200ms * var(--motion-scale, 1)) ease-out both;
 }
 
-@keyframes viewIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+
+/* Primary Button: Solid fill #5E8BFF, 6px radius */
+.btn-primary {
+  background: #5e8bff;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 400;
+  border-radius: 6px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
 }
-.animate-view-in {
-  animation: viewIn calc(0.35s * var(--motion-scale, 1)) var(--aria-ease) both;
+.btn-primary:hover:not(:disabled) {
+  background: #4e7bf0;
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-/* Workspace fade-in (modal backdrops) */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+/* Secondary Button: Outline #262629, 6px radius */
+.btn-secondary {
+  background: transparent;
+  color: #ededed;
+  font-size: 14px;
+  font-weight: 400;
+  border-radius: 6px;
+  padding: 8px 16px;
+  border: 1px solid #262629;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
-.animate-fade-in {
-  animation: fadeIn calc(0.25s * var(--motion-scale, 1)) var(--aria-ease) both;
+.btn-secondary:hover:not(:disabled) {
+  background: #141416;
+  border-color: #38383c;
+}
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-/* Obsidian matte translucent surface (no backdrop-filter) */
-.aria-matte {
-  background: rgba(12, 12, 15, 0.96);
+/* Clean Scrollbars */
+.hud-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #262629 #0a0a0b;
+}
+.hud-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.hud-scroll::-webkit-scrollbar-track {
+  background: #0a0a0b;
+}
+.hud-scroll::-webkit-scrollbar-thumb {
+  background: #262629;
+  border-radius: 3px;
+}
+.hud-scroll::-webkit-scrollbar-thumb:hover {
+  background: #38383c;
 }
 
-/* GPU slide-over drawer (< 768px): transform-only */
+/* Monospace technical data text */
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Mobile drawer GPU transition */
 .aria-drawer {
   transform: translate3d(-100%, 0, 0);
-  transition: transform 260ms var(--aria-ease);
-  will-change: transform;
+  transition: transform 200ms ease-out;
 }
 .aria-drawer-open {
   transform: translate3d(0, 0, 0);
-}
-
-/* Scroll containment for long message lists */
-.aria-scroll {
-  contain: content;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Monospace telemetry strip */
-.aria-telemetry {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--obsidian-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: var(--aria-text-secondary);
-  border: 1px solid var(--aria-border);
-  background: var(--aria-card);
-  padding: 4px 10px;
-  white-space: nowrap;
-}
-
-/* Sleek dark scrollbars */
-.hud-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: #27272a var(--aria-canvas);
-}
-.hud-scroll::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-.hud-scroll::-webkit-scrollbar-track {
-  background: var(--aria-canvas);
-}
-.hud-scroll::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 2px;
-}
-.hud-scroll::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
-}
-
-/* Button press feedback (transform-only) */
-.press {
-  transition:
-    transform 150ms var(--aria-ease),
-    border-color 150ms ease,
-    background-color 150ms ease,
-    color 150ms ease;
-  will-change: transform;
-}
-.press:active {
-  transform: scale(0.95);
-}
-
-/* Cards & inputs: brighten micro-borders on hover (no glow) */
-.aria-hover-glow {
-  transition: border-color 150ms ease, background-color 150ms ease;
-}
-.aria-hover-glow:hover {
-  border-color: var(--aria-border-hover);
-}
-
-/* Neutral hover-border utility (replaces the old glowing telemetry ring) */
-.telemetry-glow {
-  transition: border-color 150ms ease;
-}
-.telemetry-glow:hover {
-  border-color: var(--aria-border-hover);
-}
-
-/* Tooltip micro-fade for icon-only buttons */
-.tip {
-  position: relative;
-}
-.tip::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: #16161c;
-  color: #f4f4f6;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  font-family: var(--obsidian-mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  padding: 4px 8px;
-  white-space: nowrap;
-  border-radius: 6px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 120ms ease;
-  z-index: 100;
-}
-.tip:hover::after,
-.tip:focus-visible::after {
-  opacity: 1;
-}
-
-/* Crisp rectangular streaming cursor */
-.aria-cursor {
-  display: inline-block;
-  width: 7px;
-  height: 1.05em;
-  background: #f4f4f6;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-}
-
-/* Caret blink (markdown streaming) */
-@keyframes caretBlink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-.animate-caret {
-  display: inline-block;
-  width: 7px;
-  height: 15px;
-  background-color: var(--aria-text-primary);
-  vertical-align: middle;
-  margin-left: 4px;
-  animation: caretBlink calc(0.8s * var(--motion-scale, 1)) step-start infinite;
-}
-
-/* Retraction banner one-shot border pulse (transform/opacity-free, brief) */
-@keyframes borderPulseOnce {
-  0% {
-    border-color: rgba(201, 90, 90, 0.3);
-  }
-  50% {
-    border-color: rgba(201, 90, 90, 0.9);
-  }
-  100% {
-    border-color: rgba(201, 90, 90, 0.4);
-  }
-}
-.animate-border-pulse-once {
-  animation: borderPulseOnce calc(0.6s * var(--motion-scale, 1)) var(--aria-ease) 1 forwards;
-}
-
-/* Evidence flash highlight on citation selection */
-@keyframes evidenceFlash {
-  0% {
-    background-color: rgba(255, 255, 255, 0.14);
-  }
-  100% {
-    background-color: transparent;
-  }
-}
-.flash-evidence {
-  animation: evidenceFlash calc(0.8s * var(--motion-scale, 1)) var(--aria-ease) 1 forwards;
-}
-
-/* Audit stamp (verbatim-supported sentence marker) */
-.audit-stamp-supported {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 1px 4px;
-  font-family: var(--obsidian-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--aria-text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  transform: rotate(-2deg) translate(1px, -1px);
-  margin-left: 6px;
-  user-select: none;
-  background-color: rgba(255, 255, 255, 0.05);
-}
-
-/* Clipped corner utility for source cards */
-.clipped-source-card {
-  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
-}
-
-/* Audit claim highlight */
-.audit-claim-highlight {
-  background-color: transparent;
-  border-bottom: none;
-  padding: 1px 0;
-  border-radius: 0;
-  transition: background-color 150ms ease, border-bottom-color 150ms ease;
-}
-.audit-claim-highlight:hover {
-  background-color: rgba(255, 255, 255, 0.07);
-  border-bottom: 1.5px solid rgba(255, 255, 255, 0.28);
-}
-
-/* Pipeline status dot: subtle scale pulse while a stage is actively executing */
-@keyframes ariaDotPulse {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.35);
-    opacity: 0.6;
-  }
-}
-.aria-dot-pulse {
-  animation: ariaDotPulse 1.2s ease-in-out infinite;
-  will-change: transform, opacity;
-}
-
-/* ARIA core emblem kinetics (minimal dot, breathing only) */@keyframes ariaCoreBreathe {
-  0%,
-  100% {
-    opacity: 0.55;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.06);
-  }
-}
-.aria-core-idle {
-  animation: ariaCoreBreathe 4s ease-in-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-@keyframes ariaCoreLock {
-  from {
-    transform: scale(0.82);
-    opacity: 0.4;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-.aria-core-complete {
-  animation: ariaCoreLock 0.35s var(--aria-ease) forwards;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-/* Reading density overrides */
-.thread-content.density-compact {
-  font-size: 13px;
-  line-height: 1.55;
-}
-.thread-content.density-standard {
-  font-size: 15px;
-  line-height: 1.65;
-}
-.thread-content.density-comfortable {
-  font-size: 16.5px;
-  line-height: 1.8;
-}
-
-/* Reduced motion: respect OS preference */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  ::before,
-  ::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
-}
-
-/* ======================================================================
-   MOBILE (< 768px) — fill-rate safety: flatten blurs & shadows
-   ====================================================================== */
-@media (max-width: 768px) {
-  .backdrop-blur-md,
-  .backdrop-blur-lg,
-  .backdrop-blur-sm,
-  .backdrop-blur-xs {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    background-color: rgba(12, 12, 15, 0.96) !important;
-  }
-
-  .shadow-2xl,
-  .shadow-xl,
-  .shadow-lg {
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45) !important;
-  }
-
-  input,
-  textarea,
-  select {
-    font-size: 16px !important;
-  }
-
-  .overflow-y-auto,
-  .overflow-x-auto,
-  [class*='overflow-'] {
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-y: contain;
-  }
 }

@@ -6,13 +6,13 @@ import Home from './components/Home';
 import PipelineSpine from './components/PipelineSpine';
 import { HistoryView, CollectionsView, OkfSpaceView, SettingsView } from './components/HubViews';
 import { MobileTopBar, MobileBottomNav } from './components/ui/MobileNavBar';
-import AuthModal from './components/ui/AuthModal';
-import { AuthGate } from './components/ui/AuthGate';
 import CommandPalette from './components/ui/CommandPalette';
 import { Citation, MessageTelemetry } from './types';
-import { AuthProvider, isNativeRuntime } from './context/AuthContext';
+import { AuthProvider, useAuth, isNativeRuntime } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
+import LoginScreen from './components/LoginScreen';
+import { Loader2 } from 'lucide-react';
 
 const MarkdownTestHarness = lazy(() => import('./components/MarkdownTestHarness'));
 
@@ -47,14 +47,33 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <AuthGate>
-        <SettingsProvider>
-          <ConnectivityBanner />
-          <AppShell />
-        </SettingsProvider>
-      </AuthGate>
+      <SettingsProvider>
+        <ConnectivityBanner />
+        <RootGate />
+      </SettingsProvider>
     </AuthProvider>
   );
+}
+
+function RootGate() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#09090B] flex flex-col items-center justify-center gap-3 select-none">
+        <Loader2 size={18} className="animate-spin text-[#52525B]" />
+        <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-[#52525B]">
+          Restoring session
+        </span>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
+
+  return <AppShell />;
 }
 
 function AppShell() {
@@ -112,7 +131,7 @@ function AppShell() {
   return (
     <div
       data-runtime={isNativeRuntime ? 'native' : 'web'}
-      className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-ink-base text-gray-200 font-sans overflow-hidden relative select-none"
+      className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-[#0A0A0B] text-[#EDEDED] font-sans overflow-hidden relative select-none"
     >
       {/* Mobile Top Bar (< 768px) */}
       <MobileTopBar
@@ -122,7 +141,7 @@ function AppShell() {
         onOpenDrawer={() => setIsMobileDrawerOpen(true)}
       />
 
-      {/* Mobile Slide-Over Navigation Drawer (< 768px): transform-only GPU animation */}
+      {/* Mobile Slide-Over Navigation Drawer (< 768px) */}
       <div
         className={`md:hidden fixed inset-0 bg-black/60 z-40 transition-opacity duration-200 ${
           isMobileDrawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -131,7 +150,7 @@ function AppShell() {
         aria-hidden={!isMobileDrawerOpen}
       />
       <aside
-        className={`md:hidden fixed inset-y-0 left-0 z-50 h-full w-64 max-w-[85vw] aria-matte border-r border-ink-surface safe-pt safe-pb overflow-y-auto ${
+        className={`md:hidden fixed inset-y-0 left-0 z-50 h-full w-64 max-w-[85vw] bg-[#141416] border-r border-[#262629] safe-pt safe-pb overflow-y-auto ${
           isMobileDrawerOpen ? 'aria-drawer-open' : 'aria-drawer'
         } ${isMobileDrawerOpen ? '' : 'pointer-events-none'}`}
         aria-hidden={!isMobileDrawerOpen}
@@ -143,8 +162,8 @@ function AppShell() {
         />
       </aside>
 
-      {/* Desktop Obsidian Rail (>= 768px md:block): collapsible */}
-      <div className="hidden md:block shrink-0 h-full">
+      {/* Desktop Rail (>= 768px md:block): collapsible */}
+      <div className="hidden md:block shrink-0 h-full bg-[#141416]">
         <Sidebar
           activeTab={activeTab}
           onTabChange={handleTabChange}
@@ -156,7 +175,7 @@ function AppShell() {
 
       {/* Slim Vertical Spine between Sidebar and Content on New Question (xl+ only) */}
       {activeTab === 'query' && !isFocusMode && (
-        <aside className="hidden xl:flex shrink-0 w-32 border-r border-ink-surface bg-ink-base/90 p-4 flex-col justify-center select-none">
+        <aside className="hidden xl:flex shrink-0 w-32 border-r border-[#262629] bg-[#141416] p-4 flex-col justify-center select-none">
           <PipelineSpine
             mode="live"
             stage={activeTelemetry?.stage}
@@ -166,10 +185,10 @@ function AppShell() {
         </aside>
       )}
 
-      {/* Center Thread Workspace: keyed per-tab for view transitions */}
+      {/* Center Thread Workspace */}
       <main
         key={activeTab}
-        className="flex-1 flex flex-col h-full md:border-r border-ink-surface bg-ink-base transition-all w-full overflow-hidden pb-14 md:pb-0 animate-view-enter relative"
+        className="flex-1 flex flex-col h-full md:border-r border-[#262629] bg-[#0A0A0B] transition-all w-full overflow-hidden pb-14 md:pb-0 animate-fade-slide relative"
       >
         {activeTab === 'home' && <Home onStartQuery={handleOpenQuery} />}
         {activeTab === 'query' && (
@@ -196,15 +215,14 @@ function AppShell() {
         {activeTab === 'settings' && <SettingsView />}
       </main>
 
-      {/* Right Source Panel: hidden until a query starts; slide-over on mobile/tablet, column on lg+ */}
+      {/* Right Source Panel: hidden until a query starts */}
       {isSourcePanelOpen && activeTab === 'query' && hasQuery && (
         <>
-          {/* Mobile / Tablet Overlay (<1024px) */}
           <div
             className="lg:hidden fixed inset-0 bg-black/60 z-40"
             onClick={() => setSourcePanelOpen(false)}
           />
-          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#0C0C0F] border-l border-white/[0.07] shadow-2xl flex-shrink-0 transition-transform duration-200 will-change-transform">
+          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#141416] border-l border-[#262629] flex-shrink-0 transition-transform duration-200">
             <SourcePanel
               onClose={() => setSourcePanelOpen(false)}
               activeQuery={hasQuery}
@@ -222,7 +240,6 @@ function AppShell() {
       <MobileBottomNav activeTab={activeTab} onTabChange={handleTabChange} />
 
       {/* Global Modals */}
-      <AuthModal />
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}

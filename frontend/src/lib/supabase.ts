@@ -4,10 +4,9 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 /**
- * Single hardened Supabase client for the whole app (AuthModal, AuthGate,
- * AuthContext all share this instance). Import-safe: a malformed or missing
- * configuration degrades to `null` instead of throwing at module load —
- * the UI falls back to the local guest session, never a black screen.
+ * Single hardened Supabase client for the whole app.
+ * Configured with PKCE flow, persistent sessions, auto-refresh tokens,
+ * and URL session detection for GitHub OAuth and Email magic links.
  */
 export const supabase: SupabaseClient | null = (() => {
   if (!supabaseUrl || !supabaseAnonKey) return null;

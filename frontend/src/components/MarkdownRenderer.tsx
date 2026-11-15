@@ -339,7 +339,6 @@ function MarkdownRendererInner({
 
       // Fenced Code Block
       if (trimmed.startsWith('```')) {
-        const codeStart = line.start;
         const codeLines: string[] = [];
         lIdx++;
         while (lIdx < lineSpans.length && !lineSpans[lIdx].text.trim().startsWith('```')) {

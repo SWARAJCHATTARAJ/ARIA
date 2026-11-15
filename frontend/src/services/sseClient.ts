@@ -9,9 +9,6 @@ export interface SSEClientOptions {
   onDone: () => void;
   mockFixtureKey?: string | null;
   onMockState?: (isMock: boolean) => void;
-  researchMode?: string;
-  discipline?: string;
-  customContext?: string;
   customHeaders?: Record<string, string>;
 }
 
@@ -24,9 +21,6 @@ export async function streamQuery({
   onDone,
   mockFixtureKey,
   onMockState,
-  researchMode,
-  discipline,
-  customContext,
   customHeaders,
 }: SSEClientOptions): Promise<void> {
   // Check if Mock Mode is requested via parameter or URL (?mock=1)
@@ -90,9 +84,6 @@ export async function streamQuery({
       body: JSON.stringify({
         query,
         compare_mode: compareMode,
-        research_mode: researchMode || undefined,
-        discipline: discipline || undefined,
-        custom_context: customContext && customContext.trim() ? customContext.trim() : undefined,
       }),
       signal,
     });
