@@ -1,98 +1,122 @@
-# ARIA v2 (Autonomous Research & Intelligence Assistant)
+<div align="center">
 
-Hey there! 👋 Welcome to **ARIA v2**. 
+# ARIA
 
-ARIA isn't just another ChatGPT wrapper. I built this from the ground up as a rigorous, researcher-grade workspace designed to verify facts, instantly cite specific sources, and build transparent literature reviews without the typical AI hallucinations. 
+**Autonomous Research & Intelligence Assistant**
 
-If you are a researcher, academic, or just someone who hates "trust me bro" AI answers, ARIA is built for you. It strictly separates what it knows natively (via external live search) from what *you* know (via your Personal OKF Space), and will explicitly flag factual conflicts between the two.
+*Every claim, checked against its source.*
 
----
+[![Status](https://img.shields.io/badge/status-in--development-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-black)]()
 
-## 🏗 Architecture
-
-ARIA is structured as a modern decoupled monorepo:
-- **Frontend**: A lightning-fast React + Vite SPA, styled with Tailwind CSS to look like a dense, high-information Bloomberg terminal. It deploys perfectly to Vercel and is fully PWA-ready (so you can install it as a Trusted Web Activity on Android).
-- **Backend**: A heavily asynchronous Python FastAPI server running LangGraph. It runs natively on a Linux Azure VM behind a Caddy reverse-proxy. 
-- **The Brain (Dristi)**: Routing is offloaded to a local Dristi inference engine (DistilBERT/DeBERTa-v3) which dynamically routes queries based on complexity and confidence.
-
-Here's exactly how a query flows through the system:
-
-```mermaid
-flowchart TD
-    User([User Query]) --> Frontend[React SPA]
-    Frontend --> API[FastAPI /api/query]
-    
-    API --> Router{Dristi Router}
-    Router -- Confident/Simple --> V1[DistilBERT V1]
-    Router -- Complex/Ambiguous --> V2[DeBERTa-v3 V2]
-    Router -- Out of Distribution --> LLM_Fallback[Groq Fallback]
-    
-    V1 --> Cascade
-    V2 --> Cascade
-    LLM_Fallback --> Cascade
-    
-    subgraph Retrieval Cascade
-    Cascade[LangGraph Orchestrator] --> OKF[(Personal OKF Space)]
-    OKF -- Resolves? --> Synthesize
-    OKF -- Missing Info --> LIVE[Live / RAG Search]
-    LIVE --> Synthesize
-    end
-    
-    Synthesize[Writer Synthesis (openai/gpt-oss-120b)] --> Audit{Claim Auditor (openai/gpt-oss-120b)}
-    
-    Audit -- Compare Mode ON --> Detect[Flag Disagreements]
-    Audit -- Normal Mode --> Output[Final Answer + Citations]
-    Detect --> Output
-    
-    Output --> Frontend
-```
+</div>
 
 ---
 
-## ✨ Key Features
+## What it is
 
-### 1. The Retrieval Cascade (Trust before Speed)
-ARIA doesn't just throw your prompt into an LLM. It relies on a strictly hierarchical retrieval cascade:
-1. **OKF (Object Knowledge Format)**: ARIA searches your personal, verified flat-file notes *first*. If it finds the answer there, it stops. 
-2. **Live Search**: If your personal space doesn't have the answer, it falls back to live web/RAG retrieval.
+ARIA answers research questions and shows its work. It doesn't just generate
+an answer and attach some links at the bottom — every sentence it writes is
+checked, after the fact, against the exact source it claims to come from. If
+a sentence can't be backed up by what was actually retrieved, it gets removed
+before you ever see it, not just flagged.
 
-### 2. Compare Mode & Conflict Auditing
-Ever wonder if the web agrees with your notes? Toggle **Compare Tiers [On]** in the UI. ARIA will deliberately force both the OKF and LIVE pipelines to run simultaneously. A secondary LLM auditor will then explicitly compare the retrieved chunks and flag any factual contradictions right in the chat. Honesty over false confidence!
+No source. No sentence. That's the whole idea.
 
-### 3. Researcher-Grade Micro-Interactions
-- **The Confidence Dial**: No fake percentages. ARIA gives you an analog sweeping gauge that snaps into a "High/Medium/Low" confidence band based on where the pipeline resolved.
-- **Export to .BIB / .RIS**: Stop manually formatting citations. One click under any AI response generates Zotero/Mendeley compatible plain-text citations.
-- **Quick Capture**: Highlight any text in the chat, and a floating toolbar instantly lets you save it directly to your Personal OKF Workspace.
-- **Focus Mode**: Press "Focus" to collapse the sidebars and read dense technical answers without distraction.
+## How it works
+
+```
+PLAN → RETRIEVE → WRITE → CHECK → PUBLISH
+```
+
+**Plan** — breaks the question down and decides what to look for.
+
+**Retrieve** — a three-tier cascade, cheapest and most trustworthy first:
+
+| Tier | What it is | Cost |
+|---|---|---|
+| **OKF** | A small, hand-curated knowledge base — real notes, real citations, written and verified by hand | Free, instant |
+| **RAG** | Semantic search over that same knowledge base using real sentence embeddings (`BAAI/bge-small-en-v1.5`, ONNX, no GPU) | Free, local |
+| **LIVE** | arXiv, OpenAlex, Wikipedia, DuckDuckGo | Network calls |
+
+Only falls through to the next tier if the current one comes up empty.
+
+**Write** — drafts an answer with inline citation markers, one claim per
+sentence.
+
+**Check** — the part that actually matters. Every sentence gets pulled out,
+matched to its cited source, and checked:
+
+- Does an exact quote exist in that source backing this sentence up?
+- Do the specific numbers and named entities in the sentence actually appear
+  in that source?
+- Is the overlap high enough to count as real support, not just loosely
+  related?
+
+Sentences that fail are rewritten once against the real source material. If
+they still fail, they're deleted — not shown with a caveat, deleted. If
+deleting too much leaves nothing substantial, ARIA says plainly that it
+couldn't produce a verified answer, instead of shipping something thin and
+pretending it's complete.
+
+**Publish** — what's left, with citations, a confidence score, and an honest
+flag on anything the answer only partially covers.
+
+## What it deliberately does *not* claim
+
+- Not "zero hallucination." Nothing that generates text can promise that
+  honestly. What it does promise: nothing ships without a specific, checkable
+  source behind it.
+- Not NLI entailment. The verification is a judge model doing exact-quote
+  matching plus number/entity checks, not a formal entailment classifier.
+- Not infinite scale. It runs on free-tier infrastructure on purpose — Groq's
+  free API limits, a small Azure VM, Supabase's free tier. That's a design
+  constraint the whole system is built around, not an oversight.
+
+## Stack
+
+| Layer | Tech |
+|---|---|
+| Backend | FastAPI, LangGraph, Python |
+| LLM | Groq (`openai/gpt-oss-120b`) for both writing and judging |
+| Embeddings | `fastembed` + `BAAI/bge-small-en-v1.5`, ONNX runtime — no `torch`, no GPU required |
+| Vector search | Supabase (Postgres + `pgvector`) |
+| Frontend | React, Vite, TypeScript |
+| Hosting | Azure VM (API) + Vercel (frontend) |
+
+## Security, because it talks to the open web
+
+- Every Supabase table runs with row-level security on; the anonymous key
+  can't read or write anything by default.
+- Any URL ARIA fetches goes through an SSRF guard — private IP ranges,
+  loopback, link-local, and cloud metadata endpoints are blocked, including
+  against DNS-rebinding attempts, and the guard re-checks the IP after the
+  connection opens, not just at DNS resolution.
+- Retrieved text is treated as data, never as instructions — tested directly
+  against prompt-injection attempts in web content.
+- Rate-limited, with a visible daily cap, because the whole thing runs on
+  free API tiers with hard limits.
+
+## Status
+
+Actively being built. The retrieval cascade, the claim-checking pipeline, and
+the core security work are done and tested against real queries. The
+frontend and the account/login flow are still in progress — this README
+describes the system as designed, and will be updated as each piece lands
+for real.
+
+## Why this exists
+
+Most "AI research assistant" demos show an LLM writing a plausible-sounding
+answer with footnotes that don't actually support what's above them. ARIA is
+an attempt to build the thing that checks that gap instead of papering over
+it — on a budget of exactly zero dollars in infrastructure cost, because
+that constraint forces every design decision to actually be defensible.
 
 ---
 
-## 🚀 Getting Started
+<div align="center">
 
-### Local Development (Frontend)
-```bash
-cd frontend
-npm install
-npm run dev
-```
-Make sure you create an `.env` file pointing to your backend IP:
-`VITE_API_URL=http://<YOUR_BACKEND_IP>`
+Built by [Swaraj Chattaraj](https://swarajchattaraj.tech)
 
-### Production Deployment (Backend)
-The backend is designed for an Ubuntu Azure VM. 
-1. Copy the code to your server.
-2. Run the automated deployment script:
-```bash
-bash infra/setup_vm.sh
-```
-3. Move the Caddyfile and systemd services into place and start them:
-```bash
-sudo cp infra/Caddyfile /etc/caddy/Caddyfile
-sudo cp infra/*.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now caddy aria-backend dristi
-```
-
----
-
-*Built with ❤️ and an unhealthy amount of caffeine.*
+</div>
