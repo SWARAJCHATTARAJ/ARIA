@@ -76,31 +76,32 @@ export async function streamQuery({
   const url = `${API_BASE_URL}/api/query`;
 
   // 1. Safely retrieve the current session token via supabase.auth.getSession()
-  let sessionToken: string | undefined;
+  let token: string | undefined;
   if (supabase) {
     try {
-      const { data } = await supabase.auth.getSession();
-      sessionToken = data?.session?.access_token;
+      const { data: { session } } = await supabase.auth.getSession();
+      token = session?.access_token;
     } catch (err) {
       console.warn('Failed to retrieve Supabase session token:', err);
     }
   }
 
   // Fallback to customHeaders if passed
-  if (!sessionToken && customHeaders?.Authorization) {
-    sessionToken = customHeaders.Authorization.replace(/^Bearer\s+/i, '');
-  } else if (!sessionToken && customHeaders?.authorization) {
-    sessionToken = customHeaders.authorization.replace(/^Bearer\s+/i, '');
+  if (!token && customHeaders?.Authorization) {
+    token = customHeaders.Authorization.replace(/^Bearer\s+/i, '');
+  } else if (!token && customHeaders?.authorization) {
+    token = customHeaders.authorization.replace(/^Bearer\s+/i, '');
   }
 
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(customHeaders || {}),
-    ...(sessionToken ? { 'Authorization': `Bearer ${sessionToken}` } : {}),
   };
 
-  // If no session token is present, send anonymous fallback header
-  if (!sessionToken && !requestHeaders['Authorization'] && !requestHeaders['authorization']) {
+  if (token) {
+    requestHeaders['Authorization'] = 'Bearer ' + token;
+  } else if (!requestHeaders['Authorization'] && !requestHeaders['authorization']) {
+    // If no session token is present, send anonymous fallback header
     requestHeaders['X-Anonymous-User'] = 'true';
   }
 
