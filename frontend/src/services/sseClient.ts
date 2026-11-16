@@ -156,6 +156,14 @@ export async function streamQuery({
       const parts = buffer.split('\n\n');
       buffer = parts.pop() || ''; // Preserve incomplete trailing chunk
 
+      let pendingTokenDelta = '';
+      const flushPendingToken = () => {
+        if (pendingTokenDelta) {
+          onEvent({ event: 'token', delta: pendingTokenDelta });
+          pendingTokenDelta = '';
+        }
+      };
+
       for (const part of parts) {
         const trimmed = part.trim();
         if (!trimmed) continue;
@@ -166,30 +174,48 @@ export async function streamQuery({
             const dataStr = line.replace(/^data:\s*/, '').trim();
             try {
               const parsed = JSON.parse(dataStr);
-              if (parsed.event === 'done') {
-                receivedDone = true;
+              if (parsed.event === 'token' && typeof parsed.delta === 'string') {
+                pendingTokenDelta += parsed.delta;
+              } else {
+                flushPendingToken();
+                if (parsed.event === 'done') {
+                  receivedDone = true;
+                }
+                onEvent(parsed);
               }
-              onEvent(parsed);
             } catch {
               // Gracefully skip corrupted frames
             }
           }
         }
       }
+      flushPendingToken();
     }
 
     // Process leftover buffer content
     if (buffer.trim()) {
+      let pendingTokenDelta = '';
       const lines = buffer.trim().split('\n');
       for (const line of lines) {
         if (line.startsWith('data:')) {
           const dataStr = line.replace(/^data:\s*/, '').trim();
           try {
             const parsed = JSON.parse(dataStr);
-            if (parsed.event === 'done') receivedDone = true;
-            onEvent(parsed);
+            if (parsed.event === 'token' && typeof parsed.delta === 'string') {
+              pendingTokenDelta += parsed.delta;
+            } else {
+              if (pendingTokenDelta) {
+                onEvent({ event: 'token', delta: pendingTokenDelta });
+                pendingTokenDelta = '';
+              }
+              if (parsed.event === 'done') receivedDone = true;
+              onEvent(parsed);
+            }
           } catch {}
         }
+      }
+      if (pendingTokenDelta) {
+        onEvent({ event: 'token', delta: pendingTokenDelta });
       }
     }
 

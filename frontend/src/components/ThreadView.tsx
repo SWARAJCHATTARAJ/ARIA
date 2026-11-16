@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, Maximize2, Minimize2, Check, StopCircle, FileText, CheckCircle2, RotateCcw, AlertCircle } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import { streamQuery } from '../services/sseClient';
@@ -174,11 +174,17 @@ export default function ThreadView({
     }
   }, [messages.length, onQueryStateChange]);
 
-  // Clean up in-flight requests on unmount
+  // Clean up in-flight requests and timers on unmount
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+      }
+      if (streamThrottleCleanupRef.current) {
+        streamThrottleCleanupRef.current();
+      }
+      if (streamScrollTimerRef.current !== undefined) {
+        window.clearTimeout(streamScrollTimerRef.current);
       }
     };
   }, []);
@@ -188,6 +194,38 @@ export default function ThreadView({
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const isNearBottomRef = useRef(true);
   const scrollRafRef = useRef<number | undefined>(undefined);
+  const streamScrollTimerRef = useRef<number | undefined>(undefined);
+  const lastScrollTimeRef = useRef<number>(0);
+  const streamThrottleCleanupRef = useRef<(() => void) | null>(null);
+
+  // Debounced auto-scroll function used during streaming updates:
+  // Throttled to at most once per 100ms to eliminate continuous layout-thrashing
+  const debouncedScrollToBottom = useCallback(() => {
+    if (!isNearBottomRef.current) return;
+    const now = performance.now();
+    if (now - lastScrollTimeRef.current >= 100) {
+      lastScrollTimeRef.current = now;
+      if (streamScrollTimerRef.current !== undefined) {
+        window.clearTimeout(streamScrollTimerRef.current);
+        streamScrollTimerRef.current = undefined;
+      }
+      messagesEndRef.current?.scrollIntoView({
+        behavior: 'auto',
+        block: 'end',
+      });
+    } else if (streamScrollTimerRef.current === undefined) {
+      streamScrollTimerRef.current = window.setTimeout(() => {
+        streamScrollTimerRef.current = undefined;
+        lastScrollTimeRef.current = performance.now();
+        if (isNearBottomRef.current) {
+          messagesEndRef.current?.scrollIntoView({
+            behavior: 'auto',
+            block: 'end',
+          });
+        }
+      }, 100);
+    }
+  }, []);
 
   useEffect(() => {
     const el = messagesScrollRef.current;
@@ -207,17 +245,21 @@ export default function ThreadView({
         window.cancelAnimationFrame(scrollRafRef.current);
         scrollRafRef.current = undefined;
       }
+      if (streamScrollTimerRef.current !== undefined) {
+        window.clearTimeout(streamScrollTimerRef.current);
+      }
     };
   }, []);
 
+  // Auto-scroll when new messages are added (tracked by messages.length)
+  // Decoupled from streaming content strings to prevent layout-thrashing on every token
   useEffect(() => {
     if (!isNearBottomRef.current) return;
-    const streaming = messages.some((m) => m.isStreaming);
     messagesEndRef.current?.scrollIntoView({
-      behavior: streaming ? 'auto' : 'smooth',
+      behavior: 'smooth',
       block: 'end',
     });
-  }, [messages]);
+  }, [messages.length]);
 
   // Typewriter placeholder: mutated directly on the textarea element (zero
   // React re-renders — placeholder text changes don't change React state).
@@ -280,11 +322,15 @@ export default function ThreadView({
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
-      setIsLoading(false);
-      setMessages((prev) =>
-        prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
-      );
     }
+    if (streamThrottleCleanupRef.current) {
+      streamThrottleCleanupRef.current();
+      streamThrottleCleanupRef.current = null;
+    }
+    setIsLoading(false);
+    setMessages((prev) =>
+      prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+    );
   };
 
   const executeQuery = (queryText: string, mockKey?: string, recordedDate?: string) => {
@@ -458,26 +504,85 @@ export default function ThreadView({
       };
     };
 
-    // rAF-batched event application: coalesce bursty SSE token events into a
-    // single setMessages per animation frame (prevents re-render storms).
+    // 50ms throttling buffer (~20fps) for incoming SSE events:
+    // Prevents flooding React state updates and the JS event loop on every raw token chunk.
     let pendingEvents: any[] = [];
-    let flushScheduled = false;
+    let throttleTimer: number | null = null;
+    let lastFlushTime = 0;
+    const THROTTLE_INTERVAL_MS = 50; // ~20fps smooth DOM update rate
+
     const flushEvents = () => {
-      flushScheduled = false;
+      if (throttleTimer !== null) {
+        window.clearTimeout(throttleTimer);
+        throttleTimer = null;
+      }
+      lastFlushTime = performance.now();
+
       if (pendingEvents.length === 0) return;
       const events = pendingEvents;
       pendingEvents = [];
+
+      // Coalesce consecutive token events in this batch into single token events
+      const coalescedEvents: any[] = [];
+      for (const e of events) {
+        if (
+          e.event === 'token' &&
+          coalescedEvents.length > 0 &&
+          coalescedEvents[coalescedEvents.length - 1].event === 'token'
+        ) {
+          coalescedEvents[coalescedEvents.length - 1].delta =
+            (coalescedEvents[coalescedEvents.length - 1].delta || '') + (e.delta || '');
+        } else {
+          coalescedEvents.push(e);
+        }
+      }
+
+      const prevTelemetryStage = currentTelemetry.stage;
+
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.id !== ariaMsgId) return msg;
           let next = msg;
-          for (const e of events) {
+          for (const e of coalescedEvents) {
             next = applyEvent(next, e);
           }
           return next;
         })
       );
-      if (onUpdateActiveTelemetry) onUpdateActiveTelemetry(currentTelemetry);
+
+      // Only notify parent components if telemetry stage or metadata actually changed
+      if (currentTelemetry.stage !== prevTelemetryStage && onUpdateActiveTelemetry) {
+        onUpdateActiveTelemetry(currentTelemetry);
+      }
+
+      // Smooth debounced auto-scroll during streaming updates
+      debouncedScrollToBottom();
+    };
+
+    const scheduleFlush = (immediate = false) => {
+      if (immediate) {
+        flushEvents();
+        return;
+      }
+
+      const now = performance.now();
+      const elapsed = now - lastFlushTime;
+
+      if (elapsed >= THROTTLE_INTERVAL_MS) {
+        flushEvents();
+      } else if (throttleTimer === null) {
+        throttleTimer = window.setTimeout(() => {
+          flushEvents();
+        }, THROTTLE_INTERVAL_MS - elapsed);
+      }
+    };
+
+    streamThrottleCleanupRef.current = () => {
+      if (throttleTimer !== null) {
+        window.clearTimeout(throttleTimer);
+        throttleTimer = null;
+      }
+      pendingEvents = [];
     };
 
     if (onUpdateActiveCitations) onUpdateActiveCitations([]);
@@ -500,12 +605,25 @@ export default function ThreadView({
       },
       onEvent: (evt) => {
         pendingEvents.push(evt);
-        if (!flushScheduled) {
-          flushScheduled = true;
-          window.requestAnimationFrame(flushEvents);
+        // Important milestone events flush immediately; token chunks are throttled at ~20fps (50ms)
+        if (
+          evt.event === 'done' ||
+          evt.event === 'error' ||
+          evt.event === 'audit' ||
+          evt.event === 'route' ||
+          evt.event === 'retrieve'
+        ) {
+          scheduleFlush(true);
+        } else {
+          scheduleFlush(false);
         }
       },
       onError: (err: any) => {
+        scheduleFlush(true);
+        if (streamThrottleCleanupRef.current) {
+          streamThrottleCleanupRef.current();
+          streamThrottleCleanupRef.current = null;
+        }
         setIsLoading(false);
         const status = err?.status;
         const rawMsg = err?.message || 'Failed to connect to backend';
@@ -530,6 +648,11 @@ export default function ThreadView({
         );
       },
       onDone: () => {
+        scheduleFlush(true);
+        if (streamThrottleCleanupRef.current) {
+          streamThrottleCleanupRef.current();
+          streamThrottleCleanupRef.current = null;
+        }
         setIsLoading(false);
         setMessages((prev) =>
           prev.map((msg) => (msg.id === ariaMsgId ? { ...msg, isStreaming: false } : msg))
