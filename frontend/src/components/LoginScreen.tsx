@@ -3,7 +3,7 @@ import { Mail, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginScreen() {
-  const { signInWithGitHub, signInWithEmail } = useAuth();
+  const { signInWithGitHub, signInWithEmail, signInInstantResearcher } = useAuth();
 
   const [isGitHubLoading, setIsGitHubLoading] = useState(false);
   const [gitHubError, setGitHubError] = useState<string | null>(null);
@@ -159,6 +159,17 @@ export default function LoginScreen() {
               <span>{emailError}</span>
             </div>
           )}
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={signInInstantResearcher}
+              className="w-full py-2 text-[13px] text-[#8B8B8E] hover:text-[#EDEDED] font-mono transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>Continue as Guest</span>
+              <span aria-hidden="true">&rarr;</span>
+            </button>
+          </div>
         </div>
 
         <div className="pt-4 border-t border-[#262629] flex items-center justify-between text-[12px] font-mono text-[#8B8B8E]">

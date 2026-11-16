@@ -16,9 +16,12 @@ from pydantic import BaseModel
 from config import settings
 from routers import export, okf
 from utils.api_security import (
+    get_client_ip,
     verify_supabase_jwt,
     check_user_rate_limit,
     record_user_request,
+    check_anonymous_rate_limit,
+    record_anonymous_request,
     validate_uuid,
     ALLOWED_VERDICTS,
     MAX_BODY_SIZE_BYTES,
@@ -124,37 +127,56 @@ async def query_pipeline(req: QueryRequest, request: Request):
         )
     validate_uuid(req.thread_id, "thread_id")
 
-    # 2. Mandatory Authentication & Per-User Rate Limiting
+    # 2. Authentication & Rate Limiting (Authenticated User or Anonymous/Guest Fallback)
     auth_header = request.headers.get("authorization", "")
     token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required. Please sign in to submit queries."
-        )
+    client_ip = get_client_ip(request)
 
-    user_payload = await verify_supabase_jwt(token)
-    user_id = user_payload.get("id") or user_payload.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user session."
-        )
+    # Check if request explicitly signals anonymous / guest mode or lacks a Bearer token
+    is_guest = (
+        not token or
+        token.lower() in ("null", "undefined", "guest", "anonymous") or
+        request.headers.get("x-anonymous-user", "").lower() in ("true", "1") or
+        request.headers.get("x-guest", "").lower() in ("true", "1")
+    )
 
-    # Enforce 10 queries/hr per user + global daily token cap
-    allowed, retry_after, limit_msg = check_user_rate_limit(user_id, is_feedback=False)
-    if not allowed:
-        return Response(
-            content=limit_msg,
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            media_type="text/plain",
-            headers={
-                "Retry-After": str(retry_after),
-                "X-Content-Type-Options": "nosniff",
-                "X-Request-ID": request_id
-            }
-        )
-    record_user_request(user_id, is_feedback=False)
+    if not is_guest and token:
+        user_payload = await verify_supabase_jwt(token)
+        user_id = user_payload.get("id") or user_payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user session."
+            )
+        allowed, retry_after, limit_msg = check_user_rate_limit(user_id, is_feedback=False)
+        if not allowed:
+            return Response(
+                content=limit_msg,
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                media_type="text/plain",
+                headers={
+                    "Retry-After": str(retry_after),
+                    "X-Content-Type-Options": "nosniff",
+                    "X-Request-ID": request_id
+                }
+            )
+        record_user_request(user_id, is_feedback=False)
+    else:
+        # Anonymous / Guest request fallback (Per-IP 5/hr rate limit + global daily cap)
+        user_id = f"guest_{client_ip}"
+        allowed, retry_after, limit_msg = check_anonymous_rate_limit(client_ip, is_feedback=False)
+        if not allowed:
+            return Response(
+                content=limit_msg,
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                media_type="text/plain",
+                headers={
+                    "Retry-After": str(retry_after),
+                    "X-Content-Type-Options": "nosniff",
+                    "X-Request-ID": request_id
+                }
+            )
+        record_anonymous_request(client_ip, is_feedback=False)
 
     # 3. Session memory configuration
     from utils.token_tracker import TokenTracker, token_rate_limiter
@@ -317,7 +339,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 f"[[c:{i}]] {chunk.get('title', 'Unknown')} ({chunk.get('venue', chunk.get('source', 'Unknown'))})\n{chunk.get('snippet', chunk.get('content', ''))}" 
                 for i, chunk in enumerate(chunks)
             ])
-            from pipeline.nodes import build_synthesis_prompt
+            from pipeline.nodes import build_synthesis_prompt, current_writer_llm
             synthesis_prompt = build_synthesis_prompt()
             messages = [
                 SystemMessage(content=synthesis_prompt),
@@ -334,7 +356,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
                     yield f"data: {json.dumps({'event': 'done'})}\n\n"
                     return
 
-                async for chunk in _nodes_pkg.current_writer_llm().astream(messages, max_tokens=1200):
+                async for chunk in current_writer_llm().astream(messages, max_tokens=1200):
                     if time.time() - start_time > MAX_STREAM_DURATION_SECONDS:
                         logger.warning(f"[{request_id}] Stream exceeded 90s limit during token streaming.")
                         break

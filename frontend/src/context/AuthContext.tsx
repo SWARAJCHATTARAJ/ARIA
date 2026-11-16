@@ -16,7 +16,7 @@ export interface AuthUserProfile {
   username: string;
   email?: string;
   avatarUrl: string;
-  provider: 'github' | 'email';
+  provider: 'github' | 'email' | 'guest';
 }
 
 interface AuthContextType {
@@ -25,10 +25,25 @@ interface AuthContextType {
   accessToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isAuthModalOpen: boolean;
+  openAuthModal: () => void;
+  closeAuthModal: () => void;
+  signInInstantResearcher: () => void;
   signInWithGitHub: () => Promise<{ error: Error | null }>;
   signInWithEmail: (email: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
+
+const AUTH_GUEST_KEY = 'aria-guest-session-v1';
+
+export const GUEST_PROFILE: AuthUserProfile = {
+  id: 'guest',
+  name: 'Guest Researcher',
+  username: 'guest',
+  email: 'guest@aria.local',
+  avatarUrl: '',
+  provider: 'guest',
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -51,13 +66,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  const openAuthModal = () => setIsAuthModalOpen(true);
+  const closeAuthModal = () => setIsAuthModalOpen(false);
+
+  const signInInstantResearcher = () => {
+    try {
+      localStorage.setItem(AUTH_GUEST_KEY, 'true');
+    } catch {
+      // ignore
+    }
+    setUser(GUEST_PROFILE);
+    setSession(null);
+    setAccessToken(null);
+    setIsAuthModalOpen(false);
+  };
 
   useEffect(() => {
     let mounted = true;
 
     async function initAuth() {
       if (!supabase) {
-        if (mounted) setIsLoading(false);
+        if (mounted) {
+          const isGuest = localStorage.getItem(AUTH_GUEST_KEY) === 'true';
+          if (isGuest) setUser(GUEST_PROFILE);
+          setIsLoading(false);
+        }
         return;
       }
 
@@ -73,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setSession(data.session);
               setAccessToken(data.session.access_token);
               setUser(mapSupabaseUser(data.session.user));
+              setIsAuthModalOpen(false);
               setIsLoading(false);
               try {
                 window.history.replaceState(null, '', window.location.pathname);
@@ -93,7 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else {
             setSession(null);
             setAccessToken(null);
-            setUser(null);
+            const isGuest = localStorage.getItem(AUTH_GUEST_KEY) === 'true';
+            setUser(isGuest ? GUEST_PROFILE : null);
           }
           setIsLoading(false);
         }
@@ -102,7 +139,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (mounted) {
           setSession(null);
           setAccessToken(null);
-          setUser(null);
+          const isGuest = localStorage.getItem(AUTH_GUEST_KEY) === 'true';
+          setUser(isGuest ? GUEST_PROFILE : null);
           setIsLoading(false);
         }
       }
@@ -115,6 +153,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('hashchange', handleHashChange);
 
+    const handleUnauthorized = () => {
+      if (mounted) setIsAuthModalOpen(true);
+    };
+    window.addEventListener('aria:unauthorized', handleUnauthorized);
+
     if (supabase) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
         if (!mounted) return;
@@ -122,10 +165,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(currentSession);
           setAccessToken(currentSession.access_token);
           setUser(mapSupabaseUser(currentSession.user));
+          setIsAuthModalOpen(false);
         } else {
           setSession(null);
           setAccessToken(null);
-          setUser(null);
+          const isGuest = localStorage.getItem(AUTH_GUEST_KEY) === 'true';
+          setUser(isGuest ? GUEST_PROFILE : null);
         }
         setIsLoading(false);
       });
@@ -133,6 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return () => {
         mounted = false;
         window.removeEventListener('hashchange', handleHashChange);
+        window.removeEventListener('aria:unauthorized', handleUnauthorized);
         subscription.unsubscribe();
       };
     }
@@ -140,6 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
       window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('aria:unauthorized', handleUnauthorized);
     };
   }, []);
 
@@ -215,6 +262,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessToken,
         isAuthenticated: Boolean(user),
         isLoading,
+        isAuthModalOpen,
+        openAuthModal,
+        closeAuthModal,
+        signInInstantResearcher,
         signInWithGitHub,
         signInWithEmail,
         signOut,

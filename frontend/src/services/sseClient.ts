@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './config';
+import { supabase } from '../lib/supabase';
 
 export interface SSEClientOptions {
   query: string;
@@ -74,13 +75,42 @@ export async function streamQuery({
   // Read API base URL from shared config module
   const url = `${API_BASE_URL}/api/query`;
 
+  // 1. Retrieve current Supabase session token
+  let authToken: string | undefined;
+  if (supabase) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        authToken = `Bearer ${session.access_token}`;
+      }
+    } catch (err) {
+      console.warn('Failed to retrieve Supabase session token:', err);
+    }
+  }
+
+  // Fallback to customHeaders if passed
+  if (!authToken && customHeaders?.Authorization) {
+    authToken = customHeaders.Authorization;
+  } else if (!authToken && customHeaders?.authorization) {
+    authToken = customHeaders.authorization;
+  }
+
+  const requestHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(customHeaders || {}),
+  };
+
+  if (authToken) {
+    requestHeaders['Authorization'] = authToken;
+  } else {
+    // Send anonymous fallback header so the backend recognizes guest state
+    requestHeaders['X-Anonymous-User'] = 'true';
+  }
+
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(customHeaders || {}),
-      },
+      headers: requestHeaders,
       body: JSON.stringify({
         query,
         compare_mode: compareMode,
@@ -89,6 +119,14 @@ export async function streamQuery({
     });
 
     if (!res.ok) {
+      if (res.status === 401) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('aria:unauthorized'));
+        }
+        const authErr = new Error('Authentication required. Please sign in to submit queries.');
+        (authErr as any).status = 401;
+        throw authErr;
+      }
       throw new Error(`Server returned HTTP ${res.status}: ${res.statusText}`);
     }
 

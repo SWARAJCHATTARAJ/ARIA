@@ -87,7 +87,7 @@ export default function ThreadView({
 
   // Read interface settings once from global SettingsContext (density + motion only)
   const { settings: _settings } = useSettingsContext();
-  const { accessToken } = useAuth();
+  const { accessToken, openAuthModal } = useAuth();
 
   const handleDownloadPdf = async (msg: Message) => {
     try {
@@ -505,15 +505,28 @@ export default function ThreadView({
           window.requestAnimationFrame(flushEvents);
         }
       },
-      onError: (err) => {
+      onError: (err: any) => {
         setIsLoading(false);
+        const isAuth =
+          err.status === 401 ||
+          err.message?.includes('401') ||
+          err.message?.toLowerCase().includes('authentication required');
+
+        if (isAuth) {
+          if (openAuthModal) {
+            openAuthModal();
+          } else if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('aria:unauthorized'));
+          }
+        }
+
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === ariaMsgId
               ? {
                   ...msg,
                   isStreaming: false,
-                  error: err.message || 'Failed to connect to backend',
+                  error: isAuth ? undefined : (err.message || 'Failed to connect to backend'),
                 }
               : msg
           )

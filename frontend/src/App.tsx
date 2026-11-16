@@ -12,6 +12,7 @@ import { AuthProvider, useAuth, isNativeRuntime } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import LoginScreen from './components/LoginScreen';
+import AuthModal from './components/ui/AuthModal';
 import { Loader2 } from 'lucide-react';
 
 const MarkdownTestHarness = lazy(() => import('./components/MarkdownTestHarness'));
@@ -240,6 +241,7 @@ function AppShell() {
       <MobileBottomNav activeTab={activeTab} onTabChange={handleTabChange} />
 
       {/* Global Modals */}
+      <AuthModal />
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}

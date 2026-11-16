@@ -18,12 +18,16 @@ ALLOWED_VERDICTS = {"positive", "negative", "flagged", "accurate", "inaccurate",
 _user_query_history: Dict[str, List[float]] = {}
 _user_feedback_history: Dict[str, List[float]] = {}
 
+# Backward-compatibility storage for IP rate limits
+_ip_query_history: Dict[str, List[float]] = {}
+_ip_feedback_history: Dict[str, List[float]] = {}
+
 # Daily global query count: (date_str, count)
 _daily_counter = {"date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"), "count": 0}
 
 MAX_USER_QUERIES_PER_HOUR = 10
 MAX_USER_FEEDBACK_PER_HOUR = 30
-MAX_QUERIES_PER_HOUR = 10  # Alias for backward compatibility
+MAX_QUERIES_PER_HOUR = 5  # For anonymous IP rate limiting
 MAX_BODY_SIZE_BYTES = 8192  # 8 KB
 MAX_QUERY_LENGTH = 500
 MAX_STREAM_DURATION_SECONDS = 180.0
@@ -149,14 +153,52 @@ def record_user_request(user_id: str, is_feedback: bool = False) -> None:
     if not is_feedback:
         _daily_counter["count"] += 1
 
-# Backward compatibility shims for older test suites
 def check_anonymous_rate_limit(client_ip: str, is_feedback: bool = False) -> Tuple[bool, int, str]:
-    """Compatibility shim mapping IP to user check."""
-    return check_user_rate_limit(user_id=client_ip, is_feedback=is_feedback)
+    """
+    Checks per-IP limit of 5 queries per hour plus global DAILY_TOKEN_CAP.
+    Returns: (is_allowed, retry_after_seconds, error_message)
+    """
+    if client_ip in ("127.0.0.1", "::1", "localhost"):
+        return True, 0, ""
+
+    now = time.time()
+    one_hour_ago = now - 3600.0
+    history_store = _ip_feedback_history if is_feedback else _ip_query_history
+
+    # Clean up entries older than 1 hour for this IP
+    timestamps = [t for t in history_store.get(client_ip, []) if t > one_hour_ago]
+    history_store[client_ip] = timestamps
+
+    # 1. Per-IP limit check (5 queries per hour)
+    if len(timestamps) >= MAX_QUERIES_PER_HOUR:
+        oldest_in_window = timestamps[0]
+        retry_after = max(1, int(3600 - (now - oldest_in_window)))
+        msg = f"Rate limit exceeded: Limit is {MAX_QUERIES_PER_HOUR} requests per hour. Try again in {retry_after}s."
+        return False, retry_after, msg
+
+    # 2. Daily query cap & token capacity check (only for queries, not feedback)
+    if not is_feedback:
+        DAILY_QUERY_CAP = 100
+        if _daily_counter.get("count", 0) >= DAILY_QUERY_CAP:
+            now_dt = datetime.datetime.now(datetime.timezone.utc)
+            tomorrow = datetime.datetime(now_dt.year, now_dt.month, now_dt.day, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=1)
+            retry_after = max(1, int((tomorrow - now_dt).total_seconds()))
+            msg = f"Rate limit exceeded: Daily query cap of {DAILY_QUERY_CAP} reached. Try again tomorrow in {retry_after}s."
+            return False, retry_after, msg
+
+        allowed, retry_after, daily_msg = token_rate_limiter.check_daily_cap(settings.groq_writer_model)
+        if not allowed:
+            return False, retry_after, daily_msg
+
+    return True, 0, ""
 
 def record_anonymous_request(client_ip: str, is_feedback: bool = False) -> None:
-    """Compatibility shim mapping IP to user record."""
-    record_user_request(user_id=client_ip, is_feedback=is_feedback)
+    """Records an anonymous request timestamp and increments daily counter."""
+    now = time.time()
+    history_store = _ip_feedback_history if is_feedback else _ip_query_history
+    history_store.setdefault(client_ip, []).append(now)
+    if not is_feedback:
+        _daily_counter["count"] += 1
 
 def validate_uuid(val: Optional[str], field_name: str = "thread_id") -> None:
     """Validates that a string is a valid UUID."""
