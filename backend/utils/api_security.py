@@ -1,3 +1,4 @@
+import os
 import time
 import uuid
 import datetime
@@ -62,21 +63,30 @@ async def verify_supabase_jwt(token: str) -> Optional[Dict]:
         )
         
     # Check locally if JWT secret is available
-    if settings.supabase_jwt_secret and settings.supabase_jwt_secret != "default":
+    SUPABASE_JWT_SECRET = getattr(settings, "supabase_jwt_secret", "") or os.environ.get("SUPABASE_JWT_SECRET", "")
+    if SUPABASE_JWT_SECRET and SUPABASE_JWT_SECRET != "default":
         try:
             payload = jwt.decode(
                 token,
-                settings.supabase_jwt_secret,
-                algorithms=["HS256"],
-                options={"verify_signature": True, "verify_exp": True}
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256", "RS256"],
+                options={"verify_signature": True}
             )
             return payload
         except JWTError as e:
             logger.warning(f"JWT verification failed: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired authentication token."
-            )
+            if not (settings.supabase_url and settings.supabase_url != "default"):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired authentication token."
+                )
+        except Exception as e:
+            logger.warning(f"JWT verification error: {e}")
+            if not (settings.supabase_url and settings.supabase_url != "default"):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired authentication token."
+                )
 
     # Supabase Auth endpoint verification
     if settings.supabase_url and settings.supabase_url != "default":
