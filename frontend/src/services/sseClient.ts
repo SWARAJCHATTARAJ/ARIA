@@ -75,35 +75,32 @@ export async function streamQuery({
   // Read API base URL from shared config module
   const url = `${API_BASE_URL}/api/query`;
 
-  // 1. Retrieve current Supabase session token
-  let authToken: string | undefined;
+  // 1. Safely retrieve the current session token via supabase.auth.getSession()
+  let sessionToken: string | undefined;
   if (supabase) {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        authToken = `Bearer ${session.access_token}`;
-      }
+      const { data } = await supabase.auth.getSession();
+      sessionToken = data?.session?.access_token;
     } catch (err) {
       console.warn('Failed to retrieve Supabase session token:', err);
     }
   }
 
   // Fallback to customHeaders if passed
-  if (!authToken && customHeaders?.Authorization) {
-    authToken = customHeaders.Authorization;
-  } else if (!authToken && customHeaders?.authorization) {
-    authToken = customHeaders.authorization;
+  if (!sessionToken && customHeaders?.Authorization) {
+    sessionToken = customHeaders.Authorization.replace(/^Bearer\s+/i, '');
+  } else if (!sessionToken && customHeaders?.authorization) {
+    sessionToken = customHeaders.authorization.replace(/^Bearer\s+/i, '');
   }
 
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(customHeaders || {}),
+    ...(sessionToken ? { 'Authorization': `Bearer ${sessionToken}` } : {}),
   };
 
-  if (authToken) {
-    requestHeaders['Authorization'] = authToken;
-  } else {
-    // Send anonymous fallback header so the backend recognizes guest state
+  // If no session token is present, send anonymous fallback header
+  if (!sessionToken && !requestHeaders['Authorization'] && !requestHeaders['authorization']) {
     requestHeaders['X-Anonymous-User'] = 'true';
   }
 
@@ -119,15 +116,20 @@ export async function streamQuery({
     });
 
     if (!res.ok) {
-      if (res.status === 401) {
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('aria:unauthorized'));
+      let detailMsg = `Server returned HTTP ${res.status}: ${res.statusText}`;
+      try {
+        const errJson = await res.json();
+        if (errJson?.detail) {
+          detailMsg = typeof errJson.detail === 'string' ? errJson.detail : JSON.stringify(errJson.detail);
         }
-        const authErr = new Error('Authentication required. Please sign in to submit queries.');
-        (authErr as any).status = 401;
-        throw authErr;
+      } catch {
+        // Non-JSON response body
       }
-      throw new Error(`Server returned HTTP ${res.status}: ${res.statusText}`);
+
+      const queryError = new Error(detailMsg);
+      (queryError as any).status = res.status;
+      // Do NOT sign out or clear storage on 401/500 — preserve active user session
+      throw queryError;
     }
 
     if (!res.body) {

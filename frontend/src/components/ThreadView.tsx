@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, Maximize2, Minimize2, Check, StopCircle, FileText, CheckCircle2 } from 'lucide-react';
+import { Send, Loader2, Download, Copy, ThumbsUp, ThumbsDown, Maximize2, Minimize2, Check, StopCircle, FileText, CheckCircle2, RotateCcw, AlertCircle } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import { streamQuery } from '../services/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim } from '../types';
@@ -87,7 +87,7 @@ export default function ThreadView({
 
   // Read interface settings once from global SettingsContext (density + motion only)
   const { settings: _settings } = useSettingsContext();
-  const { accessToken, openAuthModal } = useAuth();
+  const { accessToken } = useAuth();
 
   const handleDownloadPdf = async (msg: Message) => {
     try {
@@ -507,17 +507,14 @@ export default function ThreadView({
       },
       onError: (err: any) => {
         setIsLoading(false);
-        const isAuth =
-          err.status === 401 ||
-          err.message?.includes('401') ||
-          err.message?.toLowerCase().includes('authentication required');
+        const status = err?.status;
+        const rawMsg = err?.message || 'Failed to connect to backend';
 
-        if (isAuth) {
-          if (openAuthModal) {
-            openAuthModal();
-          } else if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('aria:unauthorized'));
-          }
+        let friendlyMsg = rawMsg;
+        if (status === 401 || rawMsg.includes('401') || rawMsg.toLowerCase().includes('unauthorized')) {
+          friendlyMsg = 'Authentication required or session expired (HTTP 401). Please try again or verify your credentials.';
+        } else if (status === 500 || rawMsg.includes('500')) {
+          friendlyMsg = 'Server encountered an internal error (HTTP 500). Please try again shortly.';
         }
 
         setMessages((prev) =>
@@ -526,7 +523,7 @@ export default function ThreadView({
               ? {
                   ...msg,
                   isStreaming: false,
-                  error: isAuth ? undefined : (err.message || 'Failed to connect to backend'),
+                  error: friendlyMsg,
                 }
               : msg
           )
@@ -772,10 +769,24 @@ export default function ThreadView({
                   )}
                 </div>
 
-                {/* Error Banner */}
+                {/* Error Banner with Retry */}
                 {msg.error && (
-                  <div className="p-3 bg-[#0A0A0B] border border-[#EF4444]/40 text-[#EF4444] text-[12px] font-mono rounded-[6px]">
-                    Error: {msg.error}
+                  <div className="p-3 bg-[#0A0A0B] border border-[#EF4444]/40 text-[#EF4444] text-[12px] font-mono rounded-[6px] flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle size={14} className="shrink-0" />
+                      <span>{msg.error}</span>
+                    </div>
+                    {msg.query && (
+                      <button
+                        type="button"
+                        onClick={() => executeQuery(msg.query!)}
+                        className="shrink-0 px-2.5 py-1 bg-[#141416] hover:bg-[#1B1B1E] border border-[#262629] text-[#EDEDED] text-[11px] rounded transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Retry query"
+                      >
+                        <RotateCcw size={11} />
+                        <span>Retry</span>
+                      </button>
+                    )}
                   </div>
                 )}
 

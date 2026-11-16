@@ -153,11 +153,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('hashchange', handleHashChange);
 
-    const handleUnauthorized = () => {
-      if (mounted) setIsAuthModalOpen(true);
-    };
-    window.addEventListener('aria:unauthorized', handleUnauthorized);
-
     if (supabase) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
         if (!mounted) return;
@@ -178,7 +173,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return () => {
         mounted = false;
         window.removeEventListener('hashchange', handleHashChange);
-        window.removeEventListener('aria:unauthorized', handleUnauthorized);
         subscription.unsubscribe();
       };
     }
@@ -186,7 +180,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
       window.removeEventListener('hashchange', handleHashChange);
-      window.removeEventListener('aria:unauthorized', handleUnauthorized);
     };
   }, []);
 
