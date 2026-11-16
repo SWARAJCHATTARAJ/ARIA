@@ -96,12 +96,11 @@ export async function streamQuery({
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(customHeaders || {}),
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
   };
 
-  if (token) {
-    requestHeaders['Authorization'] = 'Bearer ' + token;
-  } else if (!requestHeaders['Authorization'] && !requestHeaders['authorization']) {
-    // If no session token is present, send anonymous fallback header
+  // If no session token is present, send anonymous fallback header
+  if (!token && !requestHeaders['Authorization'] && !requestHeaders['authorization']) {
     requestHeaders['X-Anonymous-User'] = 'true';
   }
 
