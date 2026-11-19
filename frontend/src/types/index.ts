@@ -17,6 +17,30 @@ export interface AuditClaim {
   end?: number;
 }
 
+export interface FigureData {
+  title: string;
+  caption: string;
+  url: string;
+  source_url?: string;
+  attribution?: string;
+}
+
+export interface ChartSeries {
+  name: string;
+  data: number[];
+}
+
+export interface ChartData {
+  title: string;
+  caption: string;
+  chart_type: string;
+  x_label: string;
+  y_label: string;
+  categories: string[];
+  series: ChartSeries[];
+  source_citation?: string;
+}
+
 export interface VisualCardData {
   found: boolean;
   title?: string;
@@ -137,6 +161,8 @@ export interface MessageTelemetry {
   retrieval?: RetrievalTelemetry;
   audit?: AuditResult;
   stage?: PipelineStage;
+  figures?: FigureData[];
+  chart?: ChartData;
 }
 
 export interface Message {
@@ -146,6 +172,8 @@ export interface Message {
   query?: string;
   citations?: Citation[];
   telemetry?: MessageTelemetry;
+  figures?: FigureData[];
+  chart?: ChartData;
   isStreaming?: boolean;
   queuePosition?: number | null;
   error?: string;

@@ -366,6 +366,12 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 yield f"data: {json.dumps({'event': 'done'})}\n\n"
                 return
 
+            # Launch figure retrieval concurrently in the background during token synthesis
+            from utils.media import fetch_verified_figures, extract_or_generate_topic_chart
+            figures_task = asyncio.create_task(
+                fetch_verified_figures(current_state['query'], current_state.get('canonical_topic'))
+            )
+
             # 5. Token Events
             context = "\n\n".join([
                 f"[[c:{i}]] {chunk.get('title', 'Unknown')} ({chunk.get('venue', chunk.get('source', 'Unknown'))})\n{chunk.get('snippet', chunk.get('content', ''))}" 
@@ -437,6 +443,27 @@ async def query_pipeline(req: QueryRequest, request: Request):
             current_state["draft_answer"] = clean_answer
             current_state["answer_final"] = clean_answer
 
+            # Await background figures task (timeout 3.5s)
+            figures = []
+            try:
+                figures = await asyncio.wait_for(figures_task, timeout=3.5)
+            except Exception as fig_e:
+                logger.debug(f"[{request_id}] Figures fetch timed out or failed: {fig_e}")
+            current_state["figures"] = figures
+            if figures:
+                yield f"data: {json.dumps({'event': 'figures', 'figures': figures})}\n\n"
+
+            # Extract or generate topic chart
+            chart = extract_or_generate_topic_chart(
+                current_state['query'],
+                clean_answer,
+                chunks,
+                current_state.get('canonical_topic')
+            )
+            current_state["chart"] = chart
+            if chart:
+                yield f"data: {json.dumps({'event': 'chart', 'chart': chart})}\n\n"
+
             # RELEASE QUEUE SLOT IMMEDIATELY ONCE RESPONSE STREAM FINISHES
             # Never let a background audit block new queries!
             if slot_acquired:
@@ -489,7 +516,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
             )
 
             # 7. Done Event
-            yield f"data: {json.dumps({'event': 'done', 'unanswerable': bool(current_state.get('unanswerable', False)), 'timing': {'retrieval_seconds': retrieval_seconds, 'time_to_first_token': time_to_first_token, 'total_seconds': total_seconds}, 'tokens': tok_summary})}\n\n"
+            yield f"data: {json.dumps({'event': 'done', 'figures': figures, 'chart': chart, 'unanswerable': bool(current_state.get('unanswerable', False)), 'timing': {'retrieval_seconds': retrieval_seconds, 'time_to_first_token': time_to_first_token, 'total_seconds': total_seconds}, 'tokens': tok_summary})}\n\n"
 
         except Exception as e:
             err_str = str(e).lower()
@@ -919,6 +946,8 @@ class ExportPdfRequest(BaseModel):
     tiers: Optional[List[str]] = []
     claims: Optional[List[Dict[str, Any]]] = []
     sources: Optional[List[Dict[str, Any]]] = []
+    figures: Optional[List[Dict[str, Any]]] = None
+    chart: Optional[Dict[str, Any]] = None
     timing: Optional[Dict[str, Any]] = None
     tokens: Optional[Dict[str, Any]] = None
     # v3 Part 1: export toggles from the Settings Control Center
@@ -942,6 +971,13 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
 
     from utils.pdf_generator import generate_research_pdf
     from pipeline.nodes import expand_to_full_research_paper
+    from utils.media import (
+        fetch_verified_figures,
+        extract_or_generate_topic_chart,
+        download_image_safe,
+        render_chart_matplotlib
+    )
+
     try:
         answer_for_pdf = req.answer_final
         claims_for_pdf = req.claims or []
@@ -967,6 +1003,41 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
             except Exception as expand_err:
                 logger.warning(f"Full paper expansion failed: {expand_err}. Proceeding with original synthesis.")
 
+        # 1. Resolve figures for PDF (use request figures or fetch)
+        figures_for_pdf = req.figures if req.figures is not None else []
+        if not figures_for_pdf:
+            try:
+                figures_for_pdf = await fetch_verified_figures(req.query, req.canonical_topic)
+            except Exception as fig_err:
+                logger.debug(f"PDF figure fetch fallback error: {fig_err}")
+                figures_for_pdf = []
+
+        # Pre-download figure bytes
+        for fig in figures_for_pdf:
+            if "image_bytes" not in fig and fig.get("url"):
+                img_data = await download_image_safe(fig["url"])
+                if img_data:
+                    fig["image_bytes"] = img_data
+
+        # 2. Resolve topic chart for PDF
+        chart_for_pdf = req.chart
+        if not chart_for_pdf:
+            try:
+                chart_for_pdf = extract_or_generate_topic_chart(
+                    req.query,
+                    answer_for_pdf,
+                    sources_for_pdf,
+                    req.canonical_topic
+                )
+            except Exception as chart_err:
+                logger.debug(f"PDF chart generation error: {chart_err}")
+                chart_for_pdf = None
+
+        if chart_for_pdf and "chart_bytes" not in chart_for_pdf:
+            c_bytes = render_chart_matplotlib(chart_for_pdf)
+            if c_bytes:
+                chart_for_pdf["chart_bytes"] = c_bytes
+
         pdf_bytes = generate_research_pdf(
             query=req.query,
             answer_final=answer_for_pdf,
@@ -979,6 +1050,8 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
             canonical_topic=req.canonical_topic,
             full_ledger=req.full_ledger,
             clickable_urls=req.clickable_urls,
+            figures=figures_for_pdf,
+            chart=chart_for_pdf
         )
         return Response(
             content=pdf_bytes,

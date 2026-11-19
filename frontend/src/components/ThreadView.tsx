@@ -21,10 +21,13 @@ import {
   ChevronDown,
   PanelRightOpen,
   Layers,
+  Image as ImageIcon,
+  BarChart2,
+  ExternalLink,
 } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import { streamQuery } from '../services/sseClient';
-import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim, HistoryEntry } from '../types';
+import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim, HistoryEntry, FigureData, ChartData } from '../types';
 import { API_BASE_URL } from '../services/config';
 import { useSettingsContext } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
@@ -263,6 +266,218 @@ function ResearchTraceBar({
   );
 }
 
+function VisualFiguresGrid({ figures }: { figures?: FigureData[] }) {
+  const [failedUrls, setFailedUrls] = useState<Record<string, boolean>>({});
+
+  if (!figures || figures.length === 0) return null;
+
+  const validFigures = figures.filter((f) => f.url && !failedUrls[f.url]);
+  if (validFigures.length === 0) return null;
+
+  return (
+    <div className="my-4 space-y-2">
+      <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#8B8B8E] uppercase tracking-wider font-semibold">
+        <ImageIcon size={13} className="text-[#60A5FA]" />
+        <span>Verified Topic Figures & Diagrams</span>
+      </div>
+      <div className={`grid gap-3 ${validFigures.length > 1 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+        {validFigures.map((fig, idx) => (
+          <div
+            key={idx}
+            className="p-3 bg-[#09090B] border border-white/[0.08] hover:border-white/[0.16] rounded-[8px] space-y-2.5 transition-all"
+          >
+            <div className="relative overflow-hidden rounded-[6px] bg-[#050811] flex items-center justify-center min-h-[170px] max-h-72 border border-white/[0.04]">
+              <img
+                src={fig.url}
+                alt={fig.title || 'Topic figure'}
+                loading="lazy"
+                className="max-h-72 w-full object-contain mx-auto transition-transform hover:scale-[1.02] duration-300"
+                onError={() => setFailedUrls((prev) => ({ ...prev, [fig.url]: true }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="text-[12px] font-semibold text-[#EDEDED] leading-snug">
+                Figure {idx + 1}: {fig.title}
+              </div>
+              {fig.caption && (
+                <p className="text-[11px] text-[#A1A1AA] font-mono leading-relaxed line-clamp-2">
+                  {fig.caption}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-between text-[10px] font-mono text-[#71717A] pt-1.5 border-t border-white/[0.05]">
+              <span className="truncate max-w-[200px]">{fig.attribution || 'Wikimedia Commons'}</span>
+              {fig.source_url && (
+                <a
+                  href={fig.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#60A5FA] hover:underline flex items-center gap-1 shrink-0 cursor-pointer"
+                  title="View primary image record"
+                >
+                  <span>Source</span>
+                  <ExternalLink size={10} />
+                </a>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TopicChart({ chart }: { chart?: ChartData }) {
+  if (!chart || !chart.categories || chart.categories.length === 0 || !chart.series || chart.series.length === 0) {
+    return null;
+  }
+
+  const { title, caption, x_label, y_label, categories, series, source_citation } = chart;
+  const seriesColors = ['#60A5FA', '#34D399', '#A78BFA', '#F59E0B', '#EC4899'];
+
+  const allValues = series.flatMap((s) => s.data);
+  const maxVal = Math.max(...allValues, 10.0);
+  const minVal = Math.min(0, ...allValues);
+  const range = maxVal - minVal || 1.0;
+
+  const chartHeight = 220;
+  const padTop = 20;
+  const padBottom = 40;
+  const padLeft = 45;
+  const padRight = 20;
+  const innerH = chartHeight - padTop - padBottom;
+
+  return (
+    <div className="my-4 p-4 bg-[#09090B] border border-white/[0.08] rounded-[8px] space-y-3">
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#EDEDED] font-mono">
+            <BarChart2 size={13} className="text-[#60A5FA]" />
+            <span>{title || 'Quantitative Comparative Analysis'}</span>
+          </div>
+          {series.length > 1 && (
+            <div className="flex items-center gap-2 text-[10px] font-mono">
+              {series.map((s, sIdx) => (
+                <div key={sIdx} className="flex items-center gap-1">
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: seriesColors[sIdx % seriesColors.length] }}
+                  />
+                  <span className="text-[#A1A1AA]">{s.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {caption && (
+          <p className="text-[11px] font-mono text-[#8B8B8E] leading-relaxed">
+            {caption}
+          </p>
+        )}
+      </div>
+
+      <div className="w-full overflow-x-auto">
+        <svg
+          viewBox={`0 0 540 ${chartHeight}`}
+          className="w-full h-auto min-w-[420px] select-none"
+        >
+          {[0, 0.25, 0.5, 0.75, 1.0].map((frac, idx) => {
+            const y = padTop + innerH - frac * innerH;
+            const val = minVal + frac * range;
+            return (
+              <g key={idx}>
+                <line
+                  x1={padLeft}
+                  y1={y}
+                  x2={540 - padRight}
+                  y2={y}
+                  stroke="rgba(255,255,255,0.06)"
+                  strokeDasharray={idx === 0 ? 'none' : '3 3'}
+                  strokeWidth="0.8"
+                />
+                <text
+                  x={padLeft - 6}
+                  y={y + 3}
+                  textAnchor="end"
+                  fill="#71717A"
+                  fontSize="9"
+                  fontFamily="monospace"
+                >
+                  {val >= 100 ? Math.round(val) : val >= 10 ? val.toFixed(1) : val.toFixed(1)}
+                </text>
+              </g>
+            );
+          })}
+
+          {categories.map((cat, cIdx) => {
+            const totalWidth = 540 - padLeft - padRight;
+            const catSlotW = totalWidth / categories.length;
+            const catCenterX = padLeft + cIdx * catSlotW + catSlotW / 2;
+
+            const groupW = Math.min(catSlotW * 0.75, 60);
+            const barW = Math.max(8, (groupW / series.length) - 3);
+
+            return (
+              <g key={cIdx}>
+                {series.map((s, sIdx) => {
+                  const val = s.data[cIdx] ?? 0;
+                  const barH = Math.max(2, ((val - minVal) / range) * innerH);
+                  const barX = catCenterX - (groupW / 2) + sIdx * (barW + 3);
+                  const barY = padTop + innerH - barH;
+                  const color = seriesColors[sIdx % seriesColors.length];
+
+                  return (
+                    <g key={sIdx} className="transition-all hover:opacity-80">
+                      <rect
+                        x={barX}
+                        y={barY}
+                        width={barW}
+                        height={barH}
+                        fill={color}
+                        rx="2"
+                        opacity="0.85"
+                      />
+                      {val > 0 && (
+                        <text
+                          x={barX + barW / 2}
+                          y={barY - 3}
+                          textAnchor="middle"
+                          fill="#D4D4D8"
+                          fontSize="8.5"
+                          fontFamily="monospace"
+                          fontWeight="600"
+                        >
+                          {val >= 100 ? Math.round(val) : val.toFixed(1).replace(/\.0$/, '')}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+
+                <text
+                  x={catCenterX}
+                  y={chartHeight - 14}
+                  textAnchor="middle"
+                  fill="#A1A1AA"
+                  fontSize="9.5"
+                  fontFamily="monospace"
+                >
+                  {cat.length > 14 ? cat.slice(0, 12) + '…' : cat}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      <div className="flex items-center justify-between text-[10px] font-mono text-[#71717A] pt-1 border-t border-white/[0.04]">
+        <span>Y: {y_label || 'Value'} · X: {x_label || 'Parameter'}</span>
+        <span>{source_citation || 'ARIA Autonomous Research Grounding'}</span>
+      </div>
+    </div>
+  );
+}
+
 const DOMAIN_OPTIONS = [
   { id: 'auto', label: 'All Domains' },
   { id: 'cs', label: 'CS & AI' },
@@ -406,6 +621,8 @@ export default function ThreadView({
         tiers: msg.telemetry?.retrieval?.tiers || ['OKF'],
         claims: msg.telemetry?.audit?.claims || [],
         sources: msg.citations || [],
+        figures: msg.figures || msg.telemetry?.figures || [],
+        chart: msg.chart || msg.telemetry?.chart || null,
       };
       const exportHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
       if (accessToken) {
@@ -633,6 +850,8 @@ export default function ThreadView({
       const updatedTelemetry = { ...(msg.telemetry || currentTelemetry) };
       let updatedContent = msg.content;
       let updatedCitations = msg.citations ? [...msg.citations] : [];
+      let updatedFigures: FigureData[] = msg.figures || updatedTelemetry.figures || [];
+      let updatedChart: ChartData | undefined = msg.chart || updatedTelemetry.chart;
       let updatedQueuePosition: number | null = msg.queuePosition ?? null;
 
       switch (evt.event) {
@@ -659,6 +878,20 @@ export default function ThreadView({
             rag_scores: evt.rag_scores,
             sources: evt.sources,
           };
+          break;
+
+        case 'figures':
+          if (Array.isArray(evt.figures)) {
+            updatedFigures = evt.figures;
+            updatedTelemetry.figures = evt.figures;
+          }
+          break;
+
+        case 'chart':
+          if (evt.chart) {
+            updatedChart = evt.chart;
+            updatedTelemetry.chart = evt.chart;
+          }
           break;
 
         case 'citation': {
@@ -721,12 +954,22 @@ export default function ThreadView({
 
         case 'done':
           updatedTelemetry.stage = 'complete';
+          if (Array.isArray(evt.figures) && evt.figures.length > 0) {
+            updatedFigures = evt.figures;
+            updatedTelemetry.figures = evt.figures;
+          }
+          if (evt.chart) {
+            updatedChart = evt.chart;
+            updatedTelemetry.chart = evt.chart;
+          }
           currentTelemetry = updatedTelemetry;
           return {
             ...msg,
             content: updatedContent,
             citations: updatedCitations,
             telemetry: updatedTelemetry,
+            figures: updatedFigures,
+            chart: updatedChart,
             queuePosition: null,
             isStreaming: false,
           };
@@ -739,6 +982,8 @@ export default function ThreadView({
             content: updatedContent,
             citations: updatedCitations,
             telemetry: updatedTelemetry,
+            figures: updatedFigures,
+            chart: updatedChart,
             queuePosition: null,
             isStreaming: false,
             error: evt.message || 'Stream connection error',
@@ -752,6 +997,8 @@ export default function ThreadView({
         content: updatedContent,
         citations: updatedCitations,
         telemetry: updatedTelemetry,
+        figures: updatedFigures,
+        chart: updatedChart,
         queuePosition: updatedQueuePosition,
       };
     };
@@ -1259,6 +1506,16 @@ export default function ThreadView({
                     </div>
                   ) : null}
                 </div>
+
+                {/* Verified Topic Figures & Diagrams */}
+                {!msg.isStreaming && (msg.figures || msg.telemetry?.figures) && (
+                  <VisualFiguresGrid figures={msg.figures || msg.telemetry?.figures} />
+                )}
+
+                {/* Topic-Wise Quantitative Data Graph */}
+                {!msg.isStreaming && (msg.chart || msg.telemetry?.chart) && (
+                  <TopicChart chart={msg.chart || msg.telemetry?.chart} />
+                )}
 
                 {/* Contextual Follow-Up Questions */}
                 {!msg.isStreaming && msg.content && (

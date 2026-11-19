@@ -100,7 +100,15 @@ function MarkdownRendererInner({
       }
     }
     // Strip any literal [VERIFIED] or \[VERIFIED\] text tags
-    return text.replace(/\\?\[\s*VERIFIED\s*\\?\]/gi, '');
+    text = text.replace(/\\?\[\s*VERIFIED\s*\\?\]/gi, '');
+
+    // Convert \[ ... \] to $$ ... $$ and strip empty \[ \] blocks so raw empty brackets never render
+    text = text.replace(/\\\[\s*\\\]/g, '');
+    text = text.replace(/\$\$\s*\$\$/g, '');
+    text = text.replace(/\\\[([\s\S]+?)\\\]/g, '$$$$$1$$$$');
+    text = text.replace(/\\\(\s*\\\)/g, '');
+
+    return text;
   }, [rawText, isStreaming]);
 
   // Map citation ID -> Citation object

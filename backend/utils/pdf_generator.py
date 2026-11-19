@@ -17,10 +17,16 @@ Guarantees on EVERY topic:
 - Zero raw Markdown asterisks (** or *), zero leaking carets (^), and complete Unicode/LaTeX sanitization.
 """
 import fitz
+import io
+import logging
 import re
 import datetime
 import unicodedata
 from typing import List, Dict, Any, Optional, Tuple
+import httpx
+from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 # Unicode spaces, dashes, quotes
 _SPACES = ["\u202f", "\u00a0", "\u2009", "\u2002", "\u2003", "\u2004", "\u2005", "\u2006", "\u2007", "\u2008", "\u200a", "\u200b", "\ufeff"]
@@ -415,9 +421,13 @@ class AcademicTwoColumnPaper:
         tokens: Optional[Dict[str, Any]] = None,
         canonical_topic: Optional[str] = None,
         full_ledger: bool = True,
-        clickable_urls: bool = True
+        clickable_urls: bool = True,
+        figures: Optional[List[Dict[str, Any]]] = None,
+        chart: Optional[Dict[str, Any]] = None
     ):
         self.doc = fitz.open()
+        self.figures = figures or []
+        self.chart = chart
         self.query = sanitize_academic_text((query or "Research Overview").strip())
         self.canonical_topic = sanitize_academic_text(canonical_topic or "")
         self.academic_title = generate_academic_paper_title(self.query, self.canonical_topic)
@@ -926,6 +936,52 @@ class AcademicTwoColumnPaper:
 
         self.y += 8.0
 
+    def add_figure(self, img_bytes: bytes, caption_label: str, attribution: str = "", max_h: float = 210.0):
+        """
+        Embeds an image cleanly with academic caption and attribution, keeping image and caption together.
+        """
+        if not img_bytes:
+            return
+        try:
+            pil_img = Image.open(io.BytesIO(img_bytes))
+            w_orig, h_orig = pil_img.size
+            if w_orig <= 0 or h_orig <= 0:
+                return
+
+            avail_w = self.COL_W
+            aspect = h_orig / w_orig
+            target_w = min(avail_w, 360.0)
+            target_h = target_w * aspect
+            if target_h > max_h:
+                target_h = max_h
+                target_w = target_h / aspect
+
+            cap_text = caption_label.strip()
+            cap_lines = self.wrap_line(cap_text, max_w=self.COL_W, fontname="tibo", fontsize=8.0)
+            cap_h = len(cap_lines) * 10.0 + (11.0 if attribution else 0.0)
+
+            total_block_h = target_h + cap_h + 16.0
+            self.ensure_space(total_block_h)
+
+            x_offset = self.COL_X[self.current_col] + max(0.0, (self.COL_W - target_w) / 2.0)
+            rect = fitz.Rect(x_offset, self.y, x_offset + target_w, self.y + target_h)
+            self.page.insert_image(rect, stream=img_bytes)
+            self.y += target_h + 5.0
+
+            x_cap = self.COL_X[self.current_col]
+            for idx, cl in enumerate(cap_lines):
+                self.page.insert_text(fitz.Point(x_cap, self.y), cl, fontname="tibo" if idx == 0 else "tiro", fontsize=8.0, color=(0.10, 0.13, 0.16))
+                self.y += 10.0
+
+            if attribution:
+                attr_str = f"Source: {attribution}"
+                self.page.insert_text(fitz.Point(x_cap, self.y), attr_str, fontname="tiit", fontsize=7.0, color=(0.40, 0.44, 0.48))
+                self.y += 10.0
+
+            self.y += 6.0
+        except Exception as e:
+            logger.warning(f"Failed to add figure to PDF: {e}")
+
     # ------------------------------------------------------------- references
     def add_reference(self, num: int, src_name: str, tier: str, src_type: str, authors=None, year=None, title: str = "", url: str = ""):
         """
@@ -1123,6 +1179,30 @@ class AcademicTwoColumnPaper:
                 "cover only part of this question", "as an ai", "as an automated"
             ))
 
+        figure1_rendered = False
+        figure2_rendered = False
+
+        def _download_img_sync(url: str, timeout: float = 3.0) -> Optional[bytes]:
+            if not url or not url.startswith("http"):
+                return None
+            try:
+                from utils.media import USER_AGENT
+                headers = {"User-Agent": USER_AGENT}
+                with httpx.Client(timeout=timeout) as client:
+                    resp = client.get(url, headers=headers)
+                    if resp.status_code == 200 and len(resp.content) > 100:
+                        img = Image.open(io.BytesIO(resp.content))
+                        if img.mode not in ("RGB", "L"):
+                            img = img.convert("RGB")
+                        if img.width > 1200 or img.height > 1200:
+                            img.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
+                        buf = io.BytesIO()
+                        img.save(buf, format="JPEG", quality=90)
+                        return buf.getvalue()
+            except Exception as e:
+                logger.debug(f"Sync image download failed for {url}: {e}")
+            return None
+
         # ------------------------------------------------------------------
         # Render the 5 Canonical Manuscript Sections
         # ------------------------------------------------------------------
@@ -1130,9 +1210,9 @@ class AcademicTwoColumnPaper:
             self.add_section_header(title)
             items = sections_content[s_idx]
 
-            # Section III renders the quantitative Markdown table
+            # Section III renders the quantitative Markdown table and topic chart
             if s_idx == 2 and pending_tables:
-                # Flow: introductory paragraph -> Table I -> analytical commentary discussing the table
+                # Flow: introductory paragraph -> Table I -> Figure 2 (chart) -> analytical commentary
                 intro_items = []
                 post_items = []
                 for kind, text in items:
@@ -1153,6 +1233,19 @@ class AcademicTwoColumnPaper:
                 for t_rows in pending_tables:
                     self._render_table_block(t_rows, caption="Table I: Quantitative Properties & Comparative Benchmark Analysis")
                 self.y += 2.0
+
+                # Embed Figure 2: Matplotlib quantitative comparative benchmark chart
+                if self.chart and not figure2_rendered:
+                    from utils.media import render_chart_matplotlib
+                    c_bytes = self.chart.get("chart_bytes") or render_chart_matplotlib(self.chart)
+                    if c_bytes:
+                        c_title = self.chart.get("title") or "Quantitative Benchmark & Comparative Analysis"
+                        c_cap = self.chart.get("caption") or ""
+                        full_cap = f"Figure 2: {c_title}. {c_cap}".strip()
+                        c_src = self.chart.get("source_citation") or "ARIA Autonomous Benchmark Synthesis"
+                        self.add_figure(c_bytes, full_cap, attribution=c_src)
+                        figure2_rendered = True
+
                 for kind, text in post_items:
                     if kind == "bullet":
                         self.add_bullet("", text)
@@ -1187,6 +1280,30 @@ class AcademicTwoColumnPaper:
                     else:
                         fallback_p = f"In conclusion, verified evidence confirms the operational viability and rigorous performance envelope of {topic_name} [1]. Open research directions prioritize architectural improvements and next-generation benchmark frontiers [1]."
                     self.add_paragraph(fallback_p)
+
+                # Embed Figure 1: verified topic picture/diagram inside Section I or II
+                if s_idx in (0, 1) and self.figures and not figure1_rendered:
+                    fig0 = self.figures[0]
+                    img_bytes = fig0.get("image_bytes")
+                    if not img_bytes and fig0.get("url"):
+                        img_bytes = _download_img_sync(fig0["url"])
+                    if img_bytes:
+                        cap = fig0.get("caption") or fig0.get("title") or f"Scientific overview of {self.academic_title.split(':')[0]}."
+                        attr = fig0.get("attribution") or "Wikimedia Commons"
+                        self.add_figure(img_bytes, f"Figure 1: {cap}", attribution=attr)
+                        figure1_rendered = True
+
+                # If Section III had no pending table, still embed Figure 2 if chart exists
+                if s_idx == 2 and self.chart and not figure2_rendered:
+                    from utils.media import render_chart_matplotlib
+                    c_bytes = self.chart.get("chart_bytes") or render_chart_matplotlib(self.chart)
+                    if c_bytes:
+                        c_title = self.chart.get("title") or "Quantitative Benchmark & Comparative Analysis"
+                        c_cap = self.chart.get("caption") or ""
+                        full_cap = f"Figure 2: {c_title}. {c_cap}".strip()
+                        c_src = self.chart.get("source_citation") or "ARIA Autonomous Benchmark Synthesis"
+                        self.add_figure(c_bytes, full_cap, attribution=c_src)
+                        figure2_rendered = True
 
         # ------------------------------------------------------------------
         # SECTION VI. REFERENCES (Cited-Only, Renumbered 1-N)
@@ -1228,7 +1345,9 @@ def generate_research_pdf(
     tokens: Optional[Dict[str, Any]] = None,
     canonical_topic: Optional[str] = None,
     full_ledger: bool = True,
-    clickable_urls: bool = True
+    clickable_urls: bool = True,
+    figures: Optional[List[Dict[str, Any]]] = None,
+    chart: Optional[Dict[str, Any]] = None
 ) -> bytes:
     paper = AcademicTwoColumnPaper(
         query=query,
@@ -1241,6 +1360,8 @@ def generate_research_pdf(
         tokens=tokens,
         canonical_topic=canonical_topic,
         full_ledger=full_ledger,
-        clickable_urls=clickable_urls
+        clickable_urls=clickable_urls,
+        figures=figures,
+        chart=chart
     )
     return paper.generate()
