@@ -150,5 +150,4 @@ export interface Message {
   queuePosition?: number | null;
   error?: string;
   timestamp?: number;
-  recordedDate?: string;
 }

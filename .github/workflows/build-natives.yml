@@ -209,16 +209,25 @@ jobs:
           npm ci
           npm run build
 
-      - name: Stage Web Assets for Capacitor
-        run: |
-          rm -rf dist
-          cp -r frontend/dist dist
-
-      # Sequence 2: npx cap sync android (confirming webDir in capacitor.config.ts matches dist)
+      # Sequence 2: npx cap sync android (authoritative capacitor.config.ts with webDir: 'frontend/dist')
       - name: Install Capacitor CLI and Sync Android
         run: |
           npm install -D @capacitor/cli @capacitor/core @capacitor/android typescript
           npx cap sync android
+
+      - name: Verify Android Assets Synced
+        run: |
+          echo "Verifying synced Android web assets..."
+          if [ ! -f "android/app/src/main/assets/public/index.html" ]; then
+            echo "::error::CRITICAL: android/app/src/main/assets/public/index.html not found! Capacitor sync failed to copy web assets."
+            exit 1
+          fi
+          if ! cmp -s "frontend/dist/index.html" "android/app/src/main/assets/public/index.html"; then
+            echo "::error::CRITICAL: Synced android index.html does not match frontend/dist/index.html!"
+            diff "frontend/dist/index.html" "android/app/src/main/assets/public/index.html" || true
+            exit 1
+          fi
+          echo "Verified: android/app/src/main/assets/public/index.html matches frontend/dist/index.html perfectly."
 
       - name: Generate Capacitor Android Adaptive Icons
         run: npx --yes @capacitor/assets generate --android --iconBackgroundColor '#09090B' --iconBackgroundColorDark '#09090B' --splashBackgroundColor '#09090B' --splashBackgroundColorDark '#09090B'

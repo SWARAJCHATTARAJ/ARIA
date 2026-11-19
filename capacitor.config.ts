@@ -3,7 +3,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'com.aria.app',
   appName: 'ARIA',
-  webDir: 'dist',
+  webDir: 'frontend/dist',
   backgroundColor: '#09090B',
   android: {
     backgroundColor: '#09090B',

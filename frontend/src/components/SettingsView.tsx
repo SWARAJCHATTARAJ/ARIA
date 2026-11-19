@@ -503,6 +503,12 @@ export default function SettingsView() {
                 <span className="text-[#60A5FA] tabular-nums">{apiLatencyMs} ms</span>
               </div>
             )}
+            <div className="flex justify-between items-center pt-1 border-t border-white/[0.04]">
+              <span className="text-[#8B8B8E]">Client Version</span>
+              <span className="text-[#EDEDED] font-mono text-[11px]">
+                ARIA v2.0 · {typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : '2.0.0'} ({typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : 'latest'})
+              </span>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-4">

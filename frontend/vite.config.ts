@@ -1,10 +1,24 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'child_process';
 
 const isNativeBuild = process.env.VITE_BUILD_TARGET === 'native' || process.env.BUILD_TARGET === 'native';
 
+let commitHash = 'dev';
+try {
+  commitHash = execSync('git rev-parse --short HEAD').toString().trim();
+} catch {
+  commitHash = process.env.GITHUB_SHA ? process.env.GITHUB_SHA.substring(0, 7) : '2.0.0';
+}
+const buildDate = new Date().toISOString().split('T')[0];
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify('2.0.0'),
+    __BUILD_HASH__: JSON.stringify(commitHash || '2.0.0'),
+    __BUILD_DATE__: JSON.stringify(buildDate),
+  },
   plugins: [
     react(),
     VitePWA({

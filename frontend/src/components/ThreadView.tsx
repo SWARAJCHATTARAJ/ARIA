@@ -32,25 +32,22 @@ import { addHistoryEntry, getHistory, addToCollection, isInCollection } from '..
 
 const TOPIC_PILLS = [
   {
-    id: 'okf',
+    id: 'auto-systems',
     label: 'Autonomous Systems Taxonomy',
     query: 'What is the definition and taxonomy of autonomous systems in artificial intelligence?',
-    recordedDate: 'October 16, 2026',
   },
   {
-    id: 'rag',
+    id: 'crispr-mitigation',
     label: 'CRISPR Off-Target Mitigation',
     query: 'What are the off-target mitigation strategies for CRISPR gene editing?',
-    recordedDate: 'October 16, 2026',
   },
   {
-    id: 'live',
+    id: 'jwst-deep-field',
     label: 'JWST 2024 Deep Field',
     query: 'What were the latest discoveries of the James Webb Space Telescope in 2024?',
-    recordedDate: 'October 16, 2026',
   },
   {
-    id: 'bft',
+    id: 'bft-consensus',
     label: 'Byzantine Fault Tolerance',
     query: 'How do multi-agent consensus protocols handle Byzantine fault tolerance?',
   },
@@ -583,7 +580,7 @@ export default function ThreadView({
     );
   };
 
-  const executeQuery = (queryText: string, mockKey?: string, recordedDate?: string) => {
+  const executeQuery = (queryText: string, mockKey?: string) => {
     if (!queryText.trim() || isLoading) return;
     if (onQueryErrorChange) onQueryErrorChange(false);
     if (onUpdateActiveTelemetry) onUpdateActiveTelemetry({ stage: 'routing' });
@@ -613,7 +610,6 @@ export default function ThreadView({
       telemetry: { stage: 'routing' },
       isStreaming: true,
       timestamp: Date.now(),
-      recordedDate: recordedDate,
     };
 
     setMessages((prev) => [...prev, userMessage, initialAriaMessage]);
@@ -1156,7 +1152,7 @@ export default function ThreadView({
                   <button
                     key={pill.id}
                     type="button"
-                    onClick={() => executeQuery(pill.query, pill.id, pill.recordedDate)}
+                    onClick={() => executeQuery(pill.query)}
                     className="px-3 py-1.5 bg-[#111115] hover:bg-[#18181E] border border-white/[0.07] hover:border-white/[0.14] rounded-[6px] text-[12px] font-sans text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer flex items-center gap-1.5"
                   >
                     <span>{pill.label}</span>
