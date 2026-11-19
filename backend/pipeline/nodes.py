@@ -43,26 +43,23 @@ def get_judge_model_name() -> str:
         configured = "llama-3.1-8b-instant"
     return configured
 
-def create_judge_llm(model_name: str) -> ChatGroq:
-    return ChatGroq(
-        api_key=settings.groq_api_key,
-        model_name=model_name,
-        temperature=0,
-        model_kwargs={"response_format": {"type": "json_object"}}
-    )
+from utils.key_manager import KeyRotationManager
 
-groq_judge_llm = create_judge_llm(get_judge_model_name())
+global_key_manager = KeyRotationManager()
 
-def current_writer_llm():
-    return groq_llm
+def get_key_manager(state: Optional[Dict[str, Any]] = None) -> KeyRotationManager:
+    if state and state.get("api_key_pool"):
+        return KeyRotationManager(request_keys=state.get("api_key_pool"))
+    return global_key_manager
 
+def current_writer_llm(key_manager: Optional[KeyRotationManager] = None) -> ChatGroq:
+    km = key_manager or global_key_manager
+    return km.create_chat_groq(model_name=settings.groq_writer_model, temperature=0)
 
-def current_judge_llm():
-    global groq_judge_llm
+def current_judge_llm(key_manager: Optional[KeyRotationManager] = None) -> ChatGroq:
+    km = key_manager or global_key_manager
     active_name = get_judge_model_name()
-    if groq_judge_llm.model_name != active_name:
-        groq_judge_llm = create_judge_llm(active_name)
-    return groq_judge_llm
+    return km.create_chat_groq(model_name=active_name, temperature=0, json_mode=True)
 
 
 # ---------------------------------------------------------------------------
@@ -106,13 +103,20 @@ _DEEP_STRUCTURE = (
 )
 
 
-def build_synthesis_prompt() -> str:
+def build_synthesis_prompt(topic: Optional[str] = None) -> str:
     """
     Composes the full synthesis system prompt from the identity/security base,
     the universal structure, and the shared grounding/citation rules.
     Used by BOTH the streaming /api/query path and synthesize_answer.
     """
-    return f"{_IDENTITY_SECURITY}\n{_DEEP_STRUCTURE}\n\n{_CITATION_RULES}"
+    domain_clause = ""
+    if topic and topic.lower() != "auto":
+        domain_clause = (
+            f"\n\nDOMAIN SCOPE: {topic.upper()}.\n"
+            f"Ensure scientific terminology, theoretical principles, physical/chemical/computational mechanisms, "
+            f"and comparative empirical benchmarks are strictly grounded within {topic}."
+        )
+    return f"{_IDENTITY_SECURITY}\n{_DEEP_STRUCTURE}{domain_clause}\n\n{_CITATION_RULES}"
 
 def normalize_unicode_and_math(t: str) -> str:
     """
@@ -671,7 +675,12 @@ async def retrieve_cascade(state: AgentState) -> dict:
     async def _fetch_live():
         _live_chunks = []
         try:
-            free_sources = await search_all_free_sources(active_query, wikipedia_title=wiki_title, canonical_topic=canonical_topic)
+            free_sources = await search_all_free_sources(
+                active_query,
+                wikipedia_title=wiki_title,
+                canonical_topic=canonical_topic,
+                topic=state.get("topic")
+            )
             if free_sources:
                 for s in free_sources:
                     s["tier"] = "LIVE"
@@ -965,7 +974,7 @@ def synthesize_answer(state: AgentState) -> dict:
         for i, chunk in enumerate(chunks)
     ])
     
-    system_prompt = build_synthesis_prompt()
+    system_prompt = build_synthesis_prompt(topic=state.get("topic"))
     
     user_prompt = f"Query: {state['query']}\n\nContext:\n{context}"
     

@@ -4,6 +4,7 @@ from typing import List, Any
 
 class Settings(BaseSettings):
     groq_api_key: str = "default"
+    groq_api_keys: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     groq_writer_model: str = "openai/gpt-oss-120b"
     groq_judge_model: str = "llama-3.1-8b-instant"

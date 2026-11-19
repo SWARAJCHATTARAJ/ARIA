@@ -102,6 +102,9 @@ function AppShell() {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         setIsRailCollapsed((prev) => !prev);
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === ']' || e.code === 'BracketRight')) {
+        e.preventDefault();
+        setSourcePanelOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -196,6 +199,8 @@ function AppShell() {
             onPendingQueryConsumed={() => setPendingQuery(null)}
             onSourcesExpand={handleSourcesExpand}
             onToggleSidebar={() => setIsMobileDrawerOpen(true)}
+            isInspectorOpen={isSourcePanelOpen}
+            onToggleInspector={() => setSourcePanelOpen((prev) => !prev)}
           />
         )}
         {activeTab === 'history' && <HistoryView onOpenQuery={handleOpenQuery} />}
@@ -204,14 +209,15 @@ function AppShell() {
         {activeTab === 'settings' && <SettingsView />}
       </main>
 
-      {/* Right Source Panel: hidden until a query starts */}
-      {isSourcePanelOpen && activeTab === 'query' && hasQuery && (
+      {/* Right Source Panel / Research Inspector */}
+      {isSourcePanelOpen && activeTab === 'query' && (
         <>
           <div
-            className="lg:hidden fixed inset-0 bg-black/60 z-40"
+            className="lg:hidden fixed inset-0 bg-black/60 z-40 transition-opacity duration-200"
             onClick={() => setSourcePanelOpen(false)}
+            aria-hidden="true"
           />
-          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#111115] border-l border-white/[0.07] flex-shrink-0 transition-transform duration-200">
+          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#111115] border-l border-white/[0.07] flex-shrink-0 right-sidebar-smooth">
             <SourcePanel
               onClose={() => setSourcePanelOpen(false)}
               activeQuery={hasQuery}

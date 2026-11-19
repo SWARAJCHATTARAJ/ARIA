@@ -5,7 +5,13 @@ on:
     branches: [ main ]
     tags:
       - 'v*'
+      - 'app-v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 2.0.0)'
+        required: false
+        default: '2.0.0'
 
 permissions:
   contents: write
@@ -27,25 +33,33 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
 
       - name: Setup Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri'
+
       - name: Install frontend dependencies
         working-directory: frontend
         shell: pwsh
         run: |
-          if (Test-Path node_modules) { Remove-Item -Recurse -Force node_modules }
-          if (Test-Path package-lock.json) { Remove-Item -Force package-lock.json }
           npm install
 
       - name: Build frontend
         working-directory: frontend
         run: npm run build
         env:
+          VITE_API_URL: https://aria.swarajchattaraj.tech
           VITE_API_BASE_URL: https://aria.swarajchattaraj.tech
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://kxfybyzvyuqrvqckuqgh.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4Znlienp2eXVxcnZxY2t1cWdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAwMzgwNTAsImV4cCI6MjA1NTYxNDA1MH0.sUq-7q8v_aY-j534J_u5j4x8GkL6qPZ87zW1n4q2z2E' }}
 
       - name: Build Tauri Windows App
         run: |
@@ -56,26 +70,36 @@ jobs:
       - name: Locate and Stage Windows Installer
         shell: pwsh
         run: |
+          $ver = if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ github.event.inputs.version }}") {
+            "${{ github.event.inputs.version }}".TrimStart("v")
+          } elseif ("${{ github.ref }}".StartsWith("refs/tags/")) {
+            "${{ github.ref_name }}".TrimStart("v").TrimStart("app-v")
+          } else {
+            "2.0.0"
+          }
+          $targetName = "ARIA-v${ver}-windows-setup.exe"
+          Write-Host "Target Windows installer artifact name: $targetName"
+
           $nsis = Get-ChildItem -Path "src-tauri/target" -Recurse -Filter "*.exe" | Where-Object { $_.FullName -like "*bundle*nsis*" } | Select-Object -First 1
           if ($nsis) {
             Write-Host "Found NSIS installer: $($nsis.FullName)"
-            Copy-Item -Path $nsis.FullName -Destination "./ARIA-Windows-x64-Setup.exe" -Force
+            Copy-Item -Path $nsis.FullName -Destination "./$targetName" -Force
           } else {
             $raw = Get-ChildItem -Path "src-tauri/target" -Recurse -Filter "*.exe" | Where-Object { $_.FullName -like "*release*" -and $_.FullName -notlike "*deps*" -and $_.FullName -notlike "*build*" } | Select-Object -First 1
             if ($raw) {
               Write-Host "Found release binary: $($raw.FullName)"
-              Copy-Item -Path $raw.FullName -Destination "./ARIA-Windows-x64-Setup.exe" -Force
+              Copy-Item -Path $raw.FullName -Destination "./$targetName" -Force
             } else {
               throw "No Windows executable found in src-tauri/target"
             }
           }
-          Get-Item "./ARIA-Windows-x64-Setup.exe"
+          Get-Item "./$targetName"
 
       - name: Upload Windows Executable Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aria-windows-x64-exe
-          path: ARIA-Windows-x64-Setup.exe
+          name: aria-windows-setup-exe
+          path: ARIA-v*-windows-setup.exe
 
       - name: Publish Windows Installer to GitHub Releases
         uses: softprops/action-gh-release@v2
@@ -83,9 +107,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}
-          name: 'ARIA App v1.0.0'
-          files: ARIA-Windows-x64-Setup.exe
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || (github.event.inputs.version && format('v{0}', github.event.inputs.version) || 'v2.0.0') }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('ARIA {0}', github.ref_name) || (github.event.inputs.version && format('ARIA v{0}', github.event.inputs.version) || 'ARIA v2.0.0') }}
+          files: ARIA-v*-windows-setup.exe
           fail_on_unmatched_files: false
 
       - name: Write Windows Step Summary
@@ -93,14 +117,14 @@ jobs:
         shell: pwsh
         run: |
           $status = if ("${{ job.status }}" -eq "success") { "PASS Succeeded" } else { "FAIL Failed" }
-          $tag = if ("${{ github.ref }}".StartsWith("refs/tags/")) { "${{ github.ref_name }}" } else { "v1.0.0" }
+          $tag = if ("${{ github.ref }}".StartsWith("refs/tags/")) { "${{ github.ref_name }}" } else { "v2.0.0" }
           $summary = @"
           ### Windows Native Build Summary
           | Metric | Value |
           |---|---|
           | **Status** | $status |
           | **Target** | x86_64-pc-windows-msvc |
-          | **Artifact** | `ARIA-Windows-x64-Setup.exe` |
+          | **Artifact** | `ARIA-v*-windows-setup.exe` |
           | **Release Tag** | `$tag` |
           "@
           $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
@@ -118,12 +142,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
 
       - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: 21
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v3
 
       - name: Install Android SDK Build-Tools and Platforms
         run: |
@@ -133,14 +162,16 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: |
-          rm -rf node_modules package-lock.json
           npm install
 
       - name: Build frontend
         working-directory: frontend
         run: npm run build
         env:
+          VITE_API_URL: https://aria.swarajchattaraj.tech
           VITE_API_BASE_URL: https://aria.swarajchattaraj.tech
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://kxfybyzvyuqrvqckuqgh.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4Znlienp2eXVxcnZxY2t1cWdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAwMzgwNTAsImV4cCI6MjA1NTYxNDA1MH0.sUq-7q8v_aY-j534J_u5j4x8GkL6qPZ87zW1n4q2z2E' }}
 
       - name: Install Capacitor CLI & Sync
         run: |
@@ -148,7 +179,7 @@ jobs:
           npx cap sync android
 
       - name: Generate Capacitor Android Adaptive Icons
-        run: npx --yes @capacitor/assets generate --android --iconBackgroundColor '#050505' --iconBackgroundColorDark '#050505' --splashBackgroundColor '#050505' --splashBackgroundColorDark '#050505'
+        run: npx --yes @capacitor/assets generate --android --iconBackgroundColor '#09090B' --iconBackgroundColorDark '#09090B' --splashBackgroundColor '#09090B' --splashBackgroundColorDark '#09090B'
 
       - name: Make Gradle wrapper executable and Build APK
         run: |
@@ -158,14 +189,19 @@ jobs:
 
       - name: Stage Android APK
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk ./ARIA-Android-v1.0.0.apk
-          ls -lh ./ARIA-Android-v1.0.0.apk
+          RAW_VER="${{ github.event.inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '2.0.0') }}"
+          VER="${RAW_VER#v}"
+          VER="${VER#app-v}"
+          OUT="ARIA-v${VER}-android.apk"
+          echo "Staging APK to ./$OUT"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "./$OUT"
+          ls -lh "./$OUT"
 
       - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aria-android_debug_apk
-          path: ARIA-Android-v1.0.0.apk
+          name: aria-android-apk
+          path: ARIA-v*-android.apk
 
       - name: Publish Android APK to GitHub Releases
         uses: softprops/action-gh-release@v2
@@ -173,9 +209,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}
-          name: 'ARIA App v1.0.0'
-          files: ARIA-Android-v1.0.0.apk
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || (github.event.inputs.version && format('v{0}', github.event.inputs.version) || 'v2.0.0') }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('ARIA {0}', github.ref_name) || (github.event.inputs.version && format('ARIA v{0}', github.event.inputs.version) || 'ARIA v2.0.0') }}
+          files: ARIA-v*-android.apk
           fail_on_unmatched_files: false
 
       - name: Write Android Step Summary
@@ -187,13 +223,13 @@ jobs:
           else
             EMOJI="FAIL Failed"
           fi
-          TAG="${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0' }}"
+          TAG="${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.0.0' }}"
           cat << EOF >> $GITHUB_STEP_SUMMARY
           ### Android Native Build Summary
           | Metric | Value |
           |---|---|
           | **Status** | $EMOJI |
           | **Target** | Android SDK 34 (Capacitor) |
-          | **Artifact** | \`ARIA-Android-v1.0.0.apk\` |
+          | **Artifact** | \`ARIA-v*-android.apk\` |
           | **Release Tag** | \`$TAG\` |
           EOF

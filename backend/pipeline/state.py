@@ -7,6 +7,8 @@ def append_to_list(left: list, right: list) -> list:
 
 class AgentState(TypedDict):
     query: str
+    topic: Optional[str]
+    api_key_pool: Optional[List[str]]
     thread_id: Optional[str]
     user_id: Optional[str]
     compare_mode: bool

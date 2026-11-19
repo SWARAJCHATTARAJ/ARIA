@@ -9,8 +9,11 @@ import {
   Command,
   PanelLeftOpen,
   LogOut,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useSettingsContext } from '../context/SettingsContext';
 
 interface SidebarProps {
   activeTab: string;
@@ -36,6 +39,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const isRail = collapsed;
   const { user, signOut } = useAuth();
+  const { settings, toggleTheme } = useSettingsContext();
 
   return (
     <nav
@@ -136,20 +140,30 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* User Session Footer */}
-      <div className="pt-3 border-t border-white/[0.07]">
-        {user && (
-          <div className={`flex items-center ${isRail ? 'justify-center' : 'justify-between'} gap-2`}>
-            {!isRail && (
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium text-[#EDEDED] truncate">
-                  {user.name}
-                </p>
-                <p className="text-[11px] font-mono text-[#71717A] truncate">
-                  {user.provider === 'github' ? `@${user.username}` : user.email}
-                </p>
-              </div>
-            )}
+      {/* User Session & Theme Footer */}
+      <div className="pt-3 border-t border-white/[0.07] space-y-2">
+        <div className={`flex items-center ${isRail ? 'justify-center' : 'justify-between'} gap-2`}>
+          {!isRail && (
+            <button
+              onClick={toggleTheme}
+              className="flex items-center gap-2 text-[12px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] p-1.5 rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-all cursor-pointer"
+              title={`Switch to ${settings.theme === 'dark' ? 'Light' : 'Dark'} theme`}
+            >
+              {settings.theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+              <span>{settings.theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+            </button>
+          )}
+          {isRail && (
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#18181E] active:scale-[0.98] rounded-[6px] transition-all cursor-pointer"
+              title={`Switch to ${settings.theme === 'dark' ? 'Light' : 'Dark'} theme`}
+            >
+              {settings.theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+          )}
+
+          {user && !isRail && (
             <button
               onClick={() => signOut()}
               title="Sign out"
@@ -158,6 +172,17 @@ export default function Sidebar({
             >
               <LogOut size={15} />
             </button>
+          )}
+        </div>
+
+        {user && !isRail && (
+          <div className="min-w-0 px-1.5 pt-1">
+            <p className="text-[12px] font-medium text-[#EDEDED] truncate">
+              {user.name}
+            </p>
+            <p className="text-[10px] font-mono text-[#71717A] truncate">
+              {user.provider === 'github' ? `@${user.username}` : user.email}
+            </p>
           </div>
         )}
       </div>

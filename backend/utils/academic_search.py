@@ -30,6 +30,28 @@ AFFILIATION_KEYWORDS = {
     "ministry", "association", "technology and medicine"
 }
 
+ARXIV_TOPIC_CATEGORIES = {
+    "cs": "cat:cs.*",
+    "physics": "(cat:physics.*+OR+cat:astro-ph.*)",
+    "math": "cat:math.*",
+    "bio": "cat:q-bio.*",
+    "chem": "(cat:cond-mat.mtrl-sci+OR+cat:physics.chem-ph)",
+    "eng": "cat:eess.*",
+    "econ": "(cat:q-fin.*+OR+cat:econ.*)",
+    "law": "(cat:econ.*+OR+cat:cs.CY)",
+}
+
+OPENALEX_TOPIC_CONCEPTS = {
+    "cs": "computer science",
+    "physics": "physics",
+    "math": "mathematics",
+    "bio": "biology",
+    "chem": "chemistry",
+    "eng": "engineering",
+    "econ": "economics",
+    "law": "law",
+}
+
 def clean_authors_list(authors: List[str]) -> Optional[List[str]]:
     """Filters out institutional affiliations from authors list."""
     cleaned = []
@@ -72,9 +94,9 @@ def clean_scraped_reference_text(text: str) -> str:
     # 4. Collapse whitespace
     return " ".join(t.split()).strip()
 
-async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Optional[str] = None) -> List[Dict[str, Any]]:
+async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Optional[str] = None, topic: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Queries official arXiv API with relevance sort and optional submittedDate range from query year.
+    Queries official arXiv API with relevance sort, domain scoping, and optional submittedDate range from query year.
     Drops results with no topic overlap.
     """
     # Prefer canonical topic keywords for short/acronym queries to prevent cross-domain collisions
@@ -93,15 +115,24 @@ async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Option
     fallback_q = re.sub(r"[?*#&%=+]", " ", effective_query).strip()
     clean_query = urllib.parse.quote_plus(search_q if search_q else fallback_q)
     
+    # Add domain category scoping if specified
+    cat_clause = ""
+    if topic:
+        t_key = topic.lower().strip()
+        for k, v in ARXIV_TOPIC_CATEGORIES.items():
+            if k in t_key or t_key in k:
+                cat_clause = f"+AND+{v}"
+                break
+
     if target_year:
         url = (
-            f"https://export.arxiv.org/api/query?search_query=all:{clean_query}"
+            f"https://export.arxiv.org/api/query?search_query=all:{clean_query}{cat_clause}"
             f"+AND+submittedDate:[{target_year}01010000+TO+{target_year}12312359]"
             f"&sortBy=relevance&sortOrder=descending&start=0&max_results={max_results}"
         )
     else:
         url = (
-            f"https://export.arxiv.org/api/query?search_query=all:{clean_query}"
+            f"https://export.arxiv.org/api/query?search_query=all:{clean_query}{cat_clause}"
             f"&sortBy=relevance&sortOrder=descending&start=0&max_results={max_results}"
         )
     
@@ -200,14 +231,25 @@ async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Option
         
     return results
 
-async def search_openalex(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
+async def search_openalex(query: str, max_results: int = 3, topic: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Queries OpenAlex API for open scientific literature.
-    Applies publication_year filter when a year is present in the query.
+    Applies domain scoping and publication_year filter when a year is present in the query.
     """
     # Strip punctuation/wildcards that trigger OpenAlex 400 errors
     clean_q = re.sub(r"[?*#&%=+]", " ", query).strip()
-    clean_query = urllib.parse.quote_plus(" ".join(clean_q.split()))
+    
+    # Enhance query with topic concept if provided
+    topic_addon = ""
+    if topic:
+        t_key = topic.lower().strip()
+        for k, concept in OPENALEX_TOPIC_CONCEPTS.items():
+            if k in t_key or t_key in k:
+                if concept not in clean_q.lower():
+                    topic_addon = f" {concept}"
+                break
+
+    clean_query = urllib.parse.quote_plus(" ".join((clean_q + topic_addon).split()))
     
     # Check for target year filter
     year_match = re.search(r"\b(20[12][0-9])\b", query)
@@ -849,11 +891,11 @@ async def fetch_readable_text(url: Optional[str], query: str, fallback_snippet: 
         end_iso_fetch = datetime.datetime.now().isoformat()
         retrieval_tracker.record(f"page_fetch: {url[:50]}", t0_fetch, t1_fetch, start_iso_fetch, end_iso_fetch, status_fetch)
 
-async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = None, canonical_topic: Optional[str] = None) -> List[Dict[str, Any]]:
+async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = None, canonical_topic: Optional[str] = None, topic: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Executes parallel multi-source search across:
-    1. arXiv (canonical topic expanded query)
-    2. OpenAlex
+    1. arXiv (canonical topic expanded query + topic category filter)
+    2. OpenAlex (topic-scoped open literature)
     3. Semantic Scholar
     4. DuckDuckGo
     5. Wikipedia (prioritizes disambiguated exact article title from the reformulator)
@@ -865,8 +907,8 @@ async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = N
     retrieval_tracker.record("live_retrieval_start", t_retrieval_start, t_retrieval_start, iso_start, iso_start, "cap=15s")
 
     provider_tasks = [
-        asyncio.create_task(search_arxiv(query, max_results=3, canonical_topic=canonical_topic)),
-        asyncio.create_task(search_openalex(query, max_results=3)),
+        asyncio.create_task(search_arxiv(query, max_results=3, canonical_topic=canonical_topic, topic=topic)),
+        asyncio.create_task(search_openalex(query, max_results=3, topic=topic)),
         asyncio.create_task(search_semantic_scholar(query, max_results=2)),
         asyncio.create_task(search_duckduckgo(query, max_results=3)),
         asyncio.create_task(search_wikipedia(query, max_results=1, exact_title=wikipedia_title))

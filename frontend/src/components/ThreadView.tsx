@@ -19,6 +19,8 @@ import {
   Clock,
   Square,
   ChevronDown,
+  PanelRightOpen,
+  Layers,
 } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import { streamQuery } from '../services/sseClient';
@@ -234,6 +236,68 @@ function ResearchTraceBar({
   );
 }
 
+const DOMAIN_OPTIONS = [
+  { id: 'auto', label: 'All Domains' },
+  { id: 'cs', label: 'CS & AI' },
+  { id: 'chem', label: 'Chemistry & Materials' },
+  { id: 'bio', label: 'Bio & Medicine' },
+  { id: 'physics', label: 'Physics & Astronomy' },
+  { id: 'eng', label: 'Engineering' },
+  { id: 'math', label: 'Mathematics' },
+  { id: 'econ', label: 'Economics & Finance' },
+  { id: 'law', label: 'Law & Policy' },
+] as const;
+
+function SearchSubmitButton({
+  disabled,
+  isLoading,
+  onStop,
+}: {
+  disabled: boolean;
+  isLoading: boolean;
+  onStop: () => void;
+}) {
+  if (isLoading) {
+    return (
+      <button
+        type="button"
+        onClick={onStop}
+        className="px-3.5 py-1.5 bg-[#18181E] hover:bg-[#202026] border border-red-500/40 text-red-400 rounded-[6px] text-[12px] font-mono flex items-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer"
+        title="Stop streaming (Esc)"
+      >
+        <Square size={11} className="fill-current" />
+        <span>Stop</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="submit"
+      disabled={disabled}
+      className="search-btn-trigger p-2 bg-[#60A5FA] hover:bg-[#3B82F6] disabled:opacity-35 disabled:cursor-not-allowed text-[#09090B] hover:text-white rounded-[6px] transition-all active:scale-[0.96] flex items-center justify-center cursor-pointer shadow-sm shrink-0"
+      title="Synthesize Evidence (Enter)"
+      aria-label="Synthesize query"
+    >
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="search-glass"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" className="search-glass-handle" />
+        <path d="M 8 7 A 5 5 0 0 1 14 7" stroke="currentColor" strokeWidth="1.2" opacity="0.6" />
+      </svg>
+    </button>
+  );
+}
+
 interface ThreadViewProps {
   onCitationClick: (citation: Citation) => void;
   isFocusMode: boolean;
@@ -249,6 +313,8 @@ interface ThreadViewProps {
   pendingQuery?: string | null;
   onPendingQueryConsumed?: () => void;
   onSourcesExpand?: () => void;
+  isInspectorOpen?: boolean;
+  onToggleInspector?: () => void;
 }
 
 export default function ThreadView({
@@ -266,6 +332,8 @@ export default function ThreadView({
   pendingQuery,
   onPendingQueryConsumed,
   onSourcesExpand: _onSourcesExpand,
+  isInspectorOpen = false,
+  onToggleInspector,
 }: ThreadViewProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const emptyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -280,8 +348,15 @@ export default function ThreadView({
   const [isExportingPdf, setIsExportingPdf] = useState<Record<string, boolean>>({});
   const [recentHistory, setRecentHistory] = useState<HistoryEntry[]>([]);
 
-  const { settings: _settings } = useSettingsContext();
+  const { settings } = useSettingsContext();
   const { accessToken } = useAuth();
+  const [selectedTopic, setSelectedTopic] = useState<string>(() => settings.defaultDomain || 'auto');
+
+  useEffect(() => {
+    if (settings.defaultDomain) {
+      setSelectedTopic(settings.defaultDomain);
+    }
+  }, [settings.defaultDomain]);
 
   useEffect(() => {
     try {
@@ -737,6 +812,7 @@ export default function ThreadView({
 
     streamQuery({
       query: queryText.trim(),
+      topic: selectedTopic !== 'auto' ? selectedTopic : undefined,
       compareMode: false,
       signal: abortController.signal,
       mockFixtureKey: mockKey,
@@ -940,6 +1016,21 @@ export default function ThreadView({
           >
             {isFocusMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </button>
+
+          {onToggleInspector && (
+            <button
+              onClick={onToggleInspector}
+              className={`p-1.5 rounded-[6px] transition-all cursor-pointer active:scale-[0.98] ${
+                isInspectorOpen
+                  ? 'text-[#60A5FA] bg-[#18181E] border border-[#60A5FA]/30'
+                  : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#111115] border border-transparent'
+              }`}
+              title="Toggle Research Inspector (Ctrl+] / ⌘])"
+              aria-label="Toggle Research Inspector"
+            >
+              <PanelRightOpen size={15} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -991,15 +1082,30 @@ export default function ThreadView({
               />
 
               <div className="flex items-center justify-between pt-2 border-t border-white/[0.05] mt-1 text-[11px] font-mono text-[#71717A]">
-                <span className="hidden sm:inline">Press Enter ↵ to synthesize · Shift+Enter for new line</span>
-                <div className="flex items-center gap-2 ml-auto">
-                  <button
-                    type="submit"
-                    disabled={!emptyInput.trim() || isLoading}
-                    className="btn-primary text-[12px] py-1.5 px-4 rounded-[6px]"
+                {/* Topic Domain Pill Selector */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[#8B8B8E] text-[11px]">Domain:</span>
+                  <select
+                    value={selectedTopic}
+                    onChange={(e) => setSelectedTopic(e.target.value)}
+                    className="bg-[#09090B] border border-white/[0.07] hover:border-white/[0.15] text-[#EDEDED] text-[11px] font-mono rounded px-2 py-1 focus:outline-none focus:border-[#60A5FA] cursor-pointer"
+                    title="Filter academic retrieval by scientific domain"
                   >
-                    Synthesize
-                  </button>
+                    {DOMAIN_OPTIONS.map((d) => (
+                      <option key={d.id} value={d.id} className="bg-[#111115] text-[#EDEDED]">
+                        {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 ml-auto">
+                  <span className="hidden sm:inline text-[#71717A]">Enter ↵</span>
+                  <SearchSubmitButton
+                    disabled={!emptyInput.trim() || isLoading}
+                    isLoading={isLoading}
+                    onStop={handleStopGeneration}
+                  />
                 </div>
               </div>
             </form>
@@ -1234,8 +1340,22 @@ export default function ThreadView({
 
       {/* Docked Composer (Visible once a query exists) */}
       {messages.length > 0 && (
-        <div className="p-3.5 bg-[#0C0C0F] border-t border-white/[0.07] shrink-0">
+        <div className="p-3 bg-[#0C0C0F] border-t border-white/[0.07] shrink-0">
           <form onSubmit={handleSubmit} className="flex gap-2 items-center max-w-4xl mx-auto">
+            {/* Domain Selector Pill */}
+            <select
+              value={selectedTopic}
+              onChange={(e) => setSelectedTopic(e.target.value)}
+              className="bg-[#09090B] border border-white/[0.07] hover:border-white/[0.15] text-[#EDEDED] text-[11px] font-mono rounded-[6px] px-2 py-2 focus:outline-none focus:border-[#60A5FA] cursor-pointer shrink-0 max-w-[110px] sm:max-w-none truncate"
+              title="Academic retrieval domain scope"
+            >
+              {DOMAIN_OPTIONS.map((d) => (
+                <option key={d.id} value={d.id} className="bg-[#111115] text-[#EDEDED]">
+                  {d.label}
+                </option>
+              ))}
+            </select>
+
             <textarea
               ref={textareaRef}
               value={input}
@@ -1255,26 +1375,12 @@ export default function ThreadView({
               rows={1}
               className="flex-1 bg-[#09090B] border border-white/[0.07] focus:border-white/[0.18] focus:outline-none rounded-[6px] px-3.5 py-2 text-[14px] text-[#EDEDED] placeholder-[#71717A] resize-none leading-relaxed"
             />
-            {isLoading ? (
-              <button
-                type="button"
-                onClick={handleStopGeneration}
-                className="px-3.5 py-2 bg-[#18181E] hover:bg-[#202026] border border-red-500/40 text-red-400 rounded-[6px] text-[12px] font-mono flex items-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer"
-                title="Stop generation"
-              >
-                <Square size={12} className="fill-current" />
-                <span>Stop</span>
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={!input.trim()}
-                className="btn-primary shrink-0 text-[12px] py-2 px-3.5"
-                aria-label="Send query"
-              >
-                <Send size={14} />
-              </button>
-            )}
+
+            <SearchSubmitButton
+              disabled={!input.trim() || isLoading}
+              isLoading={isLoading}
+              onStop={handleStopGeneration}
+            />
           </form>
         </div>
       )}
