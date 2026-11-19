@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import { DomainPicker } from './ui/DomainPicker';
+import { saveOrDownloadFile } from '../utils/nativeDownload';
 import { streamQuery } from '../services/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim, HistoryEntry, FigureData, ChartData } from '../types';
 import { API_BASE_URL } from '../services/config';
@@ -142,53 +143,92 @@ function ResearchTraceBar({
   const isAuditing = stage === 'auditing';
   const isComplete = stage === 'complete';
 
+  const entailmentScore = telemetry?.audit?.entailment_score ?? telemetry?.audit?.confidence;
+  const verificationStatus =
+    telemetry?.audit?.verification_status ||
+    (entailmentScore && entailmentScore >= 0.75
+      ? 'verified'
+      : citationsCount > 0
+      ? 'partial'
+      : 'unverified');
+
+  const statusLabel = hasError
+    ? 'Failed'
+    : isStreaming
+    ? stage === 'routing'
+      ? 'Planning'
+      : stage === 'retrieving'
+      ? 'Retrieving'
+      : stage === 'streaming'
+      ? 'Synthesizing'
+      : stage === 'auditing'
+      ? 'Verifying'
+      : 'Analyzing'
+    : verificationStatus === 'verified'
+    ? 'Verified'
+    : verificationStatus === 'partial'
+    ? 'Partial'
+    : 'Unverified';
+
+  const scorePct =
+    typeof entailmentScore === 'number' && entailmentScore > 0
+      ? `${Math.round(entailmentScore * 100)}%`
+      : null;
+
   return (
     <div className="space-y-1.5 select-none w-full">
       <div className="flex items-center justify-between text-[11px] font-mono">
         <button
           type="button"
           onClick={() => setIsExpanded((prev) => !prev)}
-          className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-[4px] border transition-all cursor-pointer active:scale-[0.98] ${
+          className={`w-full sm:w-auto inline-flex items-center justify-between gap-2 px-3 py-1.5 sm:py-1 rounded-[6px] border transition-all cursor-pointer active:scale-[0.98] ${
             hasError
               ? 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/15'
               : 'border-white/[0.07] bg-[#09090B] hover:bg-[#18181E] text-[#8B8B8E] hover:text-[#EDEDED]'
           }`}
         >
-          {hasError ? (
-            <div className="flex items-center gap-1.5 text-red-400">
+          {/* Left: Verified / Status badge */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {hasError ? (
               <AlertCircle size={13} className="text-red-400 shrink-0" />
-              <span className="font-semibold text-red-400">Failed</span>
-              {citationsCount > 0 && (
-                <span className="tabular-nums text-red-400/70">({citationsCount} Sources)</span>
-              )}
-            </div>
-          ) : isStreaming ? (
-            <div className="flex items-center gap-1.5 text-[#60A5FA]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA] animate-pulse" />
-              <span className="font-medium">
-                {stage === 'routing' && 'PLANNING'}
-                {stage === 'retrieving' && 'RETRIEVING SOURCES'}
-                {stage === 'streaming' && 'SYNTHESIZING'}
-                {stage === 'auditing' && 'VERIFYING'}
-                {!['routing', 'retrieving', 'streaming', 'auditing'].includes(stage || '') && 'ANALYZING'}
-              </span>
-            </div>
-          ) : citationsCount === 0 ? (
-            <div className="flex items-center gap-1.5 text-[#8B8B8E]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#71717A]" />
-              <span className="text-[#8B8B8E] font-medium">Unverified</span>
-              <span className="tabular-nums text-[#71717A]">(0 Sources)</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-[#60A5FA]">
-              <CheckCircle2 size={13} className="text-[#60A5FA]" />
-              <span className="text-[#EDEDED] font-medium">Verified</span>
-              <span className="tabular-nums text-[#71717A]">({citationsCount} Sources)</span>
-            </div>
-          )}
+            ) : isStreaming ? (
+              <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA] animate-pulse shrink-0" />
+            ) : verificationStatus === 'verified' ? (
+              <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
+            ) : (
+              <CheckCircle2 size={13} className="text-[#60A5FA] shrink-0" />
+            )}
 
-          <span className="text-[#71717A] text-[10px]">·</span>
-          <div className="flex items-center gap-1 text-[10px] text-[#71717A] font-mono">
+            <span
+              className={`font-semibold ${
+                hasError
+                  ? 'text-red-400'
+                  : isStreaming
+                  ? 'text-[#60A5FA]'
+                  : verificationStatus === 'verified'
+                  ? 'text-emerald-400'
+                  : 'text-[#EDEDED]'
+              }`}
+            >
+              {statusLabel}
+            </span>
+
+            {citationsCount > 0 && (
+              <span className="text-[#71717A] text-[10.5px]">
+                · {citationsCount} {citationsCount === 1 ? 'source' : 'sources'}
+              </span>
+            )}
+
+            {scorePct && !isStreaming && !hasError && (
+              <span className="hidden xs:inline-block ml-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-[10px] text-zinc-300 font-mono tabular-nums">
+                {scorePct}
+              </span>
+            )}
+          </div>
+
+          {/* Desktop: Stage transition arrows */}
+          <div className="hidden sm:flex items-center gap-1 text-[10px] text-[#71717A] font-mono ml-2">
+            <span className="text-[#71717A] text-[10px] mr-1">·</span>
             <span className={isPlanning ? 'text-[#EDEDED] font-semibold' : ''}>PLAN</span>
             <span>→</span>
             <span className={isRetrieving ? 'text-[#EDEDED] font-semibold' : ''}>
@@ -217,10 +257,14 @@ function ResearchTraceBar({
             </span>
           </div>
 
-          <ChevronDown
-            size={12}
-            className={`text-[#71717A] ml-1 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-          />
+          {/* Mobile Right: Compact Expandable Pipeline toggle */}
+          <div className="flex items-center gap-1 shrink-0 text-[10.5px] text-[#71717A]">
+            <span className="sm:hidden font-sans">Pipeline</span>
+            <ChevronDown
+              size={12}
+              className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            />
+          </div>
         </button>
       </div>
 
@@ -636,20 +680,9 @@ export default function ThreadView({
       });
       if (!res.ok) throw new Error('PDF export failed');
       const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `aria-research-paper.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url);
-        if (a.parentNode) {
-          document.body.removeChild(a);
-        }
-      }, 1500);
-    } catch {
-      // PDF export failed silently
+      await saveOrDownloadFile(blob, 'aria-research-paper.pdf', 'application/pdf');
+    } catch (err: any) {
+      console.error('Download PDF failed:', err);
     } finally {
       setIsExportingPdf((prev) => ({ ...prev, [msg.id]: false }));
     }
@@ -938,6 +971,8 @@ export default function ThreadView({
             conflicts: evt.conflicts_found || evt.conflicts,
             retractions: evt.retractions_found || evt.retractions,
             confidence: evt.confidence,
+            entailment_score: evt.entailment_score ?? evt.confidence,
+            verification_status: evt.verification_status,
             tier_agreement: evt.tier_agreement,
             answer_final: evt.answer_final,
             repaired: evt.repaired ?? false,
@@ -1172,7 +1207,7 @@ export default function ThreadView({
           streamThrottleCleanupRef.current = null;
         }
         setIsLoading(false);
-        if (onQueryErrorChange) onQueryErrorChange(true);
+        if (onQueryErrorChange) onQueryErrorChange(false);
         setMessages((prev) =>
           prev.map((msg) => (msg.id === ariaMsgId ? { ...msg, isStreaming: false } : msg))
         );
@@ -1220,7 +1255,7 @@ export default function ThreadView({
     copyTimerRef.current = window.setTimeout(() => setCopiedMsgId(null), 2000);
   };
 
-  const handleDownloadBibtex = (citations: Citation[] = []) => {
+  const handleDownloadBibtex = async (citations: Citation[] = []) => {
     if (citations.length === 0) return;
     const bibContent = citations
       .map((cit) => {
@@ -1231,12 +1266,7 @@ export default function ThreadView({
       .join('\n\n');
 
     const blob = new Blob([bibContent], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'aria-citations.bib';
-    link.click();
-    URL.revokeObjectURL(url);
+    await saveOrDownloadFile(blob, 'aria-citations.bib', 'text/plain');
   };
 
   const handleFeedback = async (msg: Message, type: 'positive' | 'negative' | 'flagged') => {
@@ -1450,7 +1480,7 @@ export default function ThreadView({
                 </div>
               </div>
             ) : (
-              <div className="p-5 sm:p-6 bg-[#111115] border border-white/[0.07] rounded-[8px] space-y-4 w-full">
+              <div className="p-3.5 sm:p-6 bg-[#111115] border border-white/[0.07] rounded-[8px] space-y-4 w-full">
                 {/* Header Verification Strip with Inline Collapsible Research Trace */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/[0.07]">
                   <ResearchTraceBar
@@ -1653,7 +1683,7 @@ export default function ThreadView({
                 setInput(e.target.value);
                 const el = e.currentTarget;
                 el.style.height = 'auto';
-                el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+                el.style.height = `${Math.min(el.scrollHeight, 110)}px`;
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -1661,9 +1691,9 @@ export default function ThreadView({
                   handleSubmit(e);
                 }
               }}
-              placeholder="Ask a follow-up or research question..."
+              placeholder="Ask a follow-up..."
               rows={1}
-              className="flex-1 bg-transparent px-3 py-2 text-[13.5px] font-normal text-[#EDEDED] placeholder:text-zinc-500 focus:outline-none resize-none leading-snug font-sans"
+              className="flex-1 min-h-[36px] max-h-[110px] bg-transparent px-3 py-2 text-[13px] font-normal text-[#EDEDED] placeholder:text-zinc-500 focus:outline-none resize-none leading-[1.35] font-sans"
             />
 
             <SearchSubmitButton

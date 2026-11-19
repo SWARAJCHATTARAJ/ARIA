@@ -12,6 +12,48 @@ interface MarkdownRendererProps {
   answerFinal?: string;
 }
 
+export function cleanCompoundHyphens(text: string): string {
+  if (!text) return text;
+  // Replace underscores that join compound words / technical terms with standard hyphens
+  // e.g. fixed_bit -> fixed-bit, 8_bit -> 8-bit, sub_spaces -> sub-spaces, Graph_Based -> Graph-Based,
+  // IVF_PQ -> IVF-PQ, fine_grained -> fine-grained, off_target -> off-target
+  return text.replace(/\b([A-Za-z0-9]+)_([A-Za-z0-9]+)\b/g, (match, p1, p2) => {
+    // Preserve single letter math subscripts like M_K, R_d, x_i, V_flat, c_0
+    if (/^[A-Z]_[a-z0-9]$/.test(match) || /^[a-z]_[0-9a-z]$/.test(match)) {
+      return match;
+    }
+    const lower = match.toLowerCase();
+    if (
+      lower.includes('bit') ||
+      lower.includes('space') ||
+      lower.includes('graph') ||
+      lower.includes('based') ||
+      lower.includes('grained') ||
+      lower.includes('target') ||
+      lower.includes('shot') ||
+      lower.includes('scale') ||
+      lower.includes('tier') ||
+      lower.includes('step') ||
+      lower.includes('level') ||
+      lower.includes('fold') ||
+      lower.includes('state') ||
+      lower.includes('rate') ||
+      lower.includes('ivf') ||
+      lower.includes('pq') ||
+      lower.includes('hnsw') ||
+      lower.includes('rag') ||
+      lower.includes('dim') ||
+      lower.includes('order') ||
+      lower.includes('bound') ||
+      lower.includes('time') ||
+      lower.includes('line')
+    ) {
+      return `${p1}-${p2}`;
+    }
+    return match;
+  });
+}
+
 // Glyph mapping per tier: color is never the only signal
 export function getTierGlyph(tier?: string | TierType): string {
   switch (tier) {
@@ -107,6 +149,9 @@ function MarkdownRendererInner({
     text = text.replace(/\$\$\s*\$\$/g, '');
     text = text.replace(/\\\[([\s\S]+?)\\\]/g, '$$$$$1$$$$');
     text = text.replace(/\\\(\s*\\\)/g, '');
+
+    // Clean compound word hyphens inside technical terms and table rows (e.g. fixed_bit -> fixed-bit, 8_bit -> 8-bit, Graph_Based -> Graph-Based)
+    text = cleanCompoundHyphens(text);
 
     return text;
   }, [rawText, isStreaming]);
@@ -476,35 +521,47 @@ function MarkdownRendererInner({
           const dataRows = tableLines.slice(2).map(parseRowCells);
 
           result.push(
-            <div key={`blk-${blockId++}`} className="overflow-x-auto my-3 border border-ink-surface rounded-none">
-              <table className="min-w-full divide-y divide-ink-surface text-xs font-mono">
-                <thead className="bg-ink-surface/80 text-gray-300 font-semibold">
-                  <tr>
-                    {headerCells.map((cell, cIdx) => (
-                      <th
-                        key={`th-${cIdx}`}
-                        className="px-3 py-2 text-left uppercase tracking-wider text-[11px] border-r border-ink-surface last:border-r-0"
-                      >
-                        {renderAuditedText(cell.text, cell.start, cell.end, `th-${cIdx}`)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink-surface/60 bg-ink-base">
-                  {dataRows.map((row, rIdx) => (
-                    <tr key={`tr-${rIdx}`} className="hover:bg-ink-surface/30 transition-colors">
-                      {row.map((cell, cIdx) => (
-                        <td
-                          key={`td-${rIdx}-${cIdx}`}
-                          className="px-3 py-2 text-gray-200 border-r border-ink-surface/40 last:border-r-0"
+            <div key={`blk-${blockId++}`} className="relative my-4 group">
+              <div
+                className="rounded-xl border border-white/[0.08] bg-[#0B0F1A] overflow-x-auto shadow-sm"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+              >
+                <table className="w-max min-w-full text-[12px] leading-[1.45] font-sans border-collapse" style={{ tableLayout: 'auto' }}>
+                  <thead className="bg-white/[0.04] border-b border-white/[0.08]">
+                    <tr>
+                      {headerCells.map((cell, cIdx) => (
+                        <th
+                          key={`th-${cIdx}`}
+                          className={`px-3 py-2 text-left font-medium text-zinc-300 whitespace-nowrap text-[11px] uppercase tracking-wider border-r border-white/[0.05] last:border-r-0 ${
+                            cIdx === 0 ? 'min-w-[110px]' : 'min-w-[180px]'
+                          }`}
                         >
-                          {renderAuditedText(cell.text, cell.start, cell.end, `td-${rIdx}-${cIdx}`)}
-                        </td>
+                          {renderAuditedText(cleanCompoundHyphens(cell.text), cell.start, cell.end, `th-${cIdx}`)}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.05]">
+                    {dataRows.map((row, rIdx) => (
+                      <tr key={`tr-${rIdx}`} className="hover:bg-white/[0.02] transition-colors">
+                        {row.map((cell, cIdx) => (
+                          <td
+                            key={`td-${rIdx}-${cIdx}`}
+                            className={`px-3 py-2.5 align-top text-zinc-200 border-r border-white/[0.04] last:border-r-0 ${
+                              cIdx === 0 ? 'min-w-[110px] font-medium text-zinc-300' : 'min-w-[180px]'
+                            }`}
+                          >
+                            {renderAuditedText(cleanCompoundHyphens(cell.text), cell.start, cell.end, `td-${rIdx}-${cIdx}`)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="sm:hidden absolute top-2 right-2 pointer-events-none opacity-70 group-hover:opacity-0 transition-opacity text-[10px] font-mono text-zinc-400 bg-[#09090B]/85 px-1.5 py-0.5 rounded border border-white/[0.08]">
+                Scroll →
+              </div>
             </div>
           );
           continue;

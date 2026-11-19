@@ -495,6 +495,8 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 "conflicts": audit_res.get("conflicts_found", []),
                 "retractions": audit_res.get("retractions_found", []),
                 "confidence": audit_res.get("confidence") if audit_res.get("confidence") is not None else 0.85,
+                "entailment_score": audit_res.get("entailment_score") if audit_res.get("entailment_score") is not None else (audit_res.get("confidence") or 0.85),
+                "verification_status": audit_res.get("verification_status") or "verified",
                 "tier_agreement": audit_res.get("tier_agreement"),
                 "repaired": bool(audit_res.get("repaired", False)),
                 "sources": sources_with_cited

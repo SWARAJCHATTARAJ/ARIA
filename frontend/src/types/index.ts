@@ -149,6 +149,8 @@ export interface AuditResult {
   conflicts?: string[];
   retractions?: string[];
   confidence?: number;
+  entailment_score?: number;
+  verification_status?: 'verified' | 'partial' | 'unverified';
   tier_agreement?: string | null;
   answer_final?: string;
   repaired?: boolean;

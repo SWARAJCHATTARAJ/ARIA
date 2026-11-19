@@ -64,7 +64,7 @@ export const DomainPicker: React.FC<DomainPickerProps> = ({
         aria-expanded={isOpen}
         title="Domain scope"
       >
-        <span className="truncate max-w-[110px] sm:max-w-none">{selectedOption.label}</span>
+        <span className="truncate max-w-[115px]">{selectedOption.label}</span>
         <ChevronDown
           size={11}
           className={`text-zinc-400 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}

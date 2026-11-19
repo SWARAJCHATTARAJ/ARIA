@@ -213,6 +213,7 @@ jobs:
       - name: Install Capacitor CLI and Sync Android
         run: |
           npm install -D @capacitor/cli @capacitor/core @capacitor/android typescript
+          npm install @capacitor/filesystem @capacitor/share
           npx cap sync android
 
       - name: Verify Android Assets Synced
