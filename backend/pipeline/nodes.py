@@ -1106,7 +1106,8 @@ def strip_claim_text(raw_text: str) -> str:
 def is_non_claim_line(line: str) -> bool:
     """
     Skips headings, bold-only lines, intro lines ending in colon, table rows,
-    table separators, and meta scope notes appended by code.
+    table separators, equation fragments, short transitional sentences,
+    and meta scope notes appended by code.
     """
     s = line.strip()
     if not s:
@@ -1125,7 +1126,17 @@ def is_non_claim_line(line: str) -> bool:
     if len(clean_no_md) <= 60 and not re.search(r'[.!?]$', clean_no_md):
         if re.match(r'^\d+\.\s+[A-Za-z]', clean_no_md) or clean_no_md.istitle() or not any(c.islower() for c in clean_no_md):
             return True
-    if "cover only part of this question" in clean_no_md.lower():
+    lower = clean_no_md.lower()
+    if "cover only part of this question" in lower:
+        return True
+    # Skip equation fragments, variable definitions, and display math
+    if re.match(r'^(?:where|with|here|let)\s+[a-zA-Z0-9_\\{}()]+(?:\s+is|\s+denotes|\s+represents|\s+equals|\s*=|\s+stands for)\b', lower):
+        return True
+    if re.match(r'^(?:table|figure)\s+[0-9ivx]+\s+(?:illustrates|summarizes|shows|presents|compares|depicts|details)\b', lower):
+        return True
+    if lower.startswith("as shown in table") or lower.startswith("the table illustrates") or lower.startswith("the table below"):
+        return True
+    if re.match(r'^\$\$?[^$]+\$\$?$', s):
         return True
     return False
 
@@ -1432,7 +1443,32 @@ def split_answer_into_claim_sentences(text: str) -> list:
                     s_end = block_start + len(block) - trailing_ws
                     results.append((clean_t, cids, s_start, s_end))
                     
-    return results
+    # Filter equation fragments and short transitional phrases, then cap to top 20 substantive factual claims
+    filtered = []
+    for clean_t, cids, s_start, s_end in results:
+        words = clean_t.split()
+        if len(words) < 5:
+            continue
+        # Skip pure variable definition / equation prose
+        if re.match(r'^(?:where|with|here|let)\s+[a-zA-Z0-9_\\]+\s+(?:is|denotes|represents)\b', clean_t, flags=re.I):
+            continue
+        filtered.append((clean_t, cids, s_start, s_end))
+
+    if len(filtered) > 20:
+        def claim_substance_score(item):
+            t, cids, _, _ = item
+            score = len(cids) * 3
+            if re.search(r'\d+', t):
+                score += 4
+            if any(sym in t for sym in ('%', '±', '°', '>', '<', '=', 'ratio', 'rate', 'scale', 'bound', 'loss')):
+                score += 3
+            return score
+        scored = list(enumerate(filtered))
+        scored.sort(key=lambda x: claim_substance_score(x[1]), reverse=True)
+        top_indices = set(idx for idx, _ in scored[:20])
+        filtered = [item for idx, item in enumerate(filtered) if idx in top_indices]
+
+    return filtered
 
 def count_detected_factual_units(text: str) -> int:
     """
@@ -1513,7 +1549,7 @@ async def run_claim_audit(answer_final: str, chunks: list, tracker: Optional[Any
     llm_verdicts = {}
     if claims_to_judge and chunks:
         sources_text = "\n\n".join([
-            f"[[c:{i}]] {c.get('title', 'Unknown')} ({c.get('venue', 'N/A')})\n{c.get('snippet', c.get('content', ''))}"
+            f"[[c:{i}]] {c.get('title', 'Unknown')} ({c.get('venue', 'N/A')})\n{c.get('full_text') or c.get('abstract') or c.get('content') or c.get('snippet', '')}"
             for i, c in enumerate(chunks)
         ])
 
@@ -1645,13 +1681,13 @@ async def run_claim_audit(answer_final: str, chunks: list, tracker: Optional[Any
 
         try:
             batch_tasks = [process_batch(b_idx, b) for b_idx, b in enumerate(batches)]
-            # Run consolidated batches in parallel with a strict 3.5s total timeout
-            results = await asyncio.wait_for(asyncio.gather(*batch_tasks, return_exceptions=True), timeout=3.5)
+            # Run consolidated batches in parallel with a 12s total timeout to avoid false unverified drops
+            results = await asyncio.wait_for(asyncio.gather(*batch_tasks, return_exceptions=True), timeout=12.0)
             for res in results:
                 if isinstance(res, dict):
                     llm_verdicts.update(res)
         except asyncio.TimeoutError:
-            logger.warning("Claim audit judge timed out after 3.5s. Marking remaining claims as audit_incomplete.")
+            logger.warning("Claim audit judge timed out after 12s. Marking remaining claims as audit_incomplete.")
             for c in claims_to_judge:
                 cid = c["claim_id"]
                 if cid not in llm_verdicts:
@@ -2354,34 +2390,35 @@ async def audit_answer(state: AgentState) -> dict:
 _MANUSCRIPT_EXPANSION_SYSTEM = (
     "You are ARIA, an elite Principal Scientific Researcher and Chief Editor of IEEE / ACM Transactions.\n"
     "Your objective is to produce a publication-grade, definitive academic research paper (1,400 to 2,000 words) "
-    "grounded strictly and exhaustively in the provided verified sources.\n\n"
-    "CRITICAL GROUNDING DIRECTIVES:\n"
-    "- Ground all scientific facts, chemical formulas, mechanisms, and quantitative metrics in the provided sources.\n"
-    "- EVERY assertion containing a technical fact, reaction, formula, mechanism, or metric MUST end with an explicit "
+    "grounded strictly and exhaustively in the provided verified sources and the user's specific query topic.\n\n"
+    "CRITICAL GROUNDING & DOMAIN FIDELITY DIRECTIVES:\n"
+    "- Strictly adhere to the user's research topic and scientific domain (e.g., Computer Science, Artificial Intelligence, "
+    "Biology, Medicine, Physics, Materials Science, Engineering, Economics, or Law). Never inject analogies, chemicals, "
+    "or boilerplate concepts from unrelated disciplines.\n"
+    "- Ground all scientific facts, theoretical frameworks, architectural mechanisms, equations, and empirical metrics "
+    "in the provided verified sources.\n"
+    "- EVERY assertion containing a technical fact, theorem, mechanism, or quantitative metric MUST end with an explicit "
     "inline citation marker [[c:N]] corresponding to the provided sources (0 through N-1).\n"
     "- Output formal, substantive, publication-quality academic prose. Never output conversational filler or fluff.\n"
     "- Use clean Markdown only. Absolutely NO raw HTML tags.\n\n"
     "MANDATORY 5-SECTION STRUCTURE (You MUST write multi-paragraph substantive content under every heading with ZERO empty sections):\n\n"
     "## I. Introduction & Executive Definition\n"
-    "Provide 2 to 3 substantive paragraphs establishing the canonical definition, chemical/system nomenclature, taxonomy, "
-    "historical scientific discovery, and fundamental technological/industrial significance [[c:0]].\n\n"
-    "## II. Core Mechanisms, Structure & Synthesis\n"
-    "Provide 2 to 3 detailed technical paragraphs detailing chemical structure, repeating units, reaction pathways, "
-    "synthesis mechanisms (e.g. free-radical suspension, emulsion, bulk polymerization), molecular weight characteristics, "
-    "and degradation chemistry (such as thermal dehydrochlorination and conjugated polyene formation) [[c:0]].\n\n"
+    "Provide 2 to 3 substantive paragraphs establishing the canonical definition, theoretical/system taxonomy, "
+    "historical scientific discovery, and fundamental technological/scientific significance [[c:0]].\n\n"
+    "## II. Core Mechanisms, Theoretical Architecture & Methodology\n"
+    "Provide 2 to 3 detailed technical paragraphs detailing theoretical formulations, algorithmic or physical "
+    "processes, system architecture, operational workflows, and underlying governing dynamics grounded in the domain of inquiry [[c:0]].\n\n"
     "## III. Quantitative Properties & Comparative Analysis\n"
-    "Provide a detailed GFM Markdown comparison table summarizing key empirical metrics (e.g., density, tensile strength, "
-    "glass transition temperature Tg, melting point/thermal limits, dielectric constant, impact resistance) across variants "
-    "or benchmarks [[c:0]].\n"
-    "Follow the table with 2 substantive analytical paragraphs discussing the empirical variance, additive modifications "
-    "(such as plasticizers, stabilizers), and quantitative performance trade-offs [[c:0]].\n\n"
-    "## IV. Empirical Applications, Environmental/Safety Impact & Technical Limitations\n"
-    "Provide 2 to 3 substantive paragraphs analyzing primary industrial applications (construction, medical devices, "
-    "insulation), plasticizer migration dynamics (e.g. phthalates), fire/combustion chemistry (HCl release, smoke generation), "
-    "recycling challenges (sorting, mechanical/chemical degradation), and occupational safety limits (OSHA/TLV standards) [[c:0]].\n\n"
+    "Provide a detailed GFM Markdown comparison table summarizing key empirical metrics, benchmarks, quantitative parameters, "
+    "or performance trade-offs across architectures, variants, or baseline methods [[c:0]]. Guarantee every column has data.\n"
+    "Follow the table with 2 substantive analytical paragraphs discussing empirical variance, comparative advantages, "
+    "and quantitative performance trade-offs [[c:0]].\n\n"
+    "## IV. Empirical Applications, Operational Impact & Technical Limitations\n"
+    "Provide 2 to 3 substantive paragraphs analyzing primary real-world applications, systems integration challenges, "
+    "failure modes, safety/security implications, and critical operational constraints [[c:0]].\n\n"
     "## V. Conclusion & Open Research Directions\n"
     "Provide 1 to 2 substantive paragraphs synthesizing the current state of verified science, key technological trade-offs, "
-    "and active open research frontiers (e.g., bio-based plasticizers, closed-loop feedstock recycling, advanced stabilizer systems) [[c:0]]."
+    "and active open research frontiers in the field [[c:0]]."
 )
 
 
@@ -2482,9 +2519,9 @@ async def expand_to_full_research_paper(
     total_claims = len(claims)
     if total_claims > 0:
         score_sum = sum(1.0 if c.get("status") == "supported" else 0.5 if c.get("status") == "partially_supported" else 0.0 for c in claims)
-        confidence = round(max(0.70, min(0.98, score_sum / total_claims)), 2)
+        confidence = round(max(0.10, min(0.98, score_sum / total_claims)), 2)
     else:
-        confidence = 0.88
+        confidence = existing_confidence if existing_confidence is not None else 0.85
 
     logger.info(f"Manuscript expansion complete: {len(expanded_text.split())} words, {len(claims)} audited claims, confidence={confidence}")
     return expanded_text, claims, confidence

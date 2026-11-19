@@ -96,13 +96,17 @@ export default function SourcePanel({
 
   const stage = telemetry?.stage;
   const audit = telemetry?.audit;
-  const hasAuditResults = (typeof audit?.confidence === 'number' && audit.confidence > 0) || (Boolean(audit?.claims) && (audit?.claims?.length ?? 0) > 0);
+  const rawConfidence = audit?.confidence ?? (telemetry as any)?.audit_confidence ?? (telemetry as any)?.entailment_score ?? (audit as any)?.entailment_score;
+  const rawClaims = audit?.claims ?? (telemetry as any)?.audit_claims ?? [];
+  const verificationStatus = (telemetry as any)?.verification_status ?? (audit as any)?.verification_status;
+
+  const hasAuditResults = (typeof rawConfidence === 'number' && rawConfidence > 0) || (Array.isArray(rawClaims) && rawClaims.length > 0);
   const isErrorStage = (hasError || stage === 'error') && !hasAuditResults;
   const isPendingStage = !isErrorStage && (stage === 'routing' || stage === 'retrieving' || stage === 'streaming' || stage === 'auditing');
 
   const normalizedClaims: AuditClaim[] = useMemo(() => {
-    if (!audit?.claims) return [];
-    return audit.claims.map((claim, idx) => {
+    if (!Array.isArray(rawClaims)) return [];
+    return rawClaims.map((claim: any, idx: number) => {
       if (typeof claim === 'string') {
         const lower = claim.toLowerCase();
         let status: ClaimStatus = 'supported';
@@ -124,7 +128,7 @@ export default function SourcePanel({
       }
       return claim;
     });
-  }, [audit?.claims]);
+  }, [rawClaims]);
 
   const claimsSupportedCount = normalizedClaims.filter((c) => c.status === 'supported').length;
   const claimsTotalCount = normalizedClaims.length;
@@ -139,9 +143,15 @@ export default function SourcePanel({
   } else if (isPendingStage) {
     claimVerificationText = 'Pending';
     claimVerificationClass = 'text-[#8B8B8E]';
-  } else if (claimsTotalCount > 0) {
-    claimVerificationText = `${claimsSupportedCount} of ${claimsTotalCount} Verified`;
-    claimVerificationClass = 'text-[#EDEDED] font-semibold';
+  } else if (claimsTotalCount > 0 || (typeof rawConfidence === 'number' && rawConfidence > 0)) {
+    const isFullyAudited = verificationStatus === 'verified' || (claimsTotalCount > 0 ? (claimsSupportedCount === claimsTotalCount) : (rawConfidence ?? 0) >= 0.75);
+    if (isFullyAudited) {
+      claimVerificationText = claimsTotalCount > 0 ? `Audited (${claimsSupportedCount}/${claimsTotalCount})` : 'Audited';
+      claimVerificationClass = 'text-emerald-400 font-semibold';
+    } else {
+      claimVerificationText = claimsTotalCount > 0 ? `Partial (${claimsSupportedCount}/${claimsTotalCount})` : 'Partial';
+      claimVerificationClass = 'text-amber-400 font-semibold';
+    }
   } else {
     claimVerificationText = '—';
     claimVerificationClass = 'text-[#71717A]';
@@ -156,9 +166,9 @@ export default function SourcePanel({
   } else if (isPendingStage) {
     entailmentScoreText = 'Pending';
     entailmentScoreClass = 'text-[#8B8B8E]';
-  } else if (typeof audit?.confidence === 'number' && audit.confidence > 0) {
-    entailmentScoreText = `${Math.round(audit.confidence * 100)}%`;
-    entailmentScoreClass = 'text-[#60A5FA] tabular-nums font-bold';
+  } else if (typeof rawConfidence === 'number' && rawConfidence > 0) {
+    entailmentScoreText = `${Math.round(rawConfidence * 100)}%`;
+    entailmentScoreClass = rawConfidence >= 0.75 ? 'text-emerald-400 font-bold tabular-nums' : 'text-amber-400 font-bold tabular-nums';
   } else {
     entailmentScoreText = '—';
     entailmentScoreClass = 'text-[#71717A]';

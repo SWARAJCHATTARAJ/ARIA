@@ -169,6 +169,12 @@ function ResearchTraceBar({
                 {!['routing', 'retrieving', 'streaming', 'auditing'].includes(stage || '') && 'ANALYZING'}
               </span>
             </div>
+          ) : citationsCount === 0 ? (
+            <div className="flex items-center gap-1.5 text-[#8B8B8E]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#71717A]" />
+              <span className="text-[#8B8B8E] font-medium">Unverified</span>
+              <span className="tabular-nums text-[#71717A]">(0 Sources)</span>
+            </div>
           ) : (
             <div className="flex items-center gap-1.5 text-[#60A5FA]">
               <CheckCircle2 size={13} className="text-[#60A5FA]" />
@@ -242,11 +248,11 @@ function ResearchTraceBar({
                 </div>
               </div>
             </div>
-            {telemetry?.audit?.confidence !== undefined && (
+            {(telemetry?.audit?.confidence !== undefined || (telemetry as any)?.audit_confidence !== undefined) && (
               <div className="flex items-center justify-between text-[#8B8B8E] pt-1">
                 <span>Deterministic Claim Entailment Score</span>
-                <span className="text-[#60A5FA] tabular-nums font-semibold">
-                  {Math.round(telemetry.audit.confidence * 100)}%
+                <span className={`${(telemetry?.audit?.confidence ?? (telemetry as any)?.audit_confidence ?? 0) >= 0.75 ? 'text-emerald-400' : 'text-amber-400'} tabular-nums font-semibold`}>
+                  {Math.round((telemetry?.audit?.confidence ?? (telemetry as any)?.audit_confidence ?? 0) * 100)}%
                 </span>
               </div>
             )}

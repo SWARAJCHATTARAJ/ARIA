@@ -55,6 +55,26 @@ function adjustToWordBoundary(text: string, pos: number, dir: 'left' | 'right'):
       while (pos < text.length && isAlphaNum(text[pos])) pos++;
     }
   }
+
+  // Snap away from slicing inside **bold** markdown tokens
+  let lineStart = text.lastIndexOf('\n', pos - 1);
+  if (lineStart === -1) lineStart = 0; else lineStart++;
+  let lineEnd = text.indexOf('\n', pos);
+  if (lineEnd === -1) lineEnd = text.length;
+
+  const lineSub = text.slice(lineStart, lineEnd);
+  const relPos = pos - lineStart;
+  const boldRegex = /\*\*([^*\n]+?)\*\*/g;
+  let m: RegExpExecArray | null;
+  while ((m = boldRegex.exec(lineSub)) !== null) {
+    const boldStart = m.index;
+    const boldEnd = m.index + m[0].length;
+    if (relPos > boldStart && relPos < boldEnd) {
+      // Snap to end of bold delimiter to avoid splitting markdown tokens
+      return lineStart + (dir === 'left' ? boldEnd : boldStart);
+    }
+  }
+
   return pos;
 }
 
@@ -528,14 +548,16 @@ function MarkdownRendererInner({
         continue;
       }
 
-      // List Items (Unordered)
-      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      // List Items (Unordered: -, *, •, ·)
+      const bulletMatch = trimmed.match(/^([-*•·])\s+(.*)/);
+      if (bulletMatch) {
         const leadWs = line.text.length - line.text.trimStart().length;
-        const itemStart = line.start + leadWs + 2;
+        const markerLen = bulletMatch[1].length + 1; // e.g. "- ", "• "
+        const itemStart = line.start + leadWs + markerLen;
         const itemEnd = line.end;
         result.push(
           <li key={`blk-${blockId++}`} className="text-[15px] text-gray-200 ml-4 list-disc my-1 leading-[1.65]">
-            {renderAuditedText(trimmed.slice(2), itemStart, itemEnd, `li-${blockId}`)}
+            {renderAuditedText(bulletMatch[2], itemStart, itemEnd, `li-${blockId}`)}
           </li>
         );
         lIdx++;
@@ -568,6 +590,8 @@ function MarkdownRendererInner({
         !lineSpans[lIdx].text.trim().startsWith('```') &&
         !lineSpans[lIdx].text.trim().startsWith('- ') &&
         !lineSpans[lIdx].text.trim().startsWith('* ') &&
+        !lineSpans[lIdx].text.trim().startsWith('• ') &&
+        !lineSpans[lIdx].text.trim().startsWith('· ') &&
         !/^\d+\.\s/.test(lineSpans[lIdx].text.trim()) &&
         lineSpans[lIdx].text.trim() !== '---' &&
         lineSpans[lIdx].text.trim() !== '***'
