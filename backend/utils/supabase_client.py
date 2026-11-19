@@ -242,34 +242,44 @@ async def search_okf_docs(query_text: str, user_id: Optional[str] = None, limit:
     """
     Queries okf_docs table in Supabase via PostgREST.
     Supports keyword/ilike search across content, topic, and file_path.
+    Guarantees strict relevance: only returns documents matching query terms.
     """
     if not settings.supabase_url or settings.supabase_url == "default":
         logger.warning("Supabase URL not configured; skipping Supabase search.")
         return []
 
+    # Clean query terms for search (support 2+ char acronyms like 'llm', 'pvc', 'ai')
+    raw_tokens = re.findall(r'\b[a-zA-Z0-9_-]{2,}\b', query_text.lower())
+    stop = {"what", "when", "where", "which", "why", "how", "the", "and", "for", "are", "can", "with", "from"}
+    terms = [t for t in raw_tokens if t not in stop]
+    
+    # If no substantive terms exist, NEVER run an unfiltered SELECT limit 5!
+    if not terms:
+        return []
+
     url = f"{settings.supabase_url}/rest/v1/okf_docs"
     headers = get_supabase_headers()
     
-    # Clean query terms for search
-    terms = [t.strip() for t in query_text.replace("?", "").replace(",", "").split() if len(t.strip()) > 3]
-    search_filter = None
-    if terms:
-        # Match any of the main terms
-        ilike_clauses = ",".join([f"content.ilike.*{term}*,topic.ilike.*{term}*" for term in terms[:3]])
-        search_filter = f"or=({ilike_clauses})"
-
+    # Match any of the substantive query terms in content, topic, or file_path
+    ilike_clauses = ",".join([f"content.ilike.*{term}*,topic.ilike.*{term}*,file_path.ilike.*{term}*" for term in terms[:3]])
     params: Dict[str, Any] = {
         "select": "id,file_path,type,topic,source,related_links,content,created_at",
+        "or": f"({ilike_clauses})",
         "limit": limit
     }
-    if search_filter:
-        params["or"] = f"({ilike_clauses})"
 
     try:
         async with httpx.AsyncClient(timeout=4.0) as client:
             resp = await client.get(url, headers=headers, params=params)
             if resp.status_code == 200:
-                return resp.json()
+                raw_docs = resp.json()
+                # Verify that each returned document actually contains at least one query term
+                verified_docs = []
+                for doc in raw_docs:
+                    doc_text = f"{doc.get('topic', '')} {doc.get('file_path', '')} {doc.get('content', '')}".lower()
+                    if any(t in doc_text for t in terms):
+                        verified_docs.append(doc)
+                return verified_docs
             else:
                 logger.warning(f"Supabase okf_docs query returned {resp.status_code}: {resp.text}")
                 return []

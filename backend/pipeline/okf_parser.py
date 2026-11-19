@@ -81,7 +81,7 @@ def traverse_okf_graph(base_dir: str, query: str, max_depth: int = 1) -> List[di
         "more", "most", "other", "lead", "leading", "approach", "approaches", "the",
         "and", "for", "are", "can", "all", "any"
     }
-    tokens = re.findall(r"\b[a-zA-Z]{3,}\b", query.lower())
+    tokens = re.findall(r"\b[a-zA-Z0-9]{2,}\b", query.lower())
     query_words = set(t for t in tokens if t not in STOP_WORDS)
     if not query_words:
         query_words = set(tokens)

@@ -96,8 +96,9 @@ export default function SourcePanel({
 
   const stage = telemetry?.stage;
   const audit = telemetry?.audit;
-  const isErrorStage = hasError || stage === 'error';
-  const isPendingStage = stage === 'routing' || stage === 'retrieving' || stage === 'streaming' || stage === 'auditing';
+  const hasAuditResults = (typeof audit?.confidence === 'number' && audit.confidence > 0) || (Boolean(audit?.claims) && (audit?.claims?.length ?? 0) > 0);
+  const isErrorStage = (hasError || stage === 'error') && !hasAuditResults;
+  const isPendingStage = !isErrorStage && (stage === 'routing' || stage === 'retrieving' || stage === 'streaming' || stage === 'auditing');
 
   const normalizedClaims: AuditClaim[] = useMemo(() => {
     if (!audit?.claims) return [];

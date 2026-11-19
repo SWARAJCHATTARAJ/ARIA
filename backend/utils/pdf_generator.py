@@ -82,6 +82,7 @@ _LATEX_MACROS = [
     (re.compile(r'\\text\{([^{}]*)\}'), r'\1'),
     (re.compile(r'\\(?:mathrm|mathit|mathbf|mathbb|mathcal|mathsf)\{([^{}]*)\}'), r'\1'),
     (re.compile(r'\\(?:hat|bar|vec|tilde|dot|overline)\{([^{}]*)\}'), r'\1'),
+    (re.compile(r'\\frac\{([^{}]*)\}\{([^{}]*)\}'), r'(\1 / \2)'),
     (re.compile(r'\\[!,:;]'), ' '),
     (re.compile(r'\\begin\{[^{}]*\}'), ' '),
     (re.compile(r'\\end\{[^{}]*\}'), ' '),
@@ -240,9 +241,9 @@ def generate_academic_paper_title(query: str, canonical_topic: Optional[str] = N
     title = " ".join(cased_words).strip(" ?.:,")
     
     if len(words) <= 2:
-        title += ": Comprehensive Structural Mechanisms, Material Properties, and Empirical Analysis"
-    elif ":" not in title and not any(k in title.lower() for k in ("analysis", "synthesis", "review", "properties", "mechanisms")):
-        title += ": Synthesis, Properties, and Empirical Analysis"
+        title += ": Comprehensive Architectural Principles, Theoretical Foundations, and Empirical Synthesis"
+    elif ":" not in title and not any(k in title.lower() for k in ("analysis", "synthesis", "review", "properties", "mechanisms", "principles")):
+        title += ": Synthesis, Foundations, and Empirical Analysis"
         
     return title
 
@@ -458,16 +459,17 @@ class AcademicTwoColumnPaper:
             c_copy["renumbered_citations"] = new_cids
             self.claims.append(c_copy)
 
-        # Dimensions (A4)
+        # Dimensions (A4 Single-Column Academic Paper)
         self.PAGE_W = 595.0
         self.PAGE_H = 842.0
-        self.MARGIN_L = 42.0
-        self.MARGIN_R = 553.0
-        self.COL_W = 246.5
-        self.GUTTER = 18.0
-        self.COL_X = [42.0, 42.0 + 246.5 + 18.0]  # [42.0, 306.5]
-        self.BOTTOM_LIMIT = 782.0
-        self.TOP_LIMIT_NEXT = 56.0
+        self.MARGIN_L = 48.0
+        self.MARGIN_R = 547.0
+        self.COL_W = self.MARGIN_R - self.MARGIN_L  # 499.0 pt spacious single-column layout
+        self.GUTTER = 0.0
+        self.COL_X = [self.MARGIN_L]
+        self.BOTTOM_LIMIT = 788.0
+        self.TOP_LIMIT_NEXT = 50.0
+        self.table_counter = 0
 
         self.tier_str = ", ".join(self.tiers)
         self.conf_pct = f"{int(round(self.confidence * 100))}%"
@@ -477,6 +479,11 @@ class AcademicTwoColumnPaper:
         self.render_page1_header()
         self.current_col = 0
         self.y = self.start_y_col
+
+    def get_next_table_num(self) -> str:
+        self.table_counter += 1
+        romans = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"]
+        return romans[self.table_counter - 1] if self.table_counter <= len(romans) else str(self.table_counter)
 
     # ------------------------------------------------------------------ utils
     def wrap_line(self, text: str, max_w: float, fontname: str = 'tiro', fontsize: float = 8.5) -> List[str]:
@@ -527,18 +534,13 @@ class AcademicTwoColumnPaper:
             self.advance_column()
 
     def advance_column(self):
-        if self.current_col == 0:
-            self.current_col = 1
-            self.y = self.start_y_col if len(self.doc) == 1 else self.TOP_LIMIT_NEXT
-        else:
-            self.current_col = 0
-            self.page = self.doc.new_page(width=self.PAGE_W, height=self.PAGE_H)
-            self.y = self.TOP_LIMIT_NEXT
-            # Running header with formal academic title
-            running_title = (self.academic_title[:55] + "...") if len(self.academic_title) > 55 else self.academic_title
-            self.page.insert_text(fitz.Point(self.MARGIN_L, 26), f"ARIA v2 AUTONOMOUS VERIFICATION PREPRINT  |  {running_title}", fontname="tiro", fontsize=7.5, color=(0.30, 0.35, 0.40))
-            self.page.insert_text(fitz.Point(self.MARGIN_R - 45, 26), f"Page {len(self.doc)}", fontname="tibo", fontsize=8.0, color=(0.30, 0.35, 0.40))
-            self.page.draw_line(fitz.Point(self.MARGIN_L, 32), fitz.Point(self.MARGIN_R, 32), color=(0.72, 0.76, 0.80), width=0.5)
+        self.current_col = 0
+        self.page = self.doc.new_page(width=self.PAGE_W, height=self.PAGE_H)
+        self.y = self.TOP_LIMIT_NEXT
+        running_title = (self.academic_title[:65] + "...") if len(self.academic_title) > 65 else self.academic_title
+        self.page.insert_text(fitz.Point(self.MARGIN_L, 26), f"ARIA v2 AUTONOMOUS VERIFICATION PREPRINT  |  {running_title}", fontname="tiro", fontsize=7.5, color=(0.30, 0.35, 0.40))
+        self.page.insert_text(fitz.Point(self.MARGIN_R - 45, 26), f"Page {len(self.doc)}", fontname="tibo", fontsize=8.0, color=(0.30, 0.35, 0.40))
+        self.page.draw_line(fitz.Point(self.MARGIN_L, 32), fitz.Point(self.MARGIN_R, 32), color=(0.72, 0.76, 0.80), width=0.5)
 
     # -------------------------------------------------------------- page head
     def render_page1_header(self):
@@ -648,13 +650,18 @@ class AcademicTwoColumnPaper:
         return f"This paper presents an autonomous verification analysis of {self.academic_title.split(':')[0]}. {coverage_sentence} {findings} {close}"
 
     def build_index_terms(self) -> List[str]:
-        term_words = [w.lower() for w in re.findall(r'\b[A-Za-z]{5,}\b', self.academic_title) if w.lower() not in
-                      {"which", "where", "there", "about", "their", "would", "these", "those", "comprehensive"}]
+        term_words = [w.lower() for w in re.findall(r'\b[A-Za-z]{4,}\b', self.academic_title) if w.lower() not in
+                      {"which", "where", "there", "about", "their", "would", "these", "those", "comprehensive", "structural", "analysis", "synthesis", "principles", "frameworks"}]
         seen = []
-        for t in term_words[:4] + ["autonomous verification", "empirical synthesis", "deterministic claim auditing", "material properties"]:
+        if self.canonical_topic:
+            canon_terms = [w.lower() for w in re.findall(r'\b[A-Za-z]{3,}\b', self.canonical_topic) if w.lower() not in {"and", "the", "for", "with"}]
+            for ct in canon_terms:
+                if ct not in seen:
+                    seen.append(ct)
+        for t in term_words[:4] + ["autonomous verification", "empirical synthesis", "deterministic claim auditing"]:
             if t not in seen:
                 seen.append(t)
-        return seen
+        return seen[:6]
 
     # ------------------------------------------------------------ primitives
     def add_section_header(self, roman_title: str):
@@ -754,6 +761,10 @@ class AcademicTwoColumnPaper:
             col_widths = [w * scale for w in col_widths]
 
         if caption:
+            # Enforce sequential table numbering (Table I, Table II, ...)
+            if "table" in caption.lower() and ":" in caption:
+                cap_parts = caption.split(":", 1)
+                caption = f"Table {self.get_next_table_num()}:{cap_parts[1]}"
             cap_lines = self.wrap_line(caption, max_w=avail_w, fontname="tiit", fontsize=7.5)
             self.ensure_space(len(cap_lines) * 9.0 + 4.0)
             for cl in cap_lines:
@@ -859,7 +870,8 @@ class AcademicTwoColumnPaper:
         lines = self.wrap_line(head, max_w=self.COL_W, fontname="tiro", fontsize=8.0)
         url_line = None
         if url:
-            url_label = "URL: "
+            is_doi = "doi.org" in url
+            url_label = "DOI: " if is_doi else "URL: "
             url_text = url
             url_line_w = fitz.get_text_length(url_label + url_text, fontname="tiro", fontsize=7.5)
             if url_line_w > self.COL_W:
@@ -871,16 +883,17 @@ class AcademicTwoColumnPaper:
         x = self.COL_X[self.current_col]
         for i, l in enumerate(lines):
             is_url = (url_line is not None and l == url_line)
+            link_blue = (0.0, 0.34, 0.71)  # Classic IEEE blue (#0056B3)
             self.page.insert_text(
                 fitz.Point(x, self.y), l,
                 fontname="tiro",
                 fontsize=7.5 if is_url else 8.0,
-                color=(0.02, 0.47, 0.66) if is_url else (0.12, 0.15, 0.18),
+                color=link_blue if is_url else (0.12, 0.15, 0.18),
             )
             if url and url_line is not None and l == url_line:
                 uw = fitz.get_text_length(l, fontname="tiro", fontsize=7.5)
                 self.insert_uri_link(fitz.Rect(x, self.y - 7.0, x + uw + 2, self.y + 2.5), url)
-                self.page.draw_line(fitz.Point(x, self.y + 2.0), fitz.Point(x + uw, self.y + 2.0), color=(0.02, 0.47, 0.66), width=0.4)
+                self.page.draw_line(fitz.Point(x, self.y + 2.0), fitz.Point(x + uw, self.y + 2.0), color=link_blue, width=0.4)
             self.y += 9.5
         self.y += 2.0
 
@@ -934,7 +947,7 @@ class AcademicTwoColumnPaper:
             
             rows.append([cid, short_txt, verdict, conf_str, src_str])
             
-        custom_widths = [26.0, 118.0, 52.0, 26.0, 24.5]
+        custom_widths = [45.0, 244.0, 85.0, 55.0, 70.0]  # Sum = 499.0 pt (full single-column width)
         self._render_table_block(rows, caption="Table II: Sentence-Level Evidence Grounding & Verification Audit Ledger", custom_col_widths=custom_widths)
 
     # ------------------------------------------------------------- generate

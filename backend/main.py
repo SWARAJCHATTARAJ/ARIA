@@ -957,7 +957,9 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
                     query=req.query,
                     draft_answer=req.answer_final,
                     sources=sources_for_pdf,
-                    canonical_topic=req.canonical_topic
+                    canonical_topic=req.canonical_topic,
+                    existing_claims=req.claims,
+                    existing_confidence=req.confidence
                 )
                 answer_for_pdf = expanded_text
                 claims_for_pdf = audited_claims

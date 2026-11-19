@@ -549,12 +549,17 @@ async def retrieve_cascade(state: AgentState) -> dict:
         _okf_chunks = []
         _node_paths = []
         base_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "okf"))
+        query_words = set(re.findall(r'\b[a-zA-Z0-9_-]{2,}\b', query.lower())) - {"what", "when", "where", "which", "why", "how", "the", "and", "for", "are", "can", "with", "from"}
+
         try:
             local_okf = traverse_okf_graph(base_data_dir, query=query)
             for chunk in local_okf:
-                _okf_chunks.append(chunk)
-                if chunk.get("node_path"):
-                    _node_paths.append(chunk["node_path"])
+                # Check substantive relevance against query terms
+                ctext = f"{chunk.get('title', '')} {chunk.get('snippet', '')}".lower()
+                if query_words and any(qw in ctext for qw in query_words):
+                    _okf_chunks.append(chunk)
+                    if chunk.get("node_path"):
+                        _node_paths.append(chunk["node_path"])
         except Exception as e:
             logger.warning(f"Local OKF traversal error: {e}")
 
@@ -567,17 +572,20 @@ async def retrieve_cascade(state: AgentState) -> dict:
                 status_okf = f"{len(sb_okf)} docs"
                 for doc in sb_okf:
                     fpath = doc.get("file_path", "Supabase Note")
-                    _okf_chunks.append({
-                        "tier": "OKF",
-                        "source_type": "okf_note",
-                        "node_path": fpath,
-                        "title": fpath,
-                        "source": doc.get("source") or "Personal OKF",
-                        "content": doc.get("content", ""),
-                        "topic": [doc.get("topic")] if doc.get("topic") else [],
-                        "confidence": "verified"
-                    })
-                    _node_paths.append(fpath)
+                    # Strict relevance verification
+                    doc_text = f"{doc.get('topic', '')} {fpath} {doc.get('content', '')}".lower()
+                    if not query_words or any(qw in doc_text for qw in query_words):
+                        _okf_chunks.append({
+                            "tier": "OKF",
+                            "source_type": "okf_note",
+                            "node_path": fpath,
+                            "title": fpath,
+                            "source": doc.get("source") or "Personal OKF",
+                            "content": doc.get("content", ""),
+                            "topic": [doc.get("topic")] if doc.get("topic") else [],
+                            "confidence": "verified"
+                        })
+                        _node_paths.append(fpath)
             except Exception as e:
                 status_okf = f"failed: {type(e).__name__}"
                 logger.warning(f"Supabase OKF query error: {e}")
@@ -585,7 +593,9 @@ async def retrieve_cascade(state: AgentState) -> dict:
                 t1_okf = time.time()
                 iso_okf1 = datetime.datetime.now().isoformat()
                 retrieval_tracker.record("supabase_okf_docs", t0_okf, t1_okf, iso_okf0, iso_okf1, status_okf)
-        return _okf_chunks, _node_paths
+
+        # Cap OKF to max 2 most relevant chunks
+        return _okf_chunks[:2], _node_paths[:2]
 
     # 2. RAG Tier Fetcher
     async def _fetch_rag():
@@ -705,10 +715,10 @@ async def retrieve_cascade(state: AgentState) -> dict:
             logger.error(f"External multi-source search failed: {e}")
         return _live_chunks
 
-    # Run OKF, RAG, and LIVE concurrently with a strict 6-second timeout per tier
+    # Run OKF, RAG, and LIVE concurrently with an 8.0-second timeout for LIVE
     okf_task = asyncio.wait_for(_fetch_okf(), timeout=6.0)
     rag_task = asyncio.wait_for(_fetch_rag(), timeout=6.0)
-    live_task = asyncio.wait_for(_fetch_live(), timeout=6.0)
+    live_task = asyncio.wait_for(_fetch_live(), timeout=8.0)
 
     okf_res, rag_res, live_res = await asyncio.gather(
         okf_task, rag_task, live_task, return_exceptions=True
@@ -732,27 +742,27 @@ async def retrieve_cascade(state: AgentState) -> dict:
     else:
         logger.warning(f"LIVE tier retrieval error or timeout: {live_res}")
 
-    okf_resolved = bool(okf_chunks)
-    rag_resolved = bool(rag_chunks)
+    logger.info(f"[CASCADE] OKF={len(okf_chunks)}, RAG={len(rag_chunks)}, LIVE={len(live_chunks)}")
 
+    # Tri-tier concurrent merge: ensure all available tiers contribute
     if okf_chunks:
         tiers_fired.append("OKF")
         retrieved_chunks.extend(okf_chunks)
         okf_node_paths.extend(okf_paths)
-        logger.info(f"OKF tier resolved query with {len(okf_chunks)} note(s).")
 
-    if is_compare or not okf_resolved:
-        if rag_chunks:
-            tiers_fired.append("RAG")
-            retrieved_chunks.extend(rag_chunks)
-            rag_scores.extend(r_scores)
-            logger.info(f"RAG tier resolved query with {len(rag_chunks)} pgvector matches.")
+    if rag_chunks:
+        tiers_fired.append("RAG")
+        retrieved_chunks.extend(rag_chunks)
+        rag_scores.extend(r_scores)
 
-    if is_compare or (not okf_resolved and not rag_resolved):
-        if live_chunks:
+    if live_chunks:
+        valid_live = [c for c in live_chunks if c.get("content") != "No external search results found for the query at this time."]
+        if valid_live:
+            tiers_fired.append("LIVE")
+            retrieved_chunks.extend(valid_live)
+        elif not okf_chunks and not rag_chunks:
             tiers_fired.append("LIVE")
             retrieved_chunks.extend(live_chunks)
-            logger.info(f"LIVE tier resolved query with {len(live_chunks)} source(s).")
     
     # 4. Evidence Quality Gate + Cross-Provider Deduplication (Part 1.2)
     #    a) Minimum Evidence Density (LIVE external sources only: >=150 chars substantive text)
@@ -875,24 +885,48 @@ async def retrieve_cascade(state: AgentState) -> dict:
 
     deduped.sort(key=_relevance_score, reverse=True)
 
-    # Keep OKF/RAG user knowledge always, plus top LIVE sources up to the cap
-    max_sources = 8
-    kept: List[Dict[str, Any]] = []
-    live_kept = 0
+    # Balanced source allocation across tiers:
+    # Cap OKF to max 2 slots, RAG to max 3 slots, and reserve at least 3-4 slots for LIVE sources
+    max_total_sources = 8
+    max_okf = 2
+    max_rag = 3
+
+    okf_selected = []
+    rag_selected = []
+    live_selected = []
+
     for chunk in deduped:
-        if chunk.get("tier") in ("OKF", "RAG"):
-            kept.append(chunk)
+        tier = chunk.get("tier", "LIVE")
+        if tier == "OKF":
+            if len(okf_selected) < max_okf:
+                okf_selected.append(chunk)
+        elif tier == "RAG":
+            if len(rag_selected) < max_rag:
+                rag_selected.append(chunk)
         else:
-            if live_kept < max_sources and _relevance_score(chunk) >= 0.12:
-                kept.append(chunk)
-                live_kept += 1
-        if len(kept) >= max_sources + 2:
-            break
-            break
+            if _relevance_score(chunk) >= 0.10:
+                live_selected.append(chunk)
+
+    # Prioritize LIVE sources that have DOIs, URLs, or peer-reviewed venues
+    live_selected.sort(
+        key=lambda c: (
+            1 if c.get("doi") or c.get("url") else 0,
+            1 if c.get("source_type") in ("openalex", "arxiv", "semantic_scholar") else 0,
+            _relevance_score(c)
+        ),
+        reverse=True
+    )
+
+    kept: List[Dict[str, Any]] = []
+    kept.extend(okf_selected)
+    kept.extend(rag_selected)
+    remaining_slots = max(4, max_total_sources - len(kept))
+    kept.extend(live_selected[:remaining_slots])
+
     dropped_low_rel = max(0, len(retrieved_chunks) - len(kept))
     deduped = kept
     if dropped_low_rel > 0:
-        logger.info(f"Evidence gate: retained top {len(deduped)} of {len(retrieved_chunks)} sources by relevance ranking.")
+        logger.info(f"Evidence gate: retained top {len(deduped)} of {len(retrieved_chunks)} sources by balanced multi-tier ranking.")
 
     # Re-rank 1-indexed ranks for the surviving LIVE sources
     for rank_idx, chunk in enumerate([c for c in deduped if c.get("tier") == "LIVE"], start=1):
@@ -1071,15 +1105,16 @@ def strip_claim_text(raw_text: str) -> str:
 
 def is_non_claim_line(line: str) -> bool:
     """
-    Skips headings, bold-only lines, intro lines ending in colon, table separators,
-    and meta scope notes appended by code.
+    Skips headings, bold-only lines, intro lines ending in colon, table rows,
+    table separators, and meta scope notes appended by code.
     """
     s = line.strip()
     if not s:
         return True
     if s.startswith('#'):
         return True
-    if re.match(r'^\|?\s*[-:]+[-| :]+\s*\|?$', s):
+    # Skip table rows, separators, and horizontal rules
+    if s.startswith('|') or s.endswith('|') or re.match(r'^\|?\s*[-:]+[-| :]+\s*\|?$', s) or re.match(r'^[-=_*]{3,}$', s):
         return True
     if re.match(r'^(?:\*\*|__|\*|_)[^*_]+(?:\*\*|__|\*|_):?$', s):
         return True
@@ -1350,31 +1385,8 @@ def split_answer_into_claim_sentences(text: str) -> list:
             
         block_cids = list(dict.fromkeys([int(cid) for cid in re.findall(r'\[+c:(\d+)\]+', block)]))
 
-        # Table rows: every row in a markdown table that makes a factual claim becomes its own claim (Patch 5 original splitting)
-        if stripped.startswith('|') and stripped.endswith('|'):
-            leading_ws = len(block) - len(block.lstrip())
-            trailing_ws = len(block) - len(block.rstrip())
-            s_start = block_start + leading_ws
-            s_end = block_start + len(block) - trailing_ws
-            raw_s = stripped
-            cells = [c.strip() for c in raw_s.split('|') if c.strip()]
-            # Filter out cells that are only citation markers
-            content_cells = [c for c in cells if not re.match(r'^\[+c:\d+\]+$', c)]
-            if not content_cells:
-                content_cells = cells
-            joined_row = ": ".join(content_cells) if len(content_cells) > 1 else content_cells[0]
-            clean_t = strip_claim_text(joined_row)
-            cids = list(dict.fromkeys([int(m) for m in re.findall(r'\[+c:(\d+)\]+', raw_s)]))
-            if not cids:
-                if block_cids:
-                    cids = list(block_cids)
-                elif len(all_doc_cids) == 1:
-                    cids = list(all_doc_cids)
-            if len(clean_t.split()) >= 3:
-                if len(clean_t) <= 300:
-                    results.append((clean_t, cids, s_start, s_end))
-                else:
-                    results.extend(split_long_claim(clean_t, cids, s_start, s_end, max_len=300))
+        # Skip table rows, separators, and horizontal rules during claim extraction
+        if stripped.startswith('|') or stripped.endswith('|') or re.match(r'^[-=_*]{3,}$', stripped):
             continue
             
         # Non-table text
@@ -1932,7 +1944,7 @@ async def run_claim_audit(answer_final: str, chunks: list, tracker: Optional[Any
             "note": note,
             "supported": supported,
             "status": status,
-            "coverage": round(coverage, 3),
+            "coverage": 0.0 if status in ("unsupported", "uncited") else round(coverage, 3),
             "start": start,
             "end": end
         })
@@ -2377,13 +2389,18 @@ async def expand_to_full_research_paper(
     query: str,
     draft_answer: str,
     sources: List[Dict[str, Any]],
-    canonical_topic: Optional[str] = None
+    canonical_topic: Optional[str] = None,
+    existing_claims: Optional[List[Dict[str, Any]]] = None,
+    existing_confidence: Optional[float] = None,
+    key_manager: Optional[KeyRotationManager] = None
 ) -> Tuple[str, List[Dict[str, Any]], float]:
     """
     Synthesizes a publication-grade full academic manuscript (1,200 to 2,000 words, 4+ pages in PDF)
     using the already-retrieved verified sources, and audits its claims with the fast Groq judge.
+    Features instant model & key failover on 429 with max_retries=0 and zero re-auditing on fallback.
     """
     logger.info(f"Expanding research paper for query='{query[:60]}' (sources={len(sources)})...")
+    km = key_manager or global_key_manager
     
     # 1. Format context from sources
     context_blocks = []
@@ -2409,36 +2426,58 @@ async def expand_to_full_research_paper(
         "Generate the complete 5-section manuscript now (1,400 to 2,000 words)."
     )
 
-    writer_model = settings.groq_writer_model
-    token_rate_limiter.check_and_pace_sync(writer_model, estimated_tokens=1500)
-    
-    writer_kwargs = {"temperature": 0.0, "max_tokens": 3800}
-    if "gpt-oss" in writer_model:
-        writer_kwargs["reasoning_effort"] = "low"
+    # Candidate models for expansion with instant failover
+    candidate_models = [settings.groq_writer_model]
+    for fallback in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
+        if fallback not in candidate_models:
+            candidate_models.append(fallback)
 
-    writer = ChatGroq(
-        api_key=settings.groq_api_key,
-        model_name=writer_model,
-        **writer_kwargs
-    )
+    expanded_text = None
+    messages = [
+        SystemMessage(content=_MANUSCRIPT_EXPANSION_SYSTEM),
+        HumanMessage(content=human_msg)
+    ]
 
-    try:
-        resp = await asyncio.wait_for(
-            asyncio.to_thread(
-                writer.invoke,
-                [
-                    SystemMessage(content=_MANUSCRIPT_EXPANSION_SYSTEM),
-                    HumanMessage(content=human_msg)
-                ]
-            ),
-            timeout=22.0
-        )
-        expanded_text = sanitize_answer(resp.content, len(sources))
-    except Exception as e:
-        logger.warning(f"Manuscript expansion LLM call failed or timed out: {e}. Falling back to draft answer.")
-        expanded_text = draft_answer
+    for model_name in candidate_models:
+        active_key = km.get_healthy_key()
+        writer_kwargs = {
+            "temperature": 0.0,
+            "max_tokens": 3600,
+            "max_retries": 0  # Fail fast immediately on 429 without sleeping 39s
+        }
+        if "gpt-oss" in model_name:
+            writer_kwargs["reasoning_effort"] = "low"
 
-    # 2. Fast claim extraction and auditing on the expanded paper
+        try:
+            token_rate_limiter.check_and_pace_sync(model_name, estimated_tokens=1500)
+            writer = ChatGroq(
+                api_key=active_key,
+                model_name=model_name,
+                **writer_kwargs
+            )
+            resp = await asyncio.wait_for(
+                asyncio.to_thread(writer.invoke, messages),
+                timeout=20.0
+            )
+            raw_content = resp.content if hasattr(resp, "content") else str(resp)
+            if raw_content and len(raw_content.split()) >= 600:
+                expanded_text = sanitize_answer(raw_content, len(sources))
+                logger.info(f"Manuscript expansion succeeded with model={model_name} ({len(expanded_text.split())} words)")
+                break
+        except Exception as e:
+            err_str = str(e).lower()
+            if "429" in err_str or "rate limit" in err_str or "tpm" in err_str:
+                logger.warning(f"Groq 429 on {model_name} with key {active_key[:6]}...: {e}. Rotating key & model.")
+                km.mark_key_rate_limited(active_key, cooldown_seconds=60.0)
+            else:
+                logger.warning(f"Manuscript expansion failed on {model_name}: {e}. Attempting fallback model.")
+
+    # Fallback to original synthesis if all models failed: NEVER re-audit on fallback!
+    if not expanded_text:
+        logger.warning("All manuscript expansion candidates failed or timed out. Falling back to draft answer without re-audit.")
+        return draft_answer, existing_claims or [], existing_confidence if existing_confidence is not None else 0.85
+
+    # 2. Fast claim extraction and auditing on the successfully expanded paper
     claims = await run_claim_audit(answer_final=expanded_text, chunks=sources)
     total_claims = len(claims)
     if total_claims > 0:

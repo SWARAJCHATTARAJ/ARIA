@@ -586,6 +586,7 @@ export default function ThreadView({
   const executeQuery = (queryText: string, mockKey?: string, recordedDate?: string) => {
     if (!queryText.trim() || isLoading) return;
     if (onQueryErrorChange) onQueryErrorChange(false);
+    if (onUpdateActiveTelemetry) onUpdateActiveTelemetry({ stage: 'routing' });
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();

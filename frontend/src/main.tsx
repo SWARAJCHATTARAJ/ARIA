@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import './styles/index.css';
+import 'katex/dist/katex.min.css';
 import { registerSW } from 'virtual:pwa-register';
 
 // Auto-update service worker immediately with skipWaiting / clientsClaim

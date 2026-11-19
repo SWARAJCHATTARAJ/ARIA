@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
+import katex from 'katex';
 import { Citation, TierType, AuditClaim } from '../types';
 
 interface MarkdownRendererProps {
@@ -44,6 +45,19 @@ interface LineSpan {
   end: number;
 }
 
+function adjustToWordBoundary(text: string, pos: number, dir: 'left' | 'right'): number {
+  if (pos <= 0 || pos >= text.length) return pos;
+  const isAlphaNum = (ch: string) => /[\w]/.test(ch);
+  if (isAlphaNum(text[pos - 1]) && isAlphaNum(text[pos])) {
+    if (dir === 'left') {
+      while (pos > 0 && isAlphaNum(text[pos - 1])) pos--;
+    } else {
+      while (pos < text.length && isAlphaNum(text[pos])) pos++;
+    }
+  }
+  return pos;
+}
+
 function MarkdownRendererInner({
   content,
   citations = [],
@@ -55,15 +69,18 @@ function MarkdownRendererInner({
   // Use answerFinal if audit completed and available
   const rawText = (!isStreaming && answerFinal) ? answerFinal : content;
 
-  // Filter out in-flight split marker "[[" at the very end during streaming
+  // Filter out in-flight split marker "[[" at the very end during streaming and clean raw [VERIFIED] tags
   const displayContent = React.useMemo(() => {
-    if (!isStreaming) return rawText;
-    const lastOpen = rawText.lastIndexOf('[[');
-    const lastClose = rawText.lastIndexOf(']]');
-    if (lastOpen !== -1 && lastOpen > lastClose && rawText.length - lastOpen < 15) {
-      return rawText.slice(0, lastOpen);
+    let text = rawText;
+    if (isStreaming) {
+      const lastOpen = text.lastIndexOf('[[');
+      const lastClose = text.lastIndexOf(']]');
+      if (lastOpen !== -1 && lastOpen > lastClose && text.length - lastOpen < 15) {
+        text = text.slice(0, lastOpen);
+      }
     }
-    return rawText;
+    // Strip any literal [VERIFIED] or \[VERIFIED\] text tags
+    return text.replace(/\\?\[\s*VERIFIED\s*\\?\]/gi, '');
   }, [rawText, isStreaming]);
 
   // Map citation ID -> Citation object
@@ -90,10 +107,18 @@ function MarkdownRendererInner({
     return map;
   }, [validClaims]);
 
-  // Parse inline text: bold, italic, code, links, citations [[c:ID]]
+  // Parse inline text: bold, italic, code, links, citations [[c:ID]], and KaTeX math formulas
   const renderInline = (text: string, keyPrefix: string): React.ReactNode[] => {
     const nodes: React.ReactNode[] = [];
-    const tokenRegex = /(\[\[c:(\d+)\]\])|(`([^`]+)`)|\*\*([^*]+)\*\*|\*([^*]+)\*|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g;
+    // Token regex supporting:
+    // 1. [[c:ID]] citations
+    // 2. $$math$$ or \[math\] display math
+    // 3. $math$ or \(math\) inline math
+    // 4. `code`
+    // 5. **bold**
+    // 6. *italic*
+    // 7. [text](url)
+    const tokenRegex = /(\[\[c:(\d+)\]\])|(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\])|(?:\$([^\$\n]+?)\$|\\\(([\s\S]+?)\\\))|(`([^`]+)`)|(?:\*\*([^*]+)\*\*)|(?:\*([^*]+)\*)|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g;
     let lastIndex = 0;
     let match: RegExpExecArray | null;
     let i = 0;
@@ -118,23 +143,53 @@ function MarkdownRendererInner({
             />
           );
         }
-      } else if (match[3]) {
+      } else if (match[3] || match[4]) {
+        // Display math ($$...$$ or \[...\])
+        const mathExpr = (match[3] || match[4] || '').trim();
+        try {
+          const html = katex.renderToString(mathExpr, { throwOnError: false, displayMode: true });
+          nodes.push(
+            <div
+              key={matchKey}
+              className="my-2.5 overflow-x-auto text-center font-mono text-sm py-1 px-2 bg-ink-surface/30 rounded border border-white/[0.05]"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          );
+        } catch {
+          nodes.push(<code key={matchKey} className="font-mono text-xs">{mathExpr}</code>);
+        }
+      } else if (match[5] || match[6]) {
+        // Inline math ($...$ or \(...\))
+        const mathExpr = (match[5] || match[6] || '').trim();
+        try {
+          const html = katex.renderToString(mathExpr, { throwOnError: false, displayMode: false });
+          nodes.push(
+            <span
+              key={matchKey}
+              className="inline-math px-0.5"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          );
+        } catch {
+          nodes.push(<code key={matchKey} className="font-mono text-xs">{mathExpr}</code>);
+        }
+      } else if (match[7]) {
         // `code`
         nodes.push(
           <code key={matchKey} className="font-mono text-xs bg-ink-surface px-1 py-0.5 rounded-none text-tier-okf border border-ink-surface/80">
-            {match[4]}
+            {match[8]}
           </code>
         );
-      } else if (match[5]) {
+      } else if (match[9]) {
         // **bold**
-        nodes.push(<strong key={matchKey} className="font-semibold text-gray-100">{match[5]}</strong>);
-      } else if (match[6]) {
+        nodes.push(<strong key={matchKey} className="font-semibold text-gray-100">{match[9]}</strong>);
+      } else if (match[10]) {
         // *italic*
-        nodes.push(<em key={matchKey} className="italic text-gray-300">{match[6]}</em>);
-      } else if (match[7]) {
+        nodes.push(<em key={matchKey} className="italic text-gray-300">{match[10]}</em>);
+      } else if (match[11]) {
         // [text](url)
-        const linkText = match[8];
-        const linkUrl = match[9];
+        const linkText = match[12];
+        const linkUrl = match[13];
         nodes.push(
           <a
             key={matchKey}
@@ -162,14 +217,8 @@ function MarkdownRendererInner({
   const renderClaimStamp = (claim: AuditClaim) => {
     switch (claim.status) {
       case 'supported':
-        return (
-          <span
-            className="audit-stamp-supported"
-            title={claim.evidence ? `Verified by source: "${claim.evidence}"` : 'Verified claim'}
-          >
-            [VERIFIED]
-          </span>
-        );
+        // Never inject raw literal "[VERIFIED]" text into prose (avoids mid-word corruption like late[VERIFIED]ncy)
+        return null;
       case 'partially_supported':
         return (
           <span
@@ -245,8 +294,10 @@ function MarkdownRendererInner({
       let cursor = startOffset;
 
       overlapping.forEach((claim, idx) => {
-        const cStart = claim.start as number;
-        const cEnd = claim.end as number;
+        const rawStart = claim.start as number;
+        const rawEnd = claim.end as number;
+        const cStart = Math.max(startOffset, adjustToWordBoundary(answerFinal, rawStart, 'left'));
+        const cEnd = Math.min(endOffset, adjustToWordBoundary(answerFinal, rawEnd, 'right'));
         const globalIdx = claimIndexMap.get(claim) ?? idx;
 
         // Text preceding the claim inside this container
@@ -292,7 +343,6 @@ function MarkdownRendererInner({
     }
 
     // Fallback: mapping cannot be exact without crossing block boundaries.
-    // "If the mapping can't be exact, highlight the whole block, never a wrong range."
     return (
       <span className="audit-claim-highlight inline px-0.5 rounded-none transition-colors">
         {renderInline(text, `${keyPrefix}-blkhl`)}
