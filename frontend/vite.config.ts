@@ -2,10 +2,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const isNativeBuild = process.env.VITE_BUILD_TARGET === 'native' || process.env.BUILD_TARGET === 'native';
+
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      disable: isNativeBuild,
       registerType: 'autoUpdate',
       includeAssets: [
         'favicon.ico',

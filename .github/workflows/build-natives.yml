@@ -25,9 +25,34 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      VITE_API_URL: https://aria.swarajchattaraj.tech
+      VITE_API_BASE_URL: https://aria.swarajchattaraj.tech
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_BUILD_TARGET: native
+      BUILD_TARGET: native
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Verify Environment Variables
+        shell: pwsh
+        run: |
+          Write-Host "Verifying Supabase Environment Configuration for Windows Build..."
+          $hasUrl = -not [string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_URL)
+          $hasKey = -not [string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_ANON_KEY)
+          Write-Host "VITE_SUPABASE_URL configured: $hasUrl"
+          Write-Host "VITE_SUPABASE_ANON_KEY configured: $hasKey"
+          Write-Host "VITE_API_URL: $env:VITE_API_URL"
+          if (-not $hasUrl) {
+            Write-Error "CRITICAL: VITE_SUPABASE_URL is blank or missing from GitHub Secrets! Failing workflow immediately."
+            exit 1
+          }
+          if (-not $hasKey) {
+            Write-Error "CRITICAL: VITE_SUPABASE_ANON_KEY is blank or missing from GitHub Secrets! Failing workflow immediately."
+            exit 1
+          }
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -50,16 +75,12 @@ jobs:
         working-directory: frontend
         shell: pwsh
         run: |
-          npm install
+          npm ci
 
       - name: Build frontend
         working-directory: frontend
+        shell: pwsh
         run: npm run build
-        env:
-          VITE_API_URL: https://aria.swarajchattaraj.tech
-          VITE_API_BASE_URL: https://aria.swarajchattaraj.tech
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Build Tauri Windows App
         run: |
@@ -134,9 +155,34 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      VITE_API_URL: https://aria.swarajchattaraj.tech
+      VITE_API_BASE_URL: https://aria.swarajchattaraj.tech
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_BUILD_TARGET: native
+      BUILD_TARGET: native
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Verify Environment Variables
+        run: |
+          echo "Verifying Supabase Environment Configuration for Android Build..."
+          if [ -z "$VITE_SUPABASE_URL" ]; then
+            echo "::error::CRITICAL: VITE_SUPABASE_URL is blank or missing from GitHub Secrets! Failing workflow immediately."
+            exit 1
+          else
+            echo "VITE_SUPABASE_URL configured: true"
+          fi
+
+          if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "::error::CRITICAL: VITE_SUPABASE_ANON_KEY is blank or missing from GitHub Secrets! Failing workflow immediately."
+            exit 1
+          else
+            echo "VITE_SUPABASE_ANON_KEY configured: true"
+          fi
+          echo "VITE_API_URL: $VITE_API_URL"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -159,31 +205,31 @@ jobs:
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "platforms;android-36" "build-tools;34.0.0" "build-tools;36.0.0"
 
-      - name: Install frontend dependencies
+      # Sequence 1: npm ci + npm run build in frontend/
+      - name: Install frontend dependencies and build frontend
         working-directory: frontend
         run: |
-          npm install
+          npm ci
+          npm run build
 
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
-        env:
-          VITE_API_URL: https://aria.swarajchattaraj.tech
-          VITE_API_BASE_URL: https://aria.swarajchattaraj.tech
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-
-      - name: Install Capacitor CLI & Sync
+      - name: Stage Web Assets for Capacitor
         run: |
-          npm install -D @capacitor/cli @capacitor/core @capacitor/android
+          rm -rf dist
+          cp -r frontend/dist dist
+
+      # Sequence 2: npx cap sync android (confirming webDir in capacitor.config.ts matches dist)
+      - name: Install Capacitor CLI and Sync Android
+        run: |
+          npm install -D @capacitor/cli @capacitor/core @capacitor/android typescript
           npx cap sync android
 
       - name: Generate Capacitor Android Adaptive Icons
         run: npx --yes @capacitor/assets generate --android --iconBackgroundColor '#09090B' --iconBackgroundColorDark '#09090B' --splashBackgroundColor '#09090B' --splashBackgroundColorDark '#09090B'
 
+      # Sequence 3: ./gradlew assembleDebug (or assembleRelease)
       - name: Make Gradle wrapper executable and Build APK
+        working-directory: android
         run: |
-          cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 

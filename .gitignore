@@ -45,6 +45,11 @@ src-tauri/dist/
 android/build/
 android/.gradle/
 android/app/build/
+android/app/src/main/assets/
+android/capacitor.settings.gradle
+android/app/capacitor.build.gradle
+android/capacitor-cordova-android-plugins/
+android/app/src/main/res/xml/
 *.apk
 *.msi
 *.dmg

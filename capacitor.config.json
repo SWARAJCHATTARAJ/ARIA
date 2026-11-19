@@ -1,7 +1,7 @@
 {
   "appId": "com.aria.app",
   "appName": "ARIA",
-  "webDir": "frontend/dist",
+  "webDir": "dist",
   "backgroundColor": "#09090B",
   "android": {
     "backgroundColor": "#09090B",
