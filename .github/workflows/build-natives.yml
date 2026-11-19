@@ -58,7 +58,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: 'frontend/package-lock.json'
 
@@ -184,7 +184,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: 'frontend/package-lock.json'
 
@@ -192,7 +192,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: 21
+          java-version: '21'
 
       - name: Setup Gradle Cache
         uses: gradle/actions/setup-gradle@v3
@@ -212,8 +212,8 @@ jobs:
       # Sequence 2: npx cap sync android (authoritative capacitor.config.ts with webDir: 'frontend/dist')
       - name: Install Capacitor CLI and Sync Android
         run: |
-          npm install -D @capacitor/cli @capacitor/core @capacitor/android typescript
-          npm install @capacitor/filesystem @capacitor/share
+          npm install -D @capacitor/cli@^8.6.2 @capacitor/core@^8.6.2 @capacitor/android@^8.6.2 typescript
+          npm install @capacitor/filesystem@^8.1.5 @capacitor/share@^8.0.3
           npx cap sync android
 
       - name: Verify Android Assets Synced

@@ -4,7 +4,7 @@
   "private": true,
   "dependencies": {
     "@capacitor/filesystem": "^8.1.5",
-    "@capacitor/share": "^8.0.2"
+    "@capacitor/share": "^8.0.3"
   },
   "devDependencies": {
     "@capacitor/android": "^8.6.2",
