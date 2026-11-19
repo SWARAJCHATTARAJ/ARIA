@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Search,
-  Home,
   PlusCircle,
   Clock,
   FolderGit2,
@@ -58,16 +57,6 @@ export default function CommandPalette({
         icon: <PlusCircle size={14} className="text-[#60A5FA]" />,
         onSelect: () => {
           onNavigate('query');
-          onClose();
-        },
-      },
-      {
-        id: 'nav-home',
-        category: 'Navigation',
-        label: 'Home Workbench',
-        icon: <Home size={14} />,
-        onSelect: () => {
-          onNavigate('home');
           onClose();
         },
       },

@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Home,
   PlusCircle,
   FolderGit2,
   BookOpen,
@@ -22,7 +21,6 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS = [
-  { id: 'home', label: 'Home', icon: Home },
   { id: 'query', label: 'New Question', icon: PlusCircle },
   { id: 'history', label: 'History', icon: Clock },
   { id: 'collections', label: 'Collections', icon: FolderGit2 },
@@ -50,7 +48,11 @@ export default function Sidebar({
         {/* Top Header */}
         <div className={`flex items-center ${isRail ? 'justify-center' : 'justify-between'}`}>
           {!isRail ? (
-            <div className="flex items-center gap-2.5">
+            <div
+              className="flex items-center gap-2.5 cursor-pointer hover:opacity-85 transition-opacity"
+              onClick={() => onTabChange('query')}
+              title="New Question (Research Workspace)"
+            >
               <span className="text-[14px] font-semibold text-[#EDEDED] tracking-[-0.02em] font-mono">
                 ARIA
               </span>
@@ -59,7 +61,11 @@ export default function Sidebar({
               </span>
             </div>
           ) : (
-            <span className="text-[13px] font-mono font-semibold text-[#60A5FA]">
+            <span
+              className="text-[13px] font-mono font-semibold text-[#60A5FA] cursor-pointer hover:opacity-85 transition-opacity"
+              onClick={() => onTabChange('query')}
+              title="New Question (Research Workspace)"
+            >
               A
             </span>
           )}

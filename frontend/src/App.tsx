@@ -2,8 +2,6 @@ import React, { useState, Suspense, lazy, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ThreadView from './components/ThreadView';
 import SourcePanel from './components/SourcePanel';
-import Home from './components/Home';
-import PipelineSpine from './components/PipelineSpine';
 import { HistoryView, CollectionsView, OkfSpaceView, SettingsView } from './components/HubViews';
 import { MobileTopBar, MobileBottomNav } from './components/ui/MobileNavBar';
 import CommandPalette from './components/ui/CommandPalette';
@@ -79,7 +77,7 @@ function RootGate() {
 
 function AppShell() {
   const [isSourcePanelOpen, setSourcePanelOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState('query');
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [hasQuery, setHasQuery] = useState(false);
   const [isMockActive, setIsMockActive] = useState(false);
@@ -182,7 +180,6 @@ function AppShell() {
         key={activeTab}
         className="flex-1 flex flex-col h-full md:border-r border-white/[0.07] bg-[#09090B] transition-all w-full overflow-hidden pb-14 md:pb-0 animate-fade-slide relative"
       >
-        {activeTab === 'home' && <Home onStartQuery={handleOpenQuery} />}
         {activeTab === 'query' && (
           <ThreadView
             onCitationClick={handleCitationClick}

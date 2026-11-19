@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, PlusCircle, Clock, FolderGit2, Settings, Command, Menu } from 'lucide-react';
+import { PlusCircle, Clock, FolderGit2, BookOpen, Settings, Command, Menu } from 'lucide-react';
 
 interface MobileNavBarProps {
   activeTab: string;
@@ -21,7 +21,7 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
         </button>
       )}
 
-      <div className="flex items-center gap-2 cursor-pointer" onClick={() => onTabChange('home')}>
+      <div className="flex items-center gap-2 cursor-pointer" onClick={() => onTabChange('query')} title="New Question">
         <span className="font-mono text-[14px] font-semibold text-[#EDEDED] tracking-[-0.02em]">
           ARIA
         </span>
@@ -56,10 +56,10 @@ export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onO
 
 export function MobileBottomNav({ activeTab, onTabChange }: MobileNavBarProps) {
   const navItems = [
-    { id: 'home', label: 'Home', icon: Home },
     { id: 'query', label: 'Ask', icon: PlusCircle },
     { id: 'history', label: 'History', icon: Clock },
     { id: 'collections', label: 'Saved', icon: FolderGit2 },
+    { id: 'okf', label: 'OKF', icon: BookOpen },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
