@@ -2,9 +2,9 @@
   "appId": "com.aria.app",
   "appName": "ARIA",
   "webDir": "frontend/dist",
-  "backgroundColor": "#050811",
+  "backgroundColor": "#09090B",
   "android": {
-    "backgroundColor": "#050811",
+    "backgroundColor": "#09090B",
     "allowMixedContent": true,
     "webContentsDebuggingEnabled": false
   },

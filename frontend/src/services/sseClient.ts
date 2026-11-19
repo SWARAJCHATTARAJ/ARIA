@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 
 export interface SSEClientOptions {
   query: string;
+  topic?: string;
   compareMode?: boolean;
   signal?: AbortSignal;
   onEvent: (event: any) => void;
@@ -15,6 +16,7 @@ export interface SSEClientOptions {
 
 export async function streamQuery({
   query,
+  topic,
   compareMode = false,
   signal,
   onEvent,
@@ -104,12 +106,31 @@ export async function streamQuery({
     requestHeaders['X-Anonymous-User'] = 'true';
   }
 
+  // Inject user BYOK Groq API Key Pool from settings if present
+  try {
+    const rawSettings = localStorage.getItem('aria-ui-settings-v2');
+    if (rawSettings) {
+      const parsed = JSON.parse(rawSettings);
+      if (Array.isArray(parsed.apiKeys)) {
+        const activeKeys = parsed.apiKeys
+          .filter((k: any) => k.enabled && typeof k.key === 'string' && k.key.trim().length > 0)
+          .map((k: any) => k.key.trim());
+        if (activeKeys.length > 0) {
+          requestHeaders['X-API-Key-Pool'] = JSON.stringify(activeKeys);
+        }
+      }
+    }
+  } catch {
+    // quiet fallback
+  }
+
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: requestHeaders,
       body: JSON.stringify({
         query,
+        topic: topic || undefined,
         compare_mode: compareMode,
       }),
       signal,

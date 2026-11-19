@@ -92,9 +92,13 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 class QueryRequest(BaseModel):
     query: str
+    topic: Optional[str] = None
     thread_id: Optional[str] = None
     user_id: Optional[str] = None
     compare_mode: bool = False
+
+class KeyTestRequest(BaseModel):
+    api_key: str
 
 class FeedbackRequest(BaseModel):
     message_id: str
@@ -107,6 +111,20 @@ class FeedbackRequest(BaseModel):
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "version": "2.0.0"}
+
+@app.post("/api/keys/test")
+async def test_key_endpoint(req: KeyTestRequest, request: Request):
+    """
+    Validates a user-provided Groq API key and measures round-trip latency.
+    """
+    from utils.key_manager import test_groq_api_key
+    res = await test_groq_api_key(req.api_key)
+    if res.get("status") != "valid":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=res.get("detail", "Key verification failed")
+        )
+    return res
 
 @app.post("/api/query")
 async def query_pipeline(req: QueryRequest, request: Request):
@@ -185,8 +203,21 @@ async def query_pipeline(req: QueryRequest, request: Request):
     config = {"configurable": {"thread_id": thread_id}}
     token_tracker = TokenTracker(query_id=thread_id)
     
+    # Parse client-provided BYOK Groq API key pool from header if present
+    key_pool_header = request.headers.get("x-api-key-pool")
+    client_key_pool = None
+    if key_pool_header:
+        try:
+            parsed_keys = json.loads(key_pool_header)
+            if isinstance(parsed_keys, list):
+                client_key_pool = [str(k).strip() for k in parsed_keys if isinstance(k, str) and len(str(k).strip()) > 10]
+        except Exception:
+            pass
+
     initial_state = {
         "query": req.query,
+        "topic": req.topic,
+        "api_key_pool": client_key_pool,
         "thread_id": thread_id,
         "user_id": user_id,
         "compare_mode": req.compare_mode,
@@ -341,7 +372,9 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 for i, chunk in enumerate(chunks)
             ])
             from pipeline.nodes import build_synthesis_prompt, current_writer_llm
-            synthesis_prompt = build_synthesis_prompt()
+            from utils.key_manager import KeyRotationManager
+            km = KeyRotationManager(request_keys=initial_state.get("api_key_pool"))
+            synthesis_prompt = build_synthesis_prompt(topic=current_state.get("topic") or initial_state.get("topic"))
             messages = [
                 SystemMessage(content=synthesis_prompt),
                 HumanMessage(content=f"Query: {current_state['query']}\n\nContext:\n{context}")
@@ -349,39 +382,48 @@ async def query_pipeline(req: QueryRequest, request: Request):
             full_answer = ""
             full_resp = None
             first_token_time = None
-            try:
-                allowed_pace, pace_msg = await token_rate_limiter.check_and_pace(settings.groq_writer_model, estimated_tokens=1200)
-                if not allowed_pace:
-                    logger.warning(f"[{request_id}] Pacing limit reached before synthesis.")
-                    yield f"data: {json.dumps({'event': 'error', 'message': pace_msg, 'request_id': request_id})}\n\n"
-                    yield f"data: {json.dumps({'event': 'done'})}\n\n"
-                    return
+            max_writer_attempts = max(1, len(km.keys))
+            for attempt in range(max_writer_attempts):
+                try:
+                    allowed_pace, pace_msg = await token_rate_limiter.check_and_pace(settings.groq_writer_model, estimated_tokens=1200)
+                    if not allowed_pace and attempt == max_writer_attempts - 1:
+                        logger.warning(f"[{request_id}] Pacing limit reached before synthesis.")
+                        yield f"data: {json.dumps({'event': 'error', 'message': pace_msg, 'request_id': request_id})}\n\n"
+                        yield f"data: {json.dumps({'event': 'done'})}\n\n"
+                        return
 
-                async for chunk in current_writer_llm().astream(messages, max_tokens=1200):
-                    if time.time() - start_time > MAX_STREAM_DURATION_SECONDS:
-                        logger.warning(f"[{request_id}] Stream exceeded 90s limit during token streaming.")
-                        break
-                    full_resp = chunk if full_resp is None else full_resp + chunk
-                    delta = chunk.content
-                    if delta:
-                        if first_token_time is None and delta.strip():
-                            first_token_time = time.time()
-                        delta = delta.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
-                        delta = delta.replace("【", "[[").replace("】", "]]")
-                        full_answer += delta
-                        yield f"data: {json.dumps({'event': 'token', 'delta': delta})}\n\n"
-            except Exception as stream_err:
-                err_str = str(stream_err).lower()
-                is_busy = "429" in err_str or "rate limit" in err_str or "ratelimit" in err_str or "timeout" in err_str or "timed out" in err_str or isinstance(stream_err, (asyncio.TimeoutError, httpx.TimeoutException))
-                if is_busy:
-                    headers = getattr(stream_err, "response", None)
-                    hdr_dict = dict(headers.headers) if headers and hasattr(headers, "headers") else {}
-                    token_rate_limiter.log_groq_429(settings.groq_writer_model, hdr_dict, str(stream_err))
-                    logger.warning(f"[{request_id}] Groq busy mid-stream: {stream_err}")
-                    yield f"data: {json.dumps({'event': 'error', 'message': 'ARIA is busy right now, try again in a few minutes', 'request_id': request_id})}\n\n"
-                    yield f"data: {json.dumps({'event': 'done'})}\n\n"
-                    return
-                raise stream_err
+                    active_writer = km.create_chat_groq(model_name=settings.groq_writer_model, temperature=0.0)
+                    async for chunk in active_writer.astream(messages, max_tokens=1200):
+                        if time.time() - start_time > MAX_STREAM_DURATION_SECONDS:
+                            logger.warning(f"[{request_id}] Stream exceeded 90s limit during token streaming.")
+                            break
+                        full_resp = chunk if full_resp is None else full_resp + chunk
+                        delta = chunk.content
+                        if delta:
+                            if first_token_time is None and delta.strip():
+                                first_token_time = time.time()
+                            delta = delta.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+                            delta = delta.replace("【", "[[").replace("】", "]]")
+                            full_answer += delta
+                            yield f"data: {json.dumps({'event': 'token', 'delta': delta})}\n\n"
+                    break
+                except Exception as stream_err:
+                    err_str = str(stream_err).lower()
+                    is_busy = "429" in err_str or "rate limit" in err_str or "ratelimit" in err_str or "quota" in err_str or "402" in err_str or "403" in err_str or "tpm" in err_str
+                    if is_busy and attempt < max_writer_attempts - 1 and len(full_answer) == 0:
+                        failed_key = km.get_healthy_key()
+                        km.mark_key_rate_limited(failed_key)
+                        logger.warning(f"[{request_id}] Writer rate limit hit. Rotating key to next in pool (attempt {attempt + 1}/{max_writer_attempts}).")
+                        continue
+                    if is_busy:
+                        headers = getattr(stream_err, "response", None)
+                        hdr_dict = dict(headers.headers) if headers and hasattr(headers, "headers") else {}
+                        token_rate_limiter.log_groq_429(settings.groq_writer_model, hdr_dict, str(stream_err))
+                        logger.warning(f"[{request_id}] Groq busy mid-stream: {stream_err}")
+                        yield f"data: {json.dumps({'event': 'error', 'message': 'ARIA is busy right now, try again in a few minutes', 'request_id': request_id})}\n\n"
+                        yield f"data: {json.dumps({'event': 'done'})}\n\n"
+                        return
+                    raise stream_err
 
             time_to_first_token = round(first_token_time - start_time, 2) if first_token_time else 0.0
 
