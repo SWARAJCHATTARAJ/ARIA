@@ -512,12 +512,13 @@ function MarkdownRendererInner({
       }
 
       // Headings
+      // Headings (refined scale & tracking)
       if (trimmed.startsWith('# ')) {
         const leadWs = line.text.length - line.text.trimStart().length;
         const headingStart = line.start + leadWs + 2;
         const headingEnd = line.end;
         result.push(
-          <h1 key={`blk-${blockId++}`} className="text-[27px] font-sans font-bold text-white mt-4 mb-2 leading-[1.25]">
+          <h1 key={`blk-${blockId++}`} className="text-[17px] font-sans font-semibold text-[#EDEDED] tracking-[-0.015em] mt-5 mb-2 leading-snug">
             {renderAuditedText(trimmed.slice(2), headingStart, headingEnd, `h1-${blockId}`)}
           </h1>
         );
@@ -529,7 +530,7 @@ function MarkdownRendererInner({
         const headingStart = line.start + leadWs + 3;
         const headingEnd = line.end;
         result.push(
-          <h2 key={`blk-${blockId++}`} className="text-[19px] font-sans font-semibold text-gray-100 mt-3 mb-1.5 leading-[1.35]">
+          <h2 key={`blk-${blockId++}`} className="text-[15px] font-sans font-semibold text-[#EDEDED] tracking-[-0.015em] mt-4 mb-2 leading-snug">
             {renderAuditedText(trimmed.slice(3), headingStart, headingEnd, `h2-${blockId}`)}
           </h2>
         );
@@ -541,7 +542,7 @@ function MarkdownRendererInner({
         const headingStart = line.start + leadWs + 4;
         const headingEnd = line.end;
         result.push(
-          <h3 key={`blk-${blockId++}`} className="text-[15px] font-sans font-semibold text-gray-200 mt-2.5 mb-1 leading-[1.4]">
+          <h3 key={`blk-${blockId++}`} className="text-[14px] font-sans font-semibold text-[#D4D4D8] tracking-[-0.015em] mt-3 mb-1.5 leading-snug">
             {renderAuditedText(trimmed.slice(4), headingStart, headingEnd, `h3-${blockId}`)}
           </h3>
         );

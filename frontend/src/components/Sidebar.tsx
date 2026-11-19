@@ -28,6 +28,7 @@ const NAV_ITEMS = [
   { id: 'history', label: 'History', icon: Clock },
   { id: 'collections', label: 'Collections', icon: FolderGit2 },
   { id: 'okf', label: 'OKF Space', icon: BookOpen },
+  { id: 'settings', label: 'Settings', icon: Settings },
 ] as const;
 
 export default function Sidebar({
@@ -57,16 +58,16 @@ export default function Sidebar({
               onClick={() => onTabChange('query')}
               title="New Question (Research Workspace)"
             >
-              <span className="text-[14px] font-semibold text-[#EDEDED] tracking-[-0.02em] font-mono">
+              <span className="text-[14px] font-medium text-[#EDEDED] tracking-[0.14em] font-sans">
                 ARIA
               </span>
-              <span className="text-[11px] text-[#71717A] font-mono tabular-nums">
+              <span className="text-[11px] text-[#71717A] font-sans tabular-nums">
                 v2.0
               </span>
             </div>
           ) : (
             <span
-              className="text-[13px] font-mono font-semibold text-[#60A5FA] cursor-pointer hover:opacity-85 transition-opacity"
+              className="text-[13px] font-sans font-semibold text-[#60A5FA] cursor-pointer hover:opacity-85 transition-opacity"
               onClick={() => onTabChange('query')}
               title="New Question (Research Workspace)"
             >
@@ -123,30 +124,16 @@ export default function Sidebar({
             );
           })}
 
-          <div className="my-2 border-t border-white/[0.07]" />
-
-          <button
-            onClick={() => onTabChange('settings')}
-            title={isRail ? 'Settings' : undefined}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-[6px] text-[13px] tracking-[-0.01em] transition-all active:scale-[0.98] cursor-pointer ${
-              activeTab === 'settings'
-                ? 'bg-[#18181E] text-[#EDEDED] font-medium border border-white/[0.07]'
-                : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#111115] border border-transparent'
-            } ${isRail ? 'justify-center px-0' : ''}`}
-          >
-            <Settings size={16} className={activeTab === 'settings' ? 'text-[#60A5FA]' : 'text-[#8B8B8E]'} />
-            {!isRail && <span>Settings</span>}
-          </button>
         </div>
       </div>
 
       {/* User Session & Theme Footer */}
-      <div className="pt-3 border-t border-white/[0.07] space-y-2">
+      <div className="pt-3 border-t border-white/[0.07] space-y-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]">
         <div className={`flex items-center ${isRail ? 'justify-center' : 'justify-between'} gap-2`}>
           {!isRail && (
             <button
               onClick={toggleTheme}
-              className="flex items-center gap-2 text-[12px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] p-1.5 rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-all cursor-pointer"
+              className="flex items-center gap-2 text-[12px] font-sans text-[#8B8B8E] hover:text-[#EDEDED] p-1.5 rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-all cursor-pointer"
               title={`Switch to ${settings.theme === 'dark' ? 'Light' : 'Dark'} theme`}
             >
               {settings.theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
@@ -177,10 +164,10 @@ export default function Sidebar({
 
         {user && !isRail && (
           <div className="min-w-0 px-1.5 pt-1">
-            <p className="text-[12px] font-medium text-[#EDEDED] truncate">
+            <p className="text-[12px] font-medium text-[#EDEDED] truncate font-sans">
               {user.name}
             </p>
-            <p className="text-[10px] font-mono text-[#71717A] truncate">
+            <p className="text-[11px] text-[#71717A] truncate font-sans">
               {user.provider === 'github' ? `@${user.username}` : user.email}
             </p>
           </div>
@@ -188,7 +175,7 @@ export default function Sidebar({
 
         {/* Small visible build indicator */}
         {!isRail ? (
-          <div className="px-1.5 pt-2 mt-1 border-t border-white/[0.04] flex items-center justify-between text-[10px] font-mono text-[#52525B]">
+          <div className="px-1.5 pt-2 mt-1 border-t border-white/[0.04] flex items-center justify-between text-[10px] font-sans text-[#52525B]">
             <span>ARIA v2.0</span>
             <span className="tabular-nums" title={`Build commit: ${typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : 'live'}`}>
               · {typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : '2.0.0'}
@@ -196,7 +183,7 @@ export default function Sidebar({
           </div>
         ) : (
           <div
-            className="text-[9px] font-mono text-[#52525B] text-center pt-1 border-t border-white/[0.04]"
+            className="text-[9px] font-sans text-[#52525B] text-center pt-1 border-t border-white/[0.04]"
             title={`ARIA v2.0 · ${typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : 'live'}`}
           >
             {typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : 'v2.0'}

@@ -1,90 +1,86 @@
 import React from 'react';
-import { PlusCircle, Clock, FolderGit2, BookOpen, Settings, Command, Menu } from 'lucide-react';
+import { Menu, Plus, PanelRightOpen } from 'lucide-react';
 
-interface MobileNavBarProps {
+interface MobileTopBarProps {
   activeTab: string;
+  hasQuery?: boolean;
+  isInspectorOpen?: boolean;
   onTabChange: (tab: string) => void;
-  onOpenCommandPalette?: () => void;
-  onOpenDrawer?: () => void;
+  onOpenDrawer: () => void;
+  onNewQuestion?: () => void;
+  onToggleInspector?: () => void;
 }
 
-export function MobileTopBar({ activeTab, onTabChange, onOpenCommandPalette, onOpenDrawer }: MobileNavBarProps) {
+export function MobileTopBar({
+  activeTab,
+  hasQuery = false,
+  isInspectorOpen = false,
+  onTabChange,
+  onOpenDrawer,
+  onNewQuestion,
+  onToggleInspector,
+}: MobileTopBarProps) {
+  const handleNewQuestion = () => {
+    if (onNewQuestion) {
+      onNewQuestion();
+    } else {
+      onTabChange('query');
+    }
+  };
+
   return (
-    <header className="md:hidden flex items-center justify-between px-4 py-3 bg-[#0C0C0F] border-b border-white/[0.07] shrink-0 z-30 safe-pt select-none">
-      {onOpenDrawer && (
+    <header className="md:hidden flex items-center justify-between px-3 h-12 bg-[#09090B] border-b border-white/[0.06] shrink-0 z-30 pt-[env(safe-area-inset-top,0px)] select-none">
+      {/* Left: Clean ≡ menu icon button */}
+      <div className="flex items-center">
         <button
+          type="button"
           onClick={onOpenDrawer}
-          className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-all"
+          className="p-2 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-white/[0.04] active:scale-[0.98] transition-all cursor-pointer"
           aria-label="Open navigation menu"
         >
-          <Menu size={18} />
+          <Menu size={18} strokeWidth={1.8} />
         </button>
-      )}
+      </div>
 
-      <div className="flex items-center gap-2 cursor-pointer" onClick={() => onTabChange('query')} title="New Question">
-        <span className="font-mono text-[14px] font-semibold text-[#EDEDED] tracking-[-0.02em]">
+      {/* Center: Subtle, refined ARIA wordmark (crisp sans-serif) */}
+      <div
+        className="flex items-center cursor-pointer select-none"
+        onClick={handleNewQuestion}
+        title="ARIA"
+      >
+        <span className="font-sans text-[14px] font-medium text-[#EDEDED] tracking-[0.14em]">
           ARIA
         </span>
       </div>
 
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => onTabChange('okf')}
-          className={`px-2.5 py-1 text-[11px] font-mono rounded-[4px] border transition-all active:scale-[0.98] ${
-            activeTab === 'okf'
-              ? 'bg-[#18181E] border-white/[0.14] text-[#EDEDED] font-semibold'
-              : 'bg-[#111115] border-white/[0.07] text-[#8B8B8E] hover:text-[#EDEDED]'
-          }`}
-          title="OKF Space"
-        >
-          OKF
-        </button>
-
-        {onOpenCommandPalette && (
+      {/* Right: Minimal + (New Question) and Research Inspector (only visible on active research thread) */}
+      <div className="flex items-center gap-1">
+        {activeTab === 'query' && hasQuery && onToggleInspector && (
           <button
-            onClick={onOpenCommandPalette}
-            className="p-1.5 bg-[#111115] border border-white/[0.07] rounded-[6px] text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98]"
-            aria-label="Search"
+            type="button"
+            onClick={onToggleInspector}
+            className={`p-2 rounded-[6px] transition-all active:scale-[0.98] cursor-pointer ${
+              isInspectorOpen
+                ? 'text-[#60A5FA] bg-white/[0.06]'
+                : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-white/[0.04]'
+            }`}
+            title="Toggle Research Inspector"
+            aria-label="Toggle Research Inspector"
           >
-            <Command size={14} />
+            <PanelRightOpen size={18} strokeWidth={1.8} />
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={handleNewQuestion}
+          className="p-2 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-white/[0.04] active:scale-[0.98] transition-all cursor-pointer"
+          title="New Question"
+          aria-label="New Question"
+        >
+          <Plus size={18} strokeWidth={1.8} />
+        </button>
       </div>
     </header>
-  );
-}
-
-export function MobileBottomNav({ activeTab, onTabChange }: MobileNavBarProps) {
-  const navItems = [
-    { id: 'query', label: 'Ask', icon: PlusCircle },
-    { id: 'history', label: 'History', icon: Clock },
-    { id: 'collections', label: 'Saved', icon: FolderGit2 },
-    { id: 'okf', label: 'OKF', icon: BookOpen },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
-
-  return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[#0C0C0F] border-t border-white/[0.07] z-40 safe-pb select-none">
-      <div className="grid grid-cols-5 h-14">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => onTabChange(item.id)}
-              className={`flex flex-col items-center justify-center py-1 transition-all active:scale-[0.98] ${
-                isActive ? 'text-[#60A5FA]' : 'text-[#8B8B8E] hover:text-[#EDEDED]'
-              }`}
-            >
-              <Icon size={17} />
-              <span className={`text-[11px] font-mono mt-1 ${isActive ? 'font-medium text-[#EDEDED]' : ''}`}>
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </nav>
   );
 }

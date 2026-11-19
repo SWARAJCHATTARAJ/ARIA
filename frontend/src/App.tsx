@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar';
 import ThreadView from './components/ThreadView';
 import SourcePanel from './components/SourcePanel';
 import { HistoryView, CollectionsView, OkfSpaceView, SettingsView } from './components/HubViews';
-import { MobileTopBar, MobileBottomNav } from './components/ui/MobileNavBar';
+import { MobileTopBar } from './components/ui/MobileNavBar';
 import CommandPalette from './components/ui/CommandPalette';
 import { Citation, MessageTelemetry } from './types';
 import { AuthProvider, useAuth, isNativeRuntime } from './context/AuthContext';
@@ -139,24 +139,32 @@ function AppShell() {
       data-runtime={isNativeRuntime ? 'native' : 'web'}
       className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-[#09090B] text-[#EDEDED] font-sans overflow-hidden relative select-none"
     >
-      {/* Mobile Top Bar (< 768px) */}
+      {/* Mobile Top Bar (< 768px): Unified minimal 48px header */}
       <MobileTopBar
         activeTab={activeTab}
+        hasQuery={hasQuery}
+        isInspectorOpen={isSourcePanelOpen}
         onTabChange={handleTabChange}
-        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onOpenDrawer={() => setIsMobileDrawerOpen(true)}
+        onNewQuestion={() => {
+          setPendingQuery(null);
+          setHasQuery(false);
+          setActiveTab('query');
+          setIsMobileDrawerOpen(false);
+        }}
+        onToggleInspector={() => setSourcePanelOpen((prev) => !prev)}
       />
 
       {/* Mobile Slide-Over Navigation Drawer (< 768px) */}
       <div
-        className={`md:hidden fixed inset-0 bg-black/60 z-40 transition-opacity duration-200 ${
+        className={`md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-200 ${
           isMobileDrawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={() => setIsMobileDrawerOpen(false)}
         aria-hidden={!isMobileDrawerOpen}
       />
       <aside
-        className={`md:hidden fixed inset-y-0 left-0 z-50 h-full w-64 max-w-[85vw] bg-[#0C0C0F] border-r border-white/[0.07] safe-pt safe-pb overflow-y-auto ${
+        className={`md:hidden fixed inset-y-0 left-0 z-50 h-full w-72 max-w-[85vw] bg-[#0C0C0F] border-r border-white/[0.07] overflow-y-auto ${
           isMobileDrawerOpen ? 'aria-drawer-open' : 'aria-drawer'
         } ${isMobileDrawerOpen ? '' : 'pointer-events-none'}`}
         aria-hidden={!isMobileDrawerOpen}
@@ -182,7 +190,7 @@ function AppShell() {
       {/* Center Thread Workspace */}
       <main
         key={activeTab}
-        className="flex-1 flex flex-col h-full md:border-r border-white/[0.07] bg-[#09090B] transition-all w-full overflow-hidden pb-14 md:pb-0 animate-fade-slide relative"
+        className="flex-1 flex flex-col h-full md:border-r border-white/[0.07] bg-[#09090B] transition-all w-full overflow-hidden animate-fade-slide relative"
       >
         {activeTab === 'query' && (
           <ThreadView
@@ -233,9 +241,6 @@ function AppShell() {
           </aside>
         </>
       )}
-
-      {/* Mobile Fixed Bottom Navigation Bar (< 768px) */}
-      <MobileBottomNav activeTab={activeTab} onTabChange={handleTabChange} />
 
       {/* Global Modals */}
       <AuthModal />

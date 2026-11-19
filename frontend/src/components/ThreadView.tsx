@@ -276,7 +276,7 @@ function VisualFiguresGrid({ figures }: { figures?: FigureData[] }) {
 
   return (
     <div className="my-4 space-y-2">
-      <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#8B8B8E] uppercase tracking-wider font-semibold">
+      <div className="flex items-center gap-1.5 text-[11px] font-sans text-zinc-400 uppercase tracking-wider font-medium">
         <ImageIcon size={13} className="text-[#60A5FA]" />
         <span>Verified Topic Figures & Diagrams</span>
       </div>
@@ -296,16 +296,16 @@ function VisualFiguresGrid({ figures }: { figures?: FigureData[] }) {
               />
             </div>
             <div className="space-y-1">
-              <div className="text-[12px] font-semibold text-[#EDEDED] leading-snug">
+              <div className="text-[12px] font-semibold text-[#EDEDED] font-sans leading-snug">
                 Figure {idx + 1}: {fig.title}
               </div>
               {fig.caption && (
-                <p className="text-[11px] text-[#A1A1AA] font-mono leading-relaxed line-clamp-2">
+                <p className="text-[11px] text-zinc-400 font-sans leading-relaxed line-clamp-2">
                   {fig.caption}
                 </p>
               )}
             </div>
-            <div className="flex items-center justify-between text-[10px] font-mono text-[#71717A] pt-1.5 border-t border-white/[0.05]">
+            <div className="flex items-center justify-between text-[10px] font-sans text-zinc-500 pt-1.5 border-t border-white/[0.05]">
               <span className="truncate max-w-[200px]">{fig.attribution || 'Wikimedia Commons'}</span>
               {fig.source_url && (
                 <a
@@ -351,26 +351,26 @@ function TopicChart({ chart }: { chart?: ChartData }) {
     <div className="my-4 p-4 bg-[#09090B] border border-white/[0.08] rounded-[8px] space-y-3">
       <div className="space-y-1">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#EDEDED] font-mono">
+          <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#EDEDED] font-sans">
             <BarChart2 size={13} className="text-[#60A5FA]" />
             <span>{title || 'Quantitative Comparative Analysis'}</span>
           </div>
           {series.length > 1 && (
-            <div className="flex items-center gap-2 text-[10px] font-mono">
+            <div className="flex items-center gap-2 text-[10px] font-sans">
               {series.map((s, sIdx) => (
                 <div key={sIdx} className="flex items-center gap-1">
                   <span
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: seriesColors[sIdx % seriesColors.length] }}
                   />
-                  <span className="text-[#A1A1AA]">{s.name}</span>
+                  <span className="text-zinc-400">{s.name}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
         {caption && (
-          <p className="text-[11px] font-mono text-[#8B8B8E] leading-relaxed">
+          <p className="text-[11px] font-sans text-zinc-400 leading-relaxed">
             {caption}
           </p>
         )}
@@ -470,7 +470,7 @@ function TopicChart({ chart }: { chart?: ChartData }) {
         </svg>
       </div>
 
-      <div className="flex items-center justify-between text-[10px] font-mono text-[#71717A] pt-1 border-t border-white/[0.04]">
+      <div className="flex items-center justify-between text-[10px] font-sans text-zinc-500 pt-1 border-t border-white/[0.04]">
         <span>Y: {y_label || 'Value'} · X: {x_label || 'Parameter'}</span>
         <span>{source_citation || 'ARIA Autonomous Research Grounding'}</span>
       </div>
@@ -504,11 +504,11 @@ function SearchSubmitButton({
       <button
         type="button"
         onClick={onStop}
-        className="px-3.5 py-1.5 bg-[#18181E] hover:bg-[#202026] border border-red-500/40 text-red-400 rounded-[6px] text-[12px] font-mono flex items-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer"
+        className="w-8 h-8 bg-[#18181E] hover:bg-[#202026] border border-red-500/40 text-red-400 rounded-full flex items-center justify-center transition-all active:scale-[0.95] cursor-pointer shrink-0"
         title="Stop streaming (Esc)"
+        aria-label="Stop streaming"
       >
         <Square size={11} className="fill-current" />
-        <span>Stop</span>
       </button>
     );
   }
@@ -517,13 +517,13 @@ function SearchSubmitButton({
     <button
       type="submit"
       disabled={disabled}
-      className="search-btn-trigger p-2 bg-[#60A5FA] hover:bg-[#3B82F6] disabled:opacity-35 disabled:cursor-not-allowed text-[#09090B] hover:text-white rounded-[6px] transition-all active:scale-[0.96] flex items-center justify-center cursor-pointer shadow-sm shrink-0"
+      className="search-btn-trigger w-8 h-8 bg-[#60A5FA] hover:bg-[#3B82F6] disabled:opacity-30 disabled:cursor-not-allowed text-[#09090B] hover:text-white rounded-full transition-all active:scale-[0.94] flex items-center justify-center cursor-pointer shadow-sm shrink-0"
       title="Synthesize Evidence (Enter)"
       aria-label="Synthesize query"
     >
       <svg
-        width="15"
-        height="15"
+        width="14"
+        height="14"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -1276,10 +1276,10 @@ export default function ThreadView({
 
   return (
     <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative h-full overflow-hidden select-text bg-[#09090B]">
-      {/* Thread Header */}
-      <div className="px-6 py-3 border-b border-white/[0.07] flex justify-between items-center bg-[#09090B] shrink-0">
+      {/* Thread Header: desktop only (>= md:flex), mobile is handled by unified MobileTopBar */}
+      <div className="hidden md:flex px-6 py-3 border-b border-white/[0.07] justify-between items-center bg-[#09090B] shrink-0">
         <div className="flex items-center gap-3">
-          <span className="text-[13px] font-semibold text-[#EDEDED] font-mono tracking-[-0.02em]">
+          <span className="text-[13px] font-medium text-[#EDEDED] font-sans tracking-[-0.01em]">
             ARIA Workspace
           </span>
           {isMockActive && (
@@ -1293,7 +1293,7 @@ export default function ThreadView({
           {isLoading && (
             <button
               onClick={handleStopGeneration}
-              className="px-2.5 py-1 bg-[#111115] hover:bg-[#18181E] border border-red-500/40 text-red-400 rounded-[6px] text-[11px] font-mono flex items-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer"
+              className="px-2.5 py-1 bg-[#111115] hover:bg-[#18181E] border border-red-500/40 text-red-400 rounded-[6px] text-[11px] font-sans font-medium flex items-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer"
               title="Stop streaming"
             >
               <Square size={11} className="fill-current" />
@@ -1334,23 +1334,19 @@ export default function ThreadView({
         {/* Open Editorial Workspace (Empty State): pristine typography on #09090B canvas */}
         {messages.length === 0 && (
           <div className="flex-1 min-h-[70vh] flex flex-col items-center justify-center py-8 animate-fade-slide">
-            <div className="w-full max-w-2xl text-center space-y-3 mb-8">
-              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[4px] border border-white/[0.07] bg-[#111115] text-[11px] font-mono text-[#8B8B8E]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA]" />
-                <span>Deterministic Evidence Workspace</span>
-              </div>
-              <h1 className="text-[32px] sm:text-[38px] font-semibold text-[#EDEDED] tracking-[-0.02em]">
-                Research Workspace
+            <div className="w-full max-w-2xl text-center space-y-2 mb-6">
+              <h1 className="text-[22px] sm:text-[26px] font-medium tracking-[-0.025em] text-zinc-100 font-sans">
+                What would you like to research?
               </h1>
-              <p className="text-[14px] text-[#8B8B8E] max-w-lg mx-auto leading-relaxed">
-                Primary source synthesis across structured knowledge notes, dense vector indexes, and live academic papers.
+              <p className="text-[13px] text-zinc-400 leading-relaxed max-w-sm mx-auto font-sans">
+                Grounded scientific synthesis across verified knowledge graphs, dense vector indexes, and primary literature.
               </p>
             </div>
 
-            {/* Spacious Centered Multi-line Research Composer */}
+            {/* Sleek Input Card */}
             <form
               onSubmit={handleEmptySubmit}
-              className="w-full max-w-2xl bg-[#111115] border border-white/[0.07] focus-within:border-white/[0.18] rounded-[8px] p-3 transition-all duration-150"
+              className="w-full max-w-2xl bg-[#0B0F1A] border border-white/[0.08] focus-within:border-white/[0.18] rounded-2xl p-3 shadow-xl transition-all duration-150"
             >
               <textarea
                 ref={emptyTextareaRef}
@@ -1369,30 +1365,30 @@ export default function ThreadView({
                 }}
                 placeholder="Ask a research question or enter a scientific concept..."
                 rows={2}
-                className="w-full bg-transparent p-2 text-[15px] text-[#EDEDED] placeholder-[#71717A] focus:outline-none resize-none leading-relaxed font-sans"
+                className="w-full bg-transparent px-2 pt-1 pb-2 text-[14px] sm:text-[15px] font-normal text-[#EDEDED] placeholder:text-zinc-500 focus:outline-none resize-none leading-relaxed font-sans"
                 aria-label="Research query"
               />
 
-              <div className="flex items-center justify-between pt-2 border-t border-white/[0.05] mt-1 text-[11px] font-mono text-[#71717A]">
-                {/* Topic Domain Pill Selector */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[#8B8B8E] text-[11px]">Domain:</span>
+              <div className="flex items-center justify-between pt-2 border-t border-white/[0.05] mt-1">
+                {/* Minimal borderless-until-hover compact selector pill */}
+                <div className="relative flex items-center">
                   <select
                     value={selectedTopic}
                     onChange={(e) => setSelectedTopic(e.target.value)}
-                    className="bg-[#09090B] border border-white/[0.07] hover:border-white/[0.15] text-[#EDEDED] text-[11px] font-mono rounded px-2 py-1 focus:outline-none focus:border-[#60A5FA] cursor-pointer"
-                    title="Filter academic retrieval by scientific domain"
+                    className="bg-transparent hover:bg-white/[0.04] text-[12px] text-zinc-400 hover:text-zinc-200 font-sans rounded-md px-2 py-1 focus:outline-none cursor-pointer transition-colors appearance-none pr-5"
+                    title="Domain scope"
                   >
                     {DOMAIN_OPTIONS.map((d) => (
-                      <option key={d.id} value={d.id} className="bg-[#111115] text-[#EDEDED]">
+                      <option key={d.id} value={d.id} className="bg-[#0B0F1A] text-[#EDEDED]">
                         {d.label}
                       </option>
                     ))}
                   </select>
+                  <ChevronDown size={11} className="absolute right-1.5 pointer-events-none text-zinc-500" />
                 </div>
 
                 <div className="flex items-center gap-2 ml-auto">
-                  <span className="hidden sm:inline text-[#71717A]">Enter ↵</span>
+                  <span className="hidden sm:inline text-[11px] text-zinc-500 font-sans">Enter ↵</span>
                   <SearchSubmitButton
                     disabled={!emptyInput.trim() || isLoading}
                     isLoading={isLoading}
@@ -1402,18 +1398,17 @@ export default function ThreadView({
               </div>
             </form>
 
-            {/* Understated Topic Pills (plain text, no quotes) */}
-            <div className="w-full max-w-2xl mt-5">
-              <div className="flex flex-wrap items-center justify-center gap-2">
+            {/* Minimal Starter Prompts */}
+            <div className="w-full max-w-2xl mt-4">
+              <div className="flex flex-wrap items-center justify-center gap-2 px-1">
                 {TOPIC_PILLS.map((pill) => (
                   <button
                     key={pill.id}
                     type="button"
                     onClick={() => executeQuery(pill.query)}
-                    className="px-3 py-1.5 bg-[#111115] hover:bg-[#18181E] border border-white/[0.07] hover:border-white/[0.14] rounded-[6px] text-[12px] font-sans text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer flex items-center gap-1.5"
+                    className="text-[12px] font-sans text-zinc-400 hover:text-zinc-200 border border-white/[0.06] hover:border-white/[0.14] bg-white/[0.02] hover:bg-white/[0.05] rounded-full px-3 py-1.5 transition-all active:scale-[0.98] cursor-pointer"
                   >
-                    <span>{pill.label}</span>
-                    <ArrowUpRight size={11} className="text-[#71717A] opacity-70" />
+                    {pill.label}
                   </button>
                 ))}
               </div>
@@ -1422,7 +1417,7 @@ export default function ThreadView({
             {/* Continue Recent Research (from History) */}
             {recentHistory.length > 0 && (
               <div className="w-full max-w-2xl mt-8 pt-6 border-t border-white/[0.07]">
-                <div className="flex items-center gap-2 mb-3 text-[11px] font-mono uppercase tracking-wider text-[#71717A]">
+                <div className="flex items-center gap-2 mb-3 text-[11px] font-sans font-medium uppercase tracking-wider text-zinc-500">
                   <Clock size={12} />
                   <span>Continue Recent Research</span>
                 </div>
@@ -1432,7 +1427,7 @@ export default function ThreadView({
                       key={h.id}
                       type="button"
                       onClick={() => executeQuery(h.query)}
-                      className="w-full text-left px-3.5 py-2.5 bg-[#111115] hover:bg-[#18181E] border border-white/[0.07] hover:border-white/[0.14] rounded-[6px] text-[13px] text-[#EDEDED] hover:text-white flex items-center justify-between group active:scale-[0.98] transition-all"
+                      className="w-full text-left px-3.5 py-2.5 bg-[#111115] hover:bg-[#18181E] border border-white/[0.07] hover:border-white/[0.14] rounded-[6px] text-[13px] font-sans text-[#EDEDED] hover:text-white flex items-center justify-between group active:scale-[0.98] transition-all"
                     >
                       <span className="truncate pr-4">{h.query}</span>
                       <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-[#71717A]">
@@ -1550,7 +1545,7 @@ export default function ThreadView({
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => handleCopy(msg.id, msg.content)}
-                        className="flex items-center gap-1.5 text-[12px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                        className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
                       >
                         {copiedMsgId === msg.id ? <Check size={13} className="text-[#60A5FA]" /> : <Copy size={13} />}
                         <span>{copiedMsgId === msg.id ? 'Copied' : 'Copy'}</span>
@@ -1559,7 +1554,7 @@ export default function ThreadView({
                       <button
                         onClick={() => handleDownloadBibtex(msg.citations)}
                         disabled={!msg.citations || msg.citations.length === 0}
-                        className="flex items-center gap-1.5 text-[12px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
+                        className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
                         title="Export BibTeX"
                       >
                         <Download size={13} />
@@ -1569,7 +1564,7 @@ export default function ThreadView({
                       <button
                         onClick={() => handleDownloadPdf(msg)}
                         disabled={isExportingPdf[msg.id]}
-                        className="flex items-center gap-1.5 text-[12px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
+                        className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
                         title="Export PDF Report"
                       >
                         {isExportingPdf[msg.id] ? (
@@ -1587,7 +1582,7 @@ export default function ThreadView({
 
                       <button
                         onClick={() => handleSaveToCollection(msg)}
-                        className="flex items-center gap-1.5 text-[12px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                        className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
                         title="Save to Collection"
                       >
                         <Bookmark
@@ -1643,21 +1638,27 @@ export default function ThreadView({
 
       {/* Docked Composer (Visible once a query exists) */}
       {messages.length > 0 && (
-        <div className="p-3 bg-[#0C0C0F] border-t border-white/[0.07] shrink-0">
-          <form onSubmit={handleSubmit} className="flex gap-2 items-center max-w-4xl mx-auto">
-            {/* Domain Selector Pill */}
-            <select
-              value={selectedTopic}
-              onChange={(e) => setSelectedTopic(e.target.value)}
-              className="bg-[#09090B] border border-white/[0.07] hover:border-white/[0.15] text-[#EDEDED] text-[11px] font-mono rounded-[6px] px-2 py-2 focus:outline-none focus:border-[#60A5FA] cursor-pointer shrink-0 max-w-[110px] sm:max-w-none truncate"
-              title="Academic retrieval domain scope"
-            >
-              {DOMAIN_OPTIONS.map((d) => (
-                <option key={d.id} value={d.id} className="bg-[#111115] text-[#EDEDED]">
-                  {d.label}
-                </option>
-              ))}
-            </select>
+        <div className="p-3 bg-[#050811] border-t border-white/[0.06] shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
+          <form
+            onSubmit={handleSubmit}
+            className="flex items-center gap-2 max-w-4xl mx-auto bg-[#0B0F1A] border border-white/[0.08] focus-within:border-white/[0.18] rounded-2xl p-2 transition-all duration-150"
+          >
+            {/* Minimal compact domain selector */}
+            <div className="relative flex items-center shrink-0">
+              <select
+                value={selectedTopic}
+                onChange={(e) => setSelectedTopic(e.target.value)}
+                className="bg-transparent hover:bg-white/[0.04] text-[12px] text-zinc-400 hover:text-zinc-200 font-sans rounded-md px-2 py-1.5 focus:outline-none cursor-pointer transition-colors appearance-none pr-5 max-w-[105px] sm:max-w-none truncate"
+                title="Domain scope"
+              >
+                {DOMAIN_OPTIONS.map((d) => (
+                  <option key={d.id} value={d.id} className="bg-[#0B0F1A] text-[#EDEDED]">
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={11} className="absolute right-1.5 pointer-events-none text-zinc-500" />
+            </div>
 
             <textarea
               ref={textareaRef}
@@ -1676,7 +1677,7 @@ export default function ThreadView({
               }}
               placeholder="Ask a follow-up or research question..."
               rows={1}
-              className="flex-1 bg-[#09090B] border border-white/[0.07] focus:border-white/[0.18] focus:outline-none rounded-[6px] px-3.5 py-2 text-[14px] text-[#EDEDED] placeholder-[#71717A] resize-none leading-relaxed"
+              className="flex-1 bg-transparent px-2 py-1.5 text-[14px] sm:text-[15px] font-normal text-[#EDEDED] placeholder:text-zinc-500 focus:outline-none resize-none leading-relaxed font-sans"
             />
 
             <SearchSubmitButton
