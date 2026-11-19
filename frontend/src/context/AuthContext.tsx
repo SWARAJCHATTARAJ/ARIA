@@ -30,6 +30,8 @@ interface AuthContextType {
   closeAuthModal: () => void;
   signInInstantResearcher: () => void;
   signInWithGitHub: () => Promise<{ error: Error | null }>;
+  signInWithPassword: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUpWithPassword: (email: string, password: string) => Promise<{ error: Error | null; needsEmailConfirmation?: boolean }>;
   signInWithEmail: (email: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
@@ -189,14 +191,116 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: redirectUrl,
         },
       });
       if (error) throw error;
       return { error: null };
+    } catch (err: any) {
+      return { error: err instanceof Error ? err : new Error(String(err)) };
+    }
+  };
+
+  const signInWithPassword = async (
+    email: string,
+    password: string
+  ): Promise<{ error: Error | null }> => {
+    if (!supabase) {
+      return { error: new Error('Supabase client is not configured.') };
+    }
+
+    try {
+      const trimmedEmail = email.trim();
+      if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        throw new Error('Please enter a valid email address.');
+      }
+      if (!password) {
+        throw new Error('Please enter your password.');
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
+
+      if (error) {
+        let msg = error.message;
+        const lower = msg.toLowerCase();
+        if (lower.includes('invalid login credentials') || lower.includes('invalid credentials')) {
+          msg = 'Invalid email or password. Please verify and try again.';
+        } else if (lower.includes('email not confirmed')) {
+          msg = 'Email address has not been confirmed yet.';
+        }
+        throw new Error(msg);
+      }
+
+      if (data?.session?.user) {
+        setSession(data.session);
+        setAccessToken(data.session.access_token);
+        setUser(mapSupabaseUser(data.session.user));
+        setIsAuthModalOpen(false);
+      }
+
+      return { error: null };
+    } catch (err: any) {
+      return { error: err instanceof Error ? err : new Error(String(err)) };
+    }
+  };
+
+  const signUpWithPassword = async (
+    email: string,
+    password: string
+  ): Promise<{ error: Error | null; needsEmailConfirmation?: boolean }> => {
+    if (!supabase) {
+      return { error: new Error('Supabase client is not configured.') };
+    }
+
+    try {
+      const trimmedEmail = email.trim();
+      if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        throw new Error('Please enter a valid email address.');
+      }
+      if (!password || password.length < 6) {
+        throw new Error('Password must be at least 6 characters long.');
+      }
+
+      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
+      const { data, error } = await supabase.auth.signUp({
+        email: trimmedEmail,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+        },
+      });
+
+      if (error) {
+        let msg = error.message;
+        const lower = msg.toLowerCase();
+        if (lower.includes('already registered') || lower.includes('already exists')) {
+          msg = 'An account with this email already exists. Please sign in instead.';
+        } else if (lower.includes('weak password') || lower.includes('least 6 characters')) {
+          msg = 'Password is too weak. Please use at least 6 characters.';
+        }
+        throw new Error(msg);
+      }
+
+      if (data?.user?.identities && data.user.identities.length === 0) {
+        throw new Error('An account with this email already exists. Please sign in instead.');
+      }
+
+      if (data?.session?.user) {
+        setSession(data.session);
+        setAccessToken(data.session.access_token);
+        setUser(mapSupabaseUser(data.session.user));
+        setIsAuthModalOpen(false);
+        return { error: null, needsEmailConfirmation: false };
+      }
+
+      return { error: null, needsEmailConfirmation: true };
     } catch (err: any) {
       return { error: err instanceof Error ? err : new Error(String(err)) };
     }
@@ -260,6 +364,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         closeAuthModal,
         signInInstantResearcher,
         signInWithGitHub,
+        signInWithPassword,
+        signUpWithPassword,
         signInWithEmail,
         signOut,
       }}

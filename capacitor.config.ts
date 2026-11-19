@@ -4,14 +4,22 @@ const config: CapacitorConfig = {
   appId: 'com.aria.app',
   appName: 'ARIA',
   webDir: 'frontend/dist',
-  backgroundColor: '#09090B',
+  backgroundColor: '#050811',
   android: {
-    backgroundColor: '#09090B',
+    backgroundColor: '#050811',
     allowMixedContent: true,
     webContentsDebuggingEnabled: false,
   },
   server: {
+    androidScheme: 'https',
     cleartext: true,
+    allowNavigation: [
+      'aria.swarajchattaraj.tech',
+      '*.supabase.co',
+      'github.com',
+      '*.github.com',
+      'api.github.com',
+    ],
   },
 };
 

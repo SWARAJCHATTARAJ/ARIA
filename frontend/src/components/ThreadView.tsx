@@ -641,8 +641,12 @@ export default function ThreadView({
       a.download = `aria-research-paper.pdf`;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        if (a.parentNode) {
+          document.body.removeChild(a);
+        }
+      }, 1500);
     } catch {
       // PDF export failed silently
     } finally {
