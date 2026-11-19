@@ -899,14 +899,37 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
     await verify_supabase_jwt(token)
 
     from utils.pdf_generator import generate_research_pdf
+    from pipeline.nodes import expand_to_full_research_paper
     try:
+        answer_for_pdf = req.answer_final
+        claims_for_pdf = req.claims or []
+        confidence_for_pdf = req.confidence if req.confidence is not None else 0.85
+        sources_for_pdf = req.sources or []
+
+        # When exporting PDF, expand concise chat answers (<750 words) into a publication-grade manuscript (1,200–2,000 words)
+        word_count = len((req.answer_final or "").split())
+        if word_count < 750 and sources_for_pdf:
+            logger.info(f"PDF Export: expanding concise chat answer ({word_count} words) to full academic research paper...")
+            try:
+                expanded_text, audited_claims, computed_conf = await expand_to_full_research_paper(
+                    query=req.query,
+                    draft_answer=req.answer_final,
+                    sources=sources_for_pdf,
+                    canonical_topic=req.canonical_topic
+                )
+                answer_for_pdf = expanded_text
+                claims_for_pdf = audited_claims
+                confidence_for_pdf = computed_conf
+            except Exception as expand_err:
+                logger.warning(f"Full paper expansion failed: {expand_err}. Proceeding with original synthesis.")
+
         pdf_bytes = generate_research_pdf(
             query=req.query,
-            answer_final=req.answer_final,
-            confidence=req.confidence if req.confidence is not None else 0.85,
+            answer_final=answer_for_pdf,
+            confidence=confidence_for_pdf,
             tiers=req.tiers or [],
-            claims=req.claims or [],
-            sources=req.sources or [],
+            claims=claims_for_pdf,
+            sources=sources_for_pdf,
             timing=req.timing,
             tokens=req.tokens,
             canonical_topic=req.canonical_topic,

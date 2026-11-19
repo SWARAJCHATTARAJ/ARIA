@@ -43,20 +43,54 @@ def clean_authors_list(authors: List[str]) -> Optional[List[str]]:
         cleaned.append(a_clean)
     return cleaned if cleaned else None
 
-async def search_arxiv(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
+def clean_scraped_reference_text(text: str) -> str:
+    """
+    Cleans raw scraped/Wikipedia text before chunking, synthesis, and evidence extraction:
+    - Strips maintenance banners: (Learn how and when to remove this message), citation notices.
+    - Strips image caption artifacts: Space-filling model of..., Ball-and-stick model of..., etc.
+    - Strips infobox / navigation noise: [edit], Main article: ..., Coordinates: ...
+    - Normalizes excessive whitespace and unescapes HTML.
+    """
+    if not text:
+        return ""
+    t = text
+    # 1. Maintenance banners and cleanup notices
+    t = re.sub(r'\(Learn how and when to remove this (?:template )?message\)', ' ', t, flags=re.IGNORECASE)
+    t = re.sub(r'This article (?:needs additional citations|relies largely or entirely on a single source|contains weasel words|has multiple issues|is about).*?(?:\.\s*|\n|$)', ' ', t, flags=re.IGNORECASE)
+    t = re.sub(r'Please help improve this article by.*?(?:\.\s*|\n|$)', ' ', t, flags=re.IGNORECASE)
+    t = re.sub(r'For other uses, see.*?(?:\.\s*|\n|$)', ' ', t, flags=re.IGNORECASE)
+
+    # 2. Image captions, 3D model annotations, and figure labels
+    t = re.sub(r'(?:Space-filling|Ball-and-stick|Skeletal|Chemical structure|Crystal structure|3D|3-D)\s+(?:model|representation|formula|diagram|view)\s+of\b[^\.\n]*[\.\n]?', ' ', t, flags=re.IGNORECASE)
+    t = re.sub(r'^(?:Figure|Fig\.|Image|Photo):\s*[^\.\n]*[\.\n]?', ' ', t, flags=re.IGNORECASE | re.MULTILINE)
+
+    # 3. Navigation, section links, and infobox noise
+    t = re.sub(r'\[edit\]', ' ', t, flags=re.IGNORECASE)
+    t = re.sub(r'\b(?:Main article|See also|External links|Further reading):\s*[^\.\n]*[\.\n]?', ' ', t, flags=re.IGNORECASE)
+    t = re.sub(r'Coordinates:\s*[\d°\s\.\'\"NSEW]+', ' ', t, flags=re.IGNORECASE)
+
+    # 4. Collapse whitespace
+    return " ".join(t.split()).strip()
+
+async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Queries official arXiv API with relevance sort and optional submittedDate range from query year.
     Drops results with no topic overlap.
     """
+    # Prefer canonical topic keywords for short/acronym queries to prevent cross-domain collisions
+    effective_query = query
+    if canonical_topic and len(canonical_topic.split()) >= 2:
+        effective_query = canonical_topic
+
     # Check if recency / specific year is requested
-    year_match = re.search(r"\b(20[12][0-9])\b", query)
+    year_match = re.search(r"\b(20[12][0-9])\b", effective_query)
     target_year = year_match.group(1) if year_match else None
     
     # Strip explicit year and wildcard characters from query keywords for cleaner arXiv term matching
-    search_q = re.sub(r"\b20[12][0-9]\b", "", query)
+    search_q = re.sub(r"\b20[12][0-9]\b", "", effective_query)
     search_q = re.sub(r"[?*#&%=+]", " ", search_q).strip()
     search_q = " ".join(search_q.split())
-    fallback_q = re.sub(r"[?*#&%=+]", " ", query).strip()
+    fallback_q = re.sub(r"[?*#&%=+]", " ", effective_query).strip()
     clean_query = urllib.parse.quote_plus(search_q if search_q else fallback_q)
     
     if target_year:
@@ -71,7 +105,7 @@ async def search_arxiv(query: str, max_results: int = 3) -> List[Dict[str, Any]]
             f"&sortBy=relevance&sortOrder=descending&start=0&max_results={max_results}"
         )
     
-    q_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", query.lower())) - STOP_WORDS
+    q_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", effective_query.lower())) - STOP_WORDS
     results = []
     t0 = time.time()
     start_iso = datetime.datetime.now().isoformat()
@@ -104,11 +138,20 @@ async def search_arxiv(query: str, max_results: int = 3) -> List[Dict[str, Any]]
                     if pub_str and len(pub_str) >= 4 and pub_str[:4].isdigit():
                         year = int(pub_str[:4])
                     
+                    # Negative domain filter for ambiguous acronyms (e.g. PVC medical arrhythmia vs polymer PVC)
+                    lower_combo = (title + " " + summary).lower()
+                    if "pvc" in effective_query.lower() and any(neg in lower_combo for neg in ("ventricular", "arrhythmia", "cardiac", "myocardial", "ecg", "cardiomyopathy", "extrasystole")):
+                        logger.info(f"Dropping off-topic cardiology arXiv paper for PVC: {title}")
+                        continue
+
                     # Drop results without at least 2 distinct content words overlap
-                    paper_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", (title + " " + summary).lower()))
+                    paper_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", lower_combo))
                     overlap_tokens = q_tokens.intersection(paper_tokens)
-                    if q_tokens and len(overlap_tokens) < 2:
+                    if len(q_tokens) >= 2 and len(overlap_tokens) < 2:
                         logger.info(f"Dropping arXiv paper with <2 content words overlap ({len(overlap_tokens)} matched): {title}")
+                        continue
+                    elif len(q_tokens) == 1 and len(overlap_tokens) == 0:
+                        logger.info(f"Dropping arXiv paper with 0 content words overlap: {title}")
                         continue
                         
                     # Require substantial abstracts (minimum 120 characters)
@@ -140,7 +183,7 @@ async def search_arxiv(query: str, max_results: int = 3) -> List[Dict[str, Any]]
                         "authors": authors,
                         "year": year,
                         "venue": "arXiv",
-                        "snippet": summary,
+                        "snippet": clean_scraped_reference_text(summary),
                         "source": f"arXiv:{arxiv_id}{author_str}",
                         "arxiv_id": arxiv_id if arxiv_id else None,
                         "doi": doi,
@@ -476,7 +519,9 @@ async def search_wikipedia(query: str, max_results: int = 1, exact_title: Option
             if exact_title and exact_title.strip():
                 try:
                     summ = wikipedia.summary(exact_title.strip(), sentences=3, auto_suggest=False)
-                    ranked.append((exact_title.strip(), summ))
+                    summ_clean = clean_scraped_reference_text(summ)
+                    if summ_clean and len(summ_clean) >= 60:
+                        ranked.append((exact_title.strip(), summ_clean))
                 except Exception:
                     pass
             if len(ranked) < max(1, max_results):
@@ -486,13 +531,16 @@ async def search_wikipedia(query: str, max_results: int = 1, exact_title: Option
                         continue
                     try:
                         summ = wikipedia.summary(hit, sentences=3, auto_suggest=False)
-                        ranked.append((hit, summ))
+                        summ_clean = clean_scraped_reference_text(summ)
+                        if summ_clean and len(summ_clean) >= 60:
+                            ranked.append((hit, summ_clean))
                     except Exception:
                         continue
             return ranked
         wiki_data = await asyncio.wait_for(asyncio.to_thread(_run_wiki), timeout=6.0)
         status_str = f"Wikipedia {len(wiki_data)} hits"
         for hit, summary in wiki_data:
+            clean_summ = clean_scraped_reference_text(summary)
             results.append({
                 "tier": "LIVE",
                 "source_type": "wikipedia",
@@ -503,7 +551,7 @@ async def search_wikipedia(query: str, max_results: int = 1, exact_title: Option
                 "authors": None,
                 "year": None,
                 "venue": "Wikipedia",
-                "snippet": summary,
+                "snippet": clean_summ,
                 "source": f"Wikipedia ({hit})",
                 "doi": None,
                 "arxiv_id": None,
@@ -520,12 +568,13 @@ async def search_wikipedia(query: str, max_results: int = 1, exact_title: Option
         
     return results
 
-def compute_source_score(chunk: Dict[str, Any], query: str) -> float:
+def compute_source_score(chunk: Dict[str, Any], query: str, canonical_topic: Optional[str] = None) -> float:
     """
     Ranks sources with calibrated multi-factor scoring:
     1. Query term overlap / relevance (primary).
-    2. Academic credibility (arXiv / OpenAlex > Wikipedia > general web).
-    3. Moderate recency bonus (cannot override low relevance).
+    2. Canonical topic semantic alignment (penalizes cross-domain noise).
+    3. Academic credibility (arXiv / OpenAlex > Wikipedia > general web).
+    4. Moderate recency bonus (cannot override low relevance).
     """
     query_lower = query.lower()
     q_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", query_lower)) - STOP_WORDS
@@ -540,12 +589,24 @@ def compute_source_score(chunk: Dict[str, Any], query: str) -> float:
     title_overlap = len(q_tokens.intersection(set(re.findall(r"\b[a-zA-Z]{3,}\b", title_text))))
     relevance_score = (title_overlap * 8.0) + (overlap_count * 2.5)
 
+    # 2. Canonical Topic Alignment & Negative Domain Penalties
+    if canonical_topic:
+        canon_words = {w for w in set(re.findall(r"\b[a-zA-Z]{4,}\b", canonical_topic.lower())) - STOP_WORDS}
+        if canon_words:
+            canon_overlap = len(canon_words.intersection(chunk_tokens))
+            relevance_score += canon_overlap * 4.0
+            if len(q_tokens) <= 2 and canon_overlap == 0:
+                relevance_score -= 25.0
+        # Negative domain penalty for PVC
+        if "pvc" in query_lower and any(neg in full_text for neg in ("ventricular", "arrhythmia", "cardiac", "myocardial", "ecg", "cardiomyopathy")):
+            relevance_score -= 60.0
+
     # Penalize papers with low citations / anomalous claims if OpenAlex
     cited_by = chunk.get("cited_by_count", 0)
     if chunk.get("source_type") == "openalex" and cited_by == 0 and "anomalies" in title_text:
         relevance_score -= 10.0  # Penalize unverified fringe / predatory papers
 
-    # 2. Source-type credibility base
+    # 3. Source-type credibility base
     stype = chunk.get("source_type")
     if stype == "arxiv":
         credibility_score = 8.0
@@ -558,7 +619,7 @@ def compute_source_score(chunk: Dict[str, Any], query: str) -> float:
     else:  # duckduckgo
         credibility_score = 3.5
 
-    # 3. Recency modifier
+    # 4. Recency modifier
     year_match = re.search(r"\b(20[12][0-9])\b", query)
     target_year = int(year_match.group(1)) if year_match else None
     chunk_year = chunk.get("year")
@@ -639,7 +700,7 @@ def extract_main_article_content(raw_html: str) -> str:
     text = target.get_text(separator=" ", strip=True)
     text = re.sub(r'\bFull article here\b', '', text, flags=re.I)
     text = html.unescape(" ".join(text.split()))
-    return text
+    return clean_scraped_reference_text(text)
 
 def extract_scored_sentence_snippet(text: str, query: str, max_chars: int = 1500) -> str:
     """
@@ -788,10 +849,10 @@ async def fetch_readable_text(url: Optional[str], query: str, fallback_snippet: 
         end_iso_fetch = datetime.datetime.now().isoformat()
         retrieval_tracker.record(f"page_fetch: {url[:50]}", t0_fetch, t1_fetch, start_iso_fetch, end_iso_fetch, status_fetch)
 
-async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = None) -> List[Dict[str, Any]]:
+async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = None, canonical_topic: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Executes parallel multi-source search across:
-    1. arXiv
+    1. arXiv (canonical topic expanded query)
     2. OpenAlex
     3. Semantic Scholar
     4. DuckDuckGo
@@ -804,7 +865,7 @@ async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = N
     retrieval_tracker.record("live_retrieval_start", t_retrieval_start, t_retrieval_start, iso_start, iso_start, "cap=15s")
 
     provider_tasks = [
-        asyncio.create_task(search_arxiv(query, max_results=3)),
+        asyncio.create_task(search_arxiv(query, max_results=3, canonical_topic=canonical_topic)),
         asyncio.create_task(search_openalex(query, max_results=3)),
         asyncio.create_task(search_semantic_scholar(query, max_results=2)),
         asyncio.create_task(search_duckduckgo(query, max_results=3)),
@@ -827,7 +888,7 @@ async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = N
         except Exception as e:
             logger.warning(f"Provider task failed: {e}")
             
-    # Filter 1: Drop results with zero query term overlap
+    # Filter 1: Drop results with zero query term overlap and negative domain noise
     q_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", query.lower())) - STOP_WORDS
     valid_chunks = []
     for chunk in combined:
@@ -836,6 +897,18 @@ async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = N
         if q_tokens and len(q_tokens.intersection(chunk_tokens)) == 0:
             logger.info(f"Dropped result with 0 query overlap: '{chunk.get('title')}'")
             continue
+
+        # Strict semantic relevance check against canonical topic and negative domains
+        if canonical_topic:
+            q_lower_words = set(re.findall(r"\b[a-zA-Z0-9]+\b", query.lower()))
+            if "pvc" in q_lower_words and any(neg in title_snippet for neg in ("ventricular", "arrhythmia", "cardiac", "myocardial", "ecg", "cardiomyopathy", "extrasystole", "systolic", "diastolic")):
+                logger.info(f"Dropped off-topic medical PVC paper: '{chunk.get('title')}'")
+                continue
+            canon_core = {w for w in set(re.findall(r"\b[a-zA-Z]{4,}\b", canonical_topic.lower())) - STOP_WORDS}
+            if len(canon_core) >= 2 and len(canon_core.intersection(chunk_tokens)) == 0 and len(q_tokens) <= 2:
+                logger.info(f"Dropped result with 0 canonical topic overlap ({canon_core}): '{chunk.get('title')}'")
+                continue
+
         valid_chunks.append(chunk)
 
     # Filter 2: When the query has a year, drop results from other years unless nothing else remains
@@ -847,7 +920,7 @@ async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = N
             valid_chunks = [c for c in valid_chunks if c.get("year") == target_year or c.get("year") is None]
 
     # Rank filtered sources
-    scored_chunks = sorted(valid_chunks, key=lambda c: compute_source_score(c, query), reverse=True)
+    scored_chunks = sorted(valid_chunks, key=lambda c: compute_source_score(c, query, canonical_topic=canonical_topic), reverse=True)
     
     # Assign 1-indexed ranks
     for rank_idx, chunk in enumerate(scored_chunks, start=1):
