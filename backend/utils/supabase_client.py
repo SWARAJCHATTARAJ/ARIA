@@ -1,5 +1,6 @@
 import logging
 import time
+import uuid
 from typing import List, Optional, Dict, Any
 import httpx
 from config import settings
@@ -363,26 +364,51 @@ async def log_query_run(
 ) -> None:
     """
     Logs query execution to public.query_logs.
+    Uses upsert (resolution=merge-duplicates) and fresh UUIDs to prevent 409 Conflict.
     """
     if not settings.supabase_url or settings.supabase_url == "default":
         return
 
+    # Check for valid UUID user_id (required by query_logs schema NOT NULL and foreign key)
+    if not user_id or str(user_id).startswith("guest_"):
+        logger.debug("Skipping query_logs insertion for anonymous/guest session.")
+        return
+
+    try:
+        uuid.UUID(str(user_id))
+    except (ValueError, TypeError):
+        logger.debug(f"Skipping query_logs: user_id '{user_id}' is not a valid UUID.")
+        return
+
     url = f"{settings.supabase_url}/rest/v1/query_logs"
     headers = get_supabase_headers()
+    # Use upsert header to ensure duplicate keys/conflicts never throw HTTP 409
+    headers["Prefer"] = "resolution=merge-duplicates"
+
     payload = {
+        "id": str(uuid.uuid4()),
+        "user_id": str(user_id),
         "query": query,
         "response": response,
         "tiers_fired": tiers_fired,
         "dristi_engine": dristi_engine
     }
     if thread_id:
-        payload["thread_id"] = thread_id
-    if user_id:
-        payload["user_id"] = user_id
+        try:
+            uuid.UUID(str(thread_id))
+            payload["thread_id"] = str(thread_id)
+        except (ValueError, TypeError):
+            pass
 
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            await client.post(url, headers=headers, json=payload)
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code in (200, 201, 204):
+                return
+            elif resp.status_code == 409:
+                logger.info(f"Supabase query_logs skipped (409 Conflict / foreign key constraint for user_id={user_id}).")
+            else:
+                logger.warning(f"Supabase query_logs returned status {resp.status_code}: {resp.text}")
     except Exception as e:
         logger.error(f"Failed to log query: {e}")
 

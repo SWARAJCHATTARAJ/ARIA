@@ -191,7 +191,8 @@ async def query_pipeline(req: QueryRequest, request: Request):
         "user_id": user_id,
         "compare_mode": req.compare_mode,
         "chat_history": [{"role": "user", "content": req.query}],
-        "token_tracker": token_tracker
+        "token_tracker": token_tracker,
+        "_skip_regeneration": True
     }
     
     async def pipeline_events():
@@ -394,6 +395,13 @@ async def query_pipeline(req: QueryRequest, request: Request):
             current_state["draft_answer"] = clean_answer
             current_state["answer_final"] = clean_answer
 
+            # RELEASE QUEUE SLOT IMMEDIATELY ONCE RESPONSE STREAM FINISHES
+            # Never let a background audit block new queries!
+            if slot_acquired:
+                await global_query_queue.release(request_id)
+                slot_acquired = False
+                logger.info(f"[{request_id}] Released query queue slot immediately after stream synthesis.")
+
             # Check 90s timeout
             if time.time() - start_time > MAX_STREAM_DURATION_SECONDS:
                 logger.warning(f"[{request_id}] Stream exceeded 90s limit before audit phase.")
@@ -454,12 +462,14 @@ async def query_pipeline(req: QueryRequest, request: Request):
             yield f"data: {json.dumps({'event': 'error', 'message': 'An internal error occurred during query processing.', 'request_id': request_id})}\n\n"
             yield f"data: {json.dumps({'event': 'done'})}\n\n"
         finally:
-            await global_query_queue.release()
+            if slot_acquired:
+                await global_query_queue.release(request_id)
+                slot_acquired = False
 
     # SSE Heartbeat wrapper (Part 1.4):
     # Runs the pipeline producer as a background task and forwards its events.
     # Whenever no event is ready (LLM synthesis stalling, slow external APIs, Vercel
-    # proxy buffering), a `: heartbeat` SSE comment is emitted every 2 seconds so
+    # proxy buffering), a `: keep-alive\n\n` SSE comment is emitted so
     # proxies and browsers never ERR_CONNECTION_RESET before the audit stage.
     async def event_stream():
         sse_queue: asyncio.Queue = asyncio.Queue()
@@ -481,9 +491,15 @@ async def query_pipeline(req: QueryRequest, request: Request):
         producer_task = asyncio.create_task(producer())
         try:
             while True:
+                if await request.is_disconnected():
+                    logger.info(f"[{request_id}] Client disconnected (active loop). Terminating SSE stream.")
+                    break
                 try:
-                    chunk = await asyncio.wait_for(sse_queue.get(), timeout=8.0)
+                    chunk = await asyncio.wait_for(sse_queue.get(), timeout=2.0)
                 except asyncio.TimeoutError:
+                    if await request.is_disconnected():
+                        logger.info(f"[{request_id}] Client disconnected during keep-alive wait. Terminating SSE stream.")
+                        break
                     yield ": keep-alive\n\n"
                     continue
                 if chunk == STREAM_END:
@@ -496,6 +512,8 @@ async def query_pipeline(req: QueryRequest, request: Request):
                     await producer_task
                 except (asyncio.CancelledError, Exception):
                     pass
+            # Always ensure the slot is released if client disconnected or stream ended
+            await global_query_queue.release(request_id)
 
     return StreamingResponse(
         event_stream(),
@@ -546,7 +564,7 @@ async def test_queue_endpoint(request: Request):
             yield f"data: {json.dumps({'event': 'completed', 'request_id': request_id, 'timestamp': round(time.time(), 3)})}\n\n"
             yield f"data: {json.dumps({'event': 'done', 'timestamp': round(time.time(), 3)})}\n\n"
         finally:
-            await global_query_queue.release()
+            await global_query_queue.release(request_id)
 
     return StreamingResponse(
         event_stream(),

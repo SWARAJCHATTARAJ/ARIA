@@ -6,11 +6,11 @@ class Settings(BaseSettings):
     groq_api_key: str = "default"
     groq_model: str = "openai/gpt-oss-120b"
     groq_writer_model: str = "openai/gpt-oss-120b"
-    groq_judge_model: str = "openai/gpt-oss-120b"
+    groq_judge_model: str = "llama-3.1-8b-instant"
     groq_writer_tpm: int = 7500
     groq_writer_tpd: int = 160000
-    groq_judge_tpm: int = 7500
-    groq_judge_tpd: int = 160000
+    groq_judge_tpm: int = 30000
+    groq_judge_tpd: int = 500000
     daily_token_cap: int = 160000
     jwt_auth_enabled: bool = True
     supabase_url: str = "default"

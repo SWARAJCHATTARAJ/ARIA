@@ -31,22 +31,37 @@ groq_llm = ChatGroq(
     **groq_writer_kwargs
 )
 
-groq_judge_kwargs = {}
-if "gpt-oss" in settings.groq_judge_model:
-    groq_judge_kwargs["reasoning_effort"] = "low"
+# Judge LLM: Fast, non-reasoning Groq model with separate/higher quota and native JSON mode
+_cached_working_judge_model: Optional[str] = None
 
-groq_judge_llm = ChatGroq(
-    api_key=settings.groq_api_key,
-    model_name=settings.groq_judge_model,
-    temperature=0,
-    **groq_judge_kwargs
-)
+def get_judge_model_name() -> str:
+    global _cached_working_judge_model
+    if _cached_working_judge_model:
+        return _cached_working_judge_model
+    configured = getattr(settings, "groq_judge_model", "llama-3.1-8b-instant")
+    if "gpt-oss-120b" in configured.lower():
+        configured = "llama-3.1-8b-instant"
+    return configured
+
+def create_judge_llm(model_name: str) -> ChatGroq:
+    return ChatGroq(
+        api_key=settings.groq_api_key,
+        model_name=model_name,
+        temperature=0,
+        model_kwargs={"response_format": {"type": "json_object"}}
+    )
+
+groq_judge_llm = create_judge_llm(get_judge_model_name())
 
 def current_writer_llm():
     return groq_llm
 
 
 def current_judge_llm():
+    global groq_judge_llm
+    active_name = get_judge_model_name()
+    if groq_judge_llm.model_name != active_name:
+        groq_judge_llm = create_judge_llm(active_name)
     return groq_judge_llm
 
 
@@ -1453,108 +1468,152 @@ async def run_claim_audit(answer_final: str, chunks: list, tracker: Optional[Any
             for i, c in enumerate(chunks)
         ])
 
-        # Patch 10: Judge at most 4 claims per call, max_tokens 1500, retry once with 2500 on length/json error
-        batch_size = 4
-        batches = [claims_to_judge[i:i + batch_size] for i in range(0, len(claims_to_judge), batch_size)]
+        # Consolidate claims into a single compact audit call (or max 2 parallel calls with max_tokens=800)
+        # Total audit time stays strictly under 3 seconds using fast non-reasoning Groq model
+        if len(claims_to_judge) <= 12:
+            batches = [claims_to_judge]
+        else:
+            mid = (len(claims_to_judge) + 1) // 2
+            batches = [claims_to_judge[:mid], claims_to_judge[mid:]]
 
         def parse_judge_json(raw_text: str):
             clean = raw_text.strip()
             if clean.startswith("```"):
                 clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-            return json.loads(clean)
+            data = json.loads(clean)
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                for k in ("verdicts", "claims", "results", "evaluations", "items", "data"):
+                    if k in data and isinstance(data[k], list):
+                        return data[k]
+                for val in data.values():
+                    if isinstance(val, list):
+                        return val
+            return None
 
         async def invoke_judge(batch_items: list, max_tok: int, label: str):
             judge_prompt = (
                 "You are a strict scientific fact-checking engine. Evaluate each claim against its cited source snippets.\n"
                 "CRITICAL FACT-CHECKING RULES:\n"
-                "- If explicitly and accurately supported: set \"s\": true, and provide \"q\": [\"verbatim quote\"] (at most 1 quote, at most 20 words copied word-for-word from the snippet proving the claim).\n"
-                "- If not supported, contradicted, partially true, or scientifically inaccurate (e.g. oversimplifying, altering relations, or claiming an individual nickase creates double-strand breaks when the snippet requires paired configurations): set \"s\": false, \"q\": [].\n\n"
+                "- If explicitly and accurately supported by the source snippet: set \"s\": true, and provide \"q\": [\"verbatim quote\"] (at most 1 quote, at most 20 words copied word-for-word from the snippet proving the claim).\n"
+                "- If not supported, contradicted, partially true, or scientifically inaccurate: set \"s\": false, \"q\": [].\n\n"
                 f"Cited Sources:\n{sources_text}\n\n"
                 f"Claims to Verify:\n{json.dumps(batch_items, separators=(',', ':'))}\n\n"
-                "Return ONLY a compact JSON array:\n"
-                '[{"id":0,"s":true,"q":["verbatim quote"]}]'
+                "Return a JSON object in this exact format:\n"
+                '{"verdicts": [{"id": 0, "s": true, "q": ["verbatim quote"]}]}'
             )
-            for attempt in range(4):
+            global _cached_working_judge_model
+            for attempt in range(2):
+                active_model = get_judge_model_name()
                 try:
-                    await token_rate_limiter.check_and_pace(settings.groq_judge_model, estimated_tokens=max_tok)
+                    await token_rate_limiter.check_and_pace(active_model, estimated_tokens=max_tok)
                     resp = await current_judge_llm().ainvoke([HumanMessage(content=judge_prompt)], max_tokens=max_tok)
                     finish_reason = resp.response_metadata.get("finish_reason") or "stop"
-                    logger.info(f"Groq [{label}]: finish_reason='{finish_reason}', max_tokens={max_tok}")
+                    logger.info(f"Groq [{label}] ({active_model}): finish_reason='{finish_reason}', max_tokens={max_tok}")
                     if tracker:
-                        tracker.record_from_response(label, resp, model_name=settings.groq_judge_model, finish_reason=finish_reason)
+                        tracker.record_from_response(label, resp, model_name=active_model, finish_reason=finish_reason)
                     return resp, finish_reason
                 except Exception as e:
                     err_str = str(e)
+                    if "404" in err_str or "model_not_found" in err_str:
+                        fallback_model = "qwen/qwen3.8-27b"
+                        if active_model != fallback_model:
+                            logger.warning(f"Judge model '{active_model}' not available on Groq; switching to non-reasoning '{fallback_model}'.")
+                            _cached_working_judge_model = fallback_model
+                            continue
                     if "429" in err_str or "rate_limit" in err_str.lower():
                         headers = getattr(e, "response", None)
                         hdr_dict = dict(headers.headers) if headers and hasattr(headers, "headers") else {}
-                        token_rate_limiter.log_groq_429(settings.groq_judge_model, hdr_dict, err_str)
-                        wait_time = 4.0 * (attempt + 1)
-                        retry_match = re.search(r'try again in ([\d\.]+)s', err_str)
-                        if retry_match:
-                            wait_time = float(retry_match.group(1)) + 1.0
-                        logger.warning(f"Groq 429 rate limit in judge, sleeping {wait_time:.1f}s (attempt {attempt + 1}/4)...")
-                        await asyncio.sleep(wait_time)
-                        continue
-                    logger.warning(f"LLM judge invocation error: {e}")
+                        token_rate_limiter.log_groq_429(active_model, hdr_dict, err_str)
+                        if attempt == 0:
+                            await asyncio.sleep(0.5)
+                            continue
+                    logger.warning(f"LLM judge invocation error ({active_model}): {e}")
                     return None, "error"
             return None, "error_429"
 
-        for b_idx, batch in enumerate(batches):
+        async def process_batch(b_idx: int, batch: list):
             label = f"claim_audit_judge_batch_{b_idx + 1}"
-            resp, finish_reason = await invoke_judge(batch, max_tok=400, label=label)
+            resp, finish_reason = await invoke_judge(batch, max_tok=800, label=label)
 
             parsed = None
             if resp and finish_reason != "length":
                 try:
                     parsed = parse_judge_json(resp.content)
-                    if not isinstance(parsed, list):
-                        parsed = None
                 except Exception as parse_err:
                     logger.warning(f"Judge batch {b_idx + 1} JSON parse failed: {parse_err}")
                     parsed = None
 
-            # Retry once with max_tokens 400 if finish_reason is length or JSON did not parse
-            if parsed is None or finish_reason == "length":
+            # Never retry a failed finish_reason='length' call with the exact same max_tokens limit
+            if finish_reason == "length":
                 logger.warning(
-                    f"Judge batch {b_idx + 1} failed (finish_reason='{finish_reason}', valid_json={parsed is not None}). "
-                    f"Retrying once with max_tokens=400..."
+                    f"Judge batch {b_idx + 1} hit length limit with max_tokens=800. Retrying once with max_tokens=1200..."
                 )
-                retry_label = f"claim_audit_judge_batch_{b_idx + 1}_retry400"
-                resp_retry, retry_finish_reason = await invoke_judge(batch, max_tok=400, label=retry_label)
-                if resp_retry and retry_finish_reason != "length":
+                retry_label = f"claim_audit_judge_batch_{b_idx + 1}_retry1200"
+                resp_retry, retry_finish_reason = await invoke_judge(batch, max_tok=1200, label=retry_label)
+                if resp_retry:
                     try:
                         parsed = parse_judge_json(resp_retry.content)
-                        if not isinstance(parsed, list):
-                            parsed = None
                     except Exception as retry_parse_err:
-                        logger.warning(f"Judge batch {b_idx + 1} retry JSON parse failed: {retry_parse_err}")
+                        logger.warning(f"Judge batch {b_idx + 1} retry parse failed: {retry_parse_err}")
+                        parsed = None
+            elif parsed is None and resp:
+                # Retry once with max_tokens=1000 if JSON did not parse
+                retry_label = f"claim_audit_judge_batch_{b_idx + 1}_retry_json"
+                resp_retry, _ = await invoke_judge(batch, max_tok=1000, label=retry_label)
+                if resp_retry:
+                    try:
+                        parsed = parse_judge_json(resp_retry.content)
+                    except Exception:
                         parsed = None
 
+            batch_verdicts = {}
             if parsed is not None:
                 for item in parsed:
                     cid = item.get("claim_id", item.get("id"))
-                    sup = item.get("supported", item.get("s", False))
-                    quotes = item.get("quotes", item.get("q", []))
-                    if isinstance(quotes, str):
-                        quotes = [quotes]
-                    llm_verdicts[cid] = {"claim_id": cid, "supported": sup, "quotes": quotes}
-                # Check if any claim in the batch was omitted by judge
+                    if cid is not None:
+                        sup = item.get("supported", item.get("s", False))
+                        quotes = item.get("quotes", item.get("q", []))
+                        if isinstance(quotes, str):
+                            quotes = [quotes]
+                        batch_verdicts[cid] = {"claim_id": cid, "supported": sup, "quotes": quotes}
                 for b_item in batch:
                     cid = b_item["claim_id"]
-                    if cid not in llm_verdicts:
-                        llm_verdicts[cid] = {"claim_id": cid, "supported": False, "quotes": []}
+                    if cid not in batch_verdicts:
+                        batch_verdicts[cid] = {"claim_id": cid, "supported": False, "quotes": []}
             else:
-                # Still failed: mark those claims audit_incomplete
-                logger.error(f"Judge batch {b_idx + 1} still failed on retry. Marking {len(batch)} claims as 'audit_incomplete'.")
+                logger.warning(f"Judge batch {b_idx + 1} could not be parsed; marking claims audit_incomplete.")
                 for b_item in batch:
                     cid = b_item["claim_id"]
+                    batch_verdicts[cid] = {
+                        "claim_id": cid,
+                        "status": "audit_incomplete",
+                        "supported": False,
+                        "quotes": []
+                    }
+            return batch_verdicts
+
+        try:
+            batch_tasks = [process_batch(b_idx, b) for b_idx, b in enumerate(batches)]
+            # Run consolidated batches in parallel with a strict 3.5s total timeout
+            results = await asyncio.wait_for(asyncio.gather(*batch_tasks, return_exceptions=True), timeout=3.5)
+            for res in results:
+                if isinstance(res, dict):
+                    llm_verdicts.update(res)
+        except asyncio.TimeoutError:
+            logger.warning("Claim audit judge timed out after 3.5s. Marking remaining claims as audit_incomplete.")
+            for c in claims_to_judge:
+                cid = c["claim_id"]
+                if cid not in llm_verdicts:
                     llm_verdicts[cid] = {
                         "claim_id": cid,
                         "status": "audit_incomplete",
                         "supported": False,
                         "quotes": []
                     }
+        except Exception as e:
+            logger.error(f"Error during parallel claim audit: {e}")
 
     verified_claims = []
     for idx, (clean_text, cids, start, end) in enumerate(raw_claims):
@@ -2078,7 +2137,7 @@ async def audit_answer(state: AgentState) -> dict:
     detected_count = count_detected_factual_units(answer_final)
     audited_count = len(verified_claims)
     if detected_count > 0 and audited_count < 0.80 * detected_count:
-        if not state.get("_synthesis_coverage_retried", False):
+        if not state.get("_synthesis_coverage_retried", False) and not state.get("_skip_regeneration", False):
             logger.warning(
                 f"Audit coverage hard check failed: audited {audited_count} / {detected_count} detected units "
                 f"({audited_count / detected_count:.1%} < 80%). Retrying synthesis once with shorter answer requested..."

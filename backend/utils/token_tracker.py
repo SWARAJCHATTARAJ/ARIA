@@ -21,6 +21,8 @@ class TokenRateLimiter:
 
     def get_model_limits(self, model: str) -> Tuple[int, int]:
         """Returns (tpm_limit, tpd_limit) for a given model."""
+        if "8b" in model.lower() or "instant" in model.lower():
+            return 30000, 500000
         if model == settings.groq_writer_model:
             return settings.groq_writer_tpm, settings.groq_writer_tpd
         elif model == settings.groq_judge_model:
