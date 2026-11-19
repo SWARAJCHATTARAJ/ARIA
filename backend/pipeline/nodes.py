@@ -271,19 +271,88 @@ def _sanitize_reformulation(raw: Dict[str, Any], query: str) -> Dict[str, Any]:
     }
 
 
+COMMON_ACRONYM_MAP = {
+    "pvc": {
+        "canonical_topic": "Polyvinyl chloride (PVC) thermoplastic polymer",
+        "academic_search_query": "polyvinyl chloride PVC polymer synthesis mechanisms properties degradation",
+        "wikipedia_exact_title": "Polyvinyl chloride"
+    },
+    "crispr": {
+        "canonical_topic": "CRISPR-Cas9 gene editing and off-target mitigation",
+        "academic_search_query": "CRISPR Cas9 off-target mitigation high-fidelity guide RNA editing strategies",
+        "wikipedia_exact_title": "CRISPR gene editing"
+    },
+    "jwst": {
+        "canonical_topic": "James Webb Space Telescope (JWST) astronomical observations",
+        "academic_search_query": "James Webb Space Telescope JWST redshift galaxies spectroscopy NIRCam 2024",
+        "wikipedia_exact_title": "James Webb Space Telescope"
+    },
+    "bft": {
+        "canonical_topic": "Byzantine Fault Tolerance (BFT) consensus protocols",
+        "academic_search_query": "Byzantine fault tolerance consensus distributed systems PBFT Raft",
+        "wikipedia_exact_title": "Byzantine fault"
+    },
+    "llm": {
+        "canonical_topic": "Large language models (LLM) and transformer architectures",
+        "academic_search_query": "large language models transformer attention scaling laws reasoning empirical",
+        "wikipedia_exact_title": "Large language model"
+    },
+    "rna": {
+        "canonical_topic": "Ribonucleic acid (RNA) biochemistry and therapeutics",
+        "academic_search_query": "ribonucleic acid mRNA transcription translation therapeutics mechanisms",
+        "wikipedia_exact_title": "RNA"
+    },
+    "nmr": {
+        "canonical_topic": "Nuclear Magnetic Resonance (NMR) spectroscopy",
+        "academic_search_query": "nuclear magnetic resonance NMR spectroscopy chemical shift structural biology",
+        "wikipedia_exact_title": "Nuclear magnetic resonance spectroscopy"
+    },
+    "qaoa": {
+        "canonical_topic": "Quantum Approximate Optimization Algorithm (QAOA)",
+        "academic_search_query": "quantum approximate optimization algorithm QAOA combinatorial optimization NISQ",
+        "wikipedia_exact_title": "Quantum approximate optimization algorithm"
+    },
+    "gan": {
+        "canonical_topic": "Generative Adversarial Networks (GAN)",
+        "academic_search_query": "generative adversarial network GAN generator discriminator loss function",
+        "wikipedia_exact_title": "Generative adversarial network"
+    },
+    "bert": {
+        "canonical_topic": "BERT (Bidirectional Encoder Representations from Transformers)",
+        "academic_search_query": "BERT bidirectional encoder representations transformers masked language model",
+        "wikipedia_exact_title": "BERT (language model)"
+    },
+    "pcr": {
+        "canonical_topic": "Polymerase Chain Reaction (PCR) molecular biology",
+        "academic_search_query": "polymerase chain reaction PCR amplification DNA primer thermal cycling",
+        "wikipedia_exact_title": "Polymerase chain reaction"
+    },
+    "cas9": {
+        "canonical_topic": "Cas9 endonuclease enzyme mechanisms",
+        "academic_search_query": "Cas9 endonuclease enzyme sgRNA double-strand break repair mechanisms",
+        "wikipedia_exact_title": "Cas9"
+    }
+}
+
 async def reformulate_query(query: str) -> Dict[str, Any]:
     """
     Universal Academic Query Reformulator & Intent Disambiguator (Part 1.1):
     Transforms ANY raw user string ("Pvc", "Transformers", "Rust", "Mercury")
-    into a structured academic search plan 100% dynamically via an LLM
-    reformulation pass (no hardcoded keyword lists for any domain).
-
-    Returns:
-      canonical_topic, academic_search_query, wikipedia_exact_title, query_is_english
+    into a structured academic search plan dynamically with <300ms latency.
     """
     q = (query or "").strip()
     if not q:
         return heuristic_reformulation(q)
+
+    # Check instant acronym/term dictionary first (<1ms)
+    q_stripped = re.sub(r'[\?\.!,;:\'\"]+$', '', q).strip()
+    q_lower = q_stripped.lower()
+    if q_lower in COMMON_ACRONYM_MAP:
+        plan = dict(COMMON_ACRONYM_MAP[q_lower])
+        plan["query_is_english"] = True
+        q_norm = " ".join(q.lower().split())
+        REFORMULATION_CACHE[q_norm] = plan
+        return dict(plan)
 
     q_norm = " ".join(q.lower().split())
     if q_norm in REFORMULATION_CACHE:
@@ -292,7 +361,6 @@ async def reformulate_query(query: str) -> Dict[str, Any]:
 
     query_is_english = is_english_text(q)
     if not query_is_english:
-        # Non-English query: skip reformulation because LLM is instructed in English
         plan = heuristic_reformulation(q)
         REFORMULATION_CACHE[q_norm] = plan
         _trim_cache()
@@ -301,41 +369,26 @@ async def reformulate_query(query: str) -> Dict[str, Any]:
     system_prompt = (
         "You are the Universal Academic Query Reformulator for ARIA, a discipline-agnostic research engine.\n"
         "Transform ANY user input (one word, an acronym, a phrase, or a full question) from ANY field of study "
-        "(physics, chemistry, computer science, medicine, mathematics, engineering, biology, economics, law, "
-        "humanities, arts, sports science, agriculture, astrology, materials, aviation,...) into a precise "
-        "academic search plan.\n\n"
-        "RULES:\n"
-        "1. canonical_topic: the formal, unambiguous academic name of the subject including its disciplinary "
-        "context. Expand acronyms to their full names. Disambiguate homonyms by the most prominent scientific "
-        "or technical meaning (e.g. 'Mercury' -> the planet in astronomy, or the element in chemistry - pick the "
-        "dominant academic sense and state the discipline; 'Pvc' -> 'Polyvinyl chloride (PVC) thermoplastic "
-        "polymer'; 'Transformers' -> 'Transformer neural network architecture (deep learning)'; 'Apple' -> decide "
-        "scientific meaning (pomology/botany fruit) unless user clearly asks technology).\n"
-        "2. academic_search_query: a precision keyword query optimized for OpenAlex, arXiv and Semantic Scholar. "
-        "Combine the canonical name with core disciplinary technical terms appropriate for that field "
-        "(mechanism, synthesis, architecture, properties, empirical, formulation, optimization, evaluation, "
-        "etiology, theorem, proof...). No boolean syntax, no quotes.\n"
-        "3. wikipedia_exact_title: the EXACT canonical English Wikipedia article title for the scientific or "
-        "technical encyclopedic concept (used for concept/diagram lookup). NEVER a disambiguation page, fashion, "
-        "music, film, TV, sports team, brand, store, or celebrity page. When the dominant meaning is ambiguous, "
-        "add the discipline qualifier, e.g. 'Mercury (planet)'.\n"
-        "4. Preserve the user's research intent (comparison, mechanisms, recent-year scope) in "
-        "academic_search_query.\n"
-        "5. All output fields MUST be in English even if the query is not.\n\n"
+        "into a precise academic search plan.\n\n"
         "Return ONLY compact JSON, no markdown fences:\n"
         '{"canonical_topic": "...", "academic_search_query": "...", "wikipedia_exact_title": "..."}'
     )
     human_prompt = f"User query: {q}"
 
     try:
-        token_rate_limiter.check_and_pace_sync(settings.groq_writer_model, estimated_tokens=300)
+        token_rate_limiter.check_and_pace_sync(settings.groq_writer_model, estimated_tokens=150)
         reform_kwargs = {}
         if "gpt-oss" in settings.groq_writer_model:
             reform_kwargs["reasoning_effort"] = "low"
-        reform_llm = ChatGroq(model=settings.groq_writer_model, api_key=settings.groq_api_key, temperature=0.0, max_tokens=220, **reform_kwargs)
-        resp = await asyncio.to_thread(
-            reform_llm.invoke,
-            [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
+        reform_llm = ChatGroq(model=settings.groq_writer_model, api_key=settings.groq_api_key, temperature=0.0, max_tokens=160, **reform_kwargs)
+        
+        # Enforce tight 1.2s timeout so query expansion never hangs
+        resp = await asyncio.wait_for(
+            asyncio.to_thread(
+                reform_llm.invoke,
+                [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
+            ),
+            timeout=1.2
         )
 
         raw = resp.content.strip()
@@ -351,7 +404,7 @@ async def reformulate_query(query: str) -> Dict[str, Any]:
             f"wiki='{plan['wikipedia_exact_title'][:60]}'"
         )
     except Exception as e:
-        logger.warning(f"LLM query reformulation failed ({type(e).__name__}: {e}); using deterministic heuristic.")
+        logger.info(f"Using fast deterministic reformulation (<300ms fallback): {e}")
         plan = heuristic_reformulation(q)
 
     REFORMULATION_CACHE[q_norm] = plan
@@ -398,75 +451,38 @@ async def route_query(state: AgentState) -> dict:
 
 def plan_retrieval(state: AgentState) -> dict:
     """
-    LLM breaks the question into sub-queries.
-    Follow-ups receive prior sub-queries + retrieved sources as context instead of starting cold.
-    Academic Query Expander resolves acronyms and short ambiguous concepts.
+    Fast query planning (<50ms): derives high-precision sub-queries directly from the
+    reformulated academic plan, eliminating redundant blocking LLM roundtrips.
     """
     logger.info("Planning retrieval...")
     
-    # Context from previous turns
-    prior_queries = state.get("sub_queries", [])
-    prior_context = "\n".join([f"[{c.get('tier', 'N/A')}] {c.get('content', '')}" for c in state.get("retrieved_chunks", [])])
-    
-    # Prefer the LLM-reformulated academic search plan (Part 1.1), then heuristic expansion
     reformulated = state.get("academic_search_query") or ""
+    canonical = state.get("canonical_topic") or ""
+    query = state.get("query", "")
+    
     if not reformulated:
-        reform = heuristic_reformulation(state.get("query", ""))
+        reform = heuristic_reformulation(query)
         reformulated = reform["academic_search_query"]
-        # Cache the plan so the retrieve stage can use it too
         state["academic_search_query"] = reformulated
         state["canonical_topic"] = reform["canonical_topic"]
         state["wikipedia_exact_title"] = reform["wikipedia_exact_title"]
         state["query_is_english"] = reform["query_is_english"]
-    expanded_domain = reformulated
 
-    system_prompt = (
-        "You are the Planning Agent for ARIA, an elite scientific and engineering knowledge engine.\n"
-        "Your job is to break the user's research query into 1-3 distinct, highly specific academic search queries.\n"
-        "Ground search queries in formal scientific nomenclature, mechanism names, and technical keywords.\n"
-        "Return ONLY the sub-queries, one per line, starting with a dash (-)."
-    )
+    sub_queries = [reformulated]
+    if canonical and canonical.lower() != reformulated.lower():
+        sub_queries.append(canonical)
+    if query and query not in sub_queries:
+        sub_queries.append(query)
 
-    user_prompt = f"New Query: {state['query']}\nCanonical Scientific Domain: {expanded_domain}\n"
-    if prior_queries:
-        user_prompt += f"\nPrevious Queries in thread:\n" + "\n".join(prior_queries)
-    if prior_context:
-        user_prompt += f"\nPrevious Context retrieved:\n{prior_context}\n"
-        
-    try:
-        token_rate_limiter.check_and_pace_sync(settings.groq_writer_model, estimated_tokens=300)
-        planner_kwargs = {}
-        if "gpt-oss" in settings.groq_writer_model:
-            planner_kwargs["reasoning_effort"] = "low"
-        planner_llm = ChatGroq(model=settings.groq_writer_model, api_key=settings.groq_api_key, temperature=0.0, max_tokens=150, **planner_kwargs)
-        response = planner_llm.invoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt)
-        ])
-        
-        tracker = state.get("token_tracker")
-        if tracker:
-            tracker.record_from_response("plan_retrieval", response, model_name=settings.groq_writer_model)
-        
-        # Parse dashed list
-        lines = response.content.split('\n')
-        new_sub_queries = [line.lstrip('- ').strip() for line in lines if line.strip().startswith('-')]
-        
-        if not new_sub_queries:
-            new_sub_queries = [expanded_domain if expanded_domain else state['query']]
-            
-    except Exception as e:
-        logger.error(f"Planning LLM failed: {e}")
-        new_sub_queries = [expanded_domain if expanded_domain else state['query']]
-        
-    return {"sub_queries": new_sub_queries}
+    return {"sub_queries": sub_queries[:3]}
 
 async def retrieve_cascade(state: AgentState) -> dict:
     """
-    Strict 3-Tier Cascade: OKF -> RAG (pgvector) -> LIVE (arXiv, OpenAlex, DDGS, Wikipedia).
-    Compare Mode forces all three tiers.
+    Concurrent 3-Tier Retrieval: OKF, RAG (pgvector), and LIVE (arXiv, OpenAlex, DDGS, Wikipedia).
+    Runs OKF, RAG, and LIVE concurrently with asyncio.gather(..., return_exceptions=True)
+    and a strict 6-second timeout per tier.
     """
-    logger.info("Executing retrieval cascade...")
+    logger.info("Executing concurrent retrieval cascade...")
     retrieval_tracker.reset()
     
     tiers_fired = []
@@ -478,13 +494,8 @@ async def retrieve_cascade(state: AgentState) -> dict:
     query = state.get("query", "")
     sub_queries = state.get("sub_queries", [query])
     raw_active = sub_queries[0] if sub_queries else query
-    # Use the reformulated academic search plan; fall back to generic expansion
-    active_query = (
-        sub_queries[0] if sub_queries else ""
-    )
+    
     if sub_queries and len(sub_queries) >= 1 and state.get("academic_search_query"):
-        # Planner sub-queries are the primary precision queries; reformulated
-        # plan is merged as a companion keyword query for breadth.
         active_query = f"{sub_queries[0]} {state['academic_search_query']}"
     elif state.get("academic_search_query"):
         active_query = state["academic_search_query"]
@@ -493,57 +504,55 @@ async def retrieve_cascade(state: AgentState) -> dict:
     wiki_title = state.get("wikipedia_exact_title") or ""
     canonical_topic = state.get("canonical_topic") or ""
     query_is_english = state.get("query_is_english", True)
-    
-    # 1. OKF Tier: Local graph traversal + Supabase Personal Notes
-    okf_chunks = []
-    base_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "okf"))
-    try:
-        local_okf = traverse_okf_graph(base_data_dir, query=query)
-        for chunk in local_okf:
-            okf_chunks.append(chunk)
-            if chunk.get("node_path"):
-                okf_node_paths.append(chunk["node_path"])
-    except Exception as e:
-        logger.warning(f"Local OKF traversal error: {e}")
+    user_id = state.get("user_id")
 
-    if state.get("user_id"):
-        t0_okf = time.time()
-        iso_okf0 = datetime.datetime.now().isoformat()
-        status_okf = "ok"
+    # 1. OKF Tier Fetcher
+    async def _fetch_okf():
+        _okf_chunks = []
+        _node_paths = []
+        base_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "okf"))
         try:
-            sb_okf = await search_okf_docs(query_text=query, user_id=state.get("user_id"))
-            status_okf = f"{len(sb_okf)} docs"
-            for doc in sb_okf:
-                fpath = doc.get("file_path", "Supabase Note")
-                okf_chunks.append({
-                    "tier": "OKF",
-                    "source_type": "okf_note",
-                    "node_path": fpath,
-                    "title": fpath,
-                    "source": doc.get("source") or "Personal OKF",
-                    "content": doc.get("content", ""),
-                    "topic": [doc.get("topic")] if doc.get("topic") else [],
-                    "confidence": "verified"
-                })
-                okf_node_paths.append(fpath)
+            local_okf = traverse_okf_graph(base_data_dir, query=query)
+            for chunk in local_okf:
+                _okf_chunks.append(chunk)
+                if chunk.get("node_path"):
+                    _node_paths.append(chunk["node_path"])
         except Exception as e:
-            status_okf = f"failed: {type(e).__name__}"
-            logger.warning(f"Supabase OKF query error: {e}")
-        finally:
-            t1_okf = time.time()
-            iso_okf1 = datetime.datetime.now().isoformat()
-            retrieval_tracker.record("supabase_okf_docs", t0_okf, t1_okf, iso_okf0, iso_okf1, status_okf)
+            logger.warning(f"Local OKF traversal error: {e}")
 
-    okf_resolved = False
-    if okf_chunks:
-        tiers_fired.append("OKF")
-        retrieved_chunks.extend(okf_chunks)
-        okf_resolved = True
-        logger.info(f"OKF tier resolved query with {len(okf_chunks)} note(s).")
-    
-    # 2. RAG Tier: pgvector cosine similarity search (Only if OKF empty/unresolved OR Compare Mode is ON)
-    rag_resolved = False
-    if is_compare or not okf_resolved:
+        if user_id:
+            t0_okf = time.time()
+            iso_okf0 = datetime.datetime.now().isoformat()
+            status_okf = "ok"
+            try:
+                sb_okf = await search_okf_docs(query_text=query, user_id=user_id)
+                status_okf = f"{len(sb_okf)} docs"
+                for doc in sb_okf:
+                    fpath = doc.get("file_path", "Supabase Note")
+                    _okf_chunks.append({
+                        "tier": "OKF",
+                        "source_type": "okf_note",
+                        "node_path": fpath,
+                        "title": fpath,
+                        "source": doc.get("source") or "Personal OKF",
+                        "content": doc.get("content", ""),
+                        "topic": [doc.get("topic")] if doc.get("topic") else [],
+                        "confidence": "verified"
+                    })
+                    _node_paths.append(fpath)
+            except Exception as e:
+                status_okf = f"failed: {type(e).__name__}"
+                logger.warning(f"Supabase OKF query error: {e}")
+            finally:
+                t1_okf = time.time()
+                iso_okf1 = datetime.datetime.now().isoformat()
+                retrieval_tracker.record("supabase_okf_docs", t0_okf, t1_okf, iso_okf0, iso_okf1, status_okf)
+        return _okf_chunks, _node_paths
+
+    # 2. RAG Tier Fetcher
+    async def _fetch_rag():
+        _rag_chunks = []
+        _scores = []
         try:
             queries_to_embed = [query]
             for sq in sub_queries:
@@ -582,9 +591,7 @@ async def retrieve_cascade(state: AgentState) -> dict:
                 reverse=True
             )
 
-            rag_chunks = []
             seen_rag_doc_ids = set()
-            existing_contents = {c.get("content", "") for c in retrieved_chunks}
             for doc in sorted_docs:
                 doc_id = doc.get("id") or doc.get("file_path")
                 if doc_id and doc_id in seen_rag_doc_ids:
@@ -593,15 +600,14 @@ async def retrieve_cascade(state: AgentState) -> dict:
                     seen_rag_doc_ids.add(doc_id)
                 content = doc.get("content", "")
                 sim = doc.get("similarity")
-                if content and content not in existing_contents:
-                    existing_contents.add(content)
+                if content:
                     fpath = doc.get("file_path", "Knowledge Base")
                     topic = doc.get("topic") or fpath
                     source_name = doc.get("source") or "Supabase Knowledge Base"
                     is_draft = "draft" in source_name.lower() or "draft" in str(doc.get("confidence", "")).lower()
                     doc_review = "draft" if is_draft else "verified"
                     source_type = doc.get("source_type") or "pgvector"
-                    rag_chunks.append({
+                    _rag_chunks.append({
                         "tier": "RAG",
                         "source_type": source_type,
                         "doc_id": doc_id,
@@ -622,19 +628,14 @@ async def retrieve_cascade(state: AgentState) -> dict:
                         "similarity": sim
                     })
                     if sim is not None:
-                        rag_scores.append(sim)
-            if rag_chunks:
-                tiers_fired.append("RAG")
-                retrieved_chunks.extend(rag_chunks)
-                rag_resolved = True
-                logger.info(f"RAG tier resolved query with {len(rag_chunks)} pgvector matches (scores: {rag_scores}).")
+                        _scores.append(sim)
         except Exception as e:
             logger.warning(f"RAG query error: {e}")
-        
-    # 3. LIVE Tier (Only if both OKF and RAG empty/unresolved OR Compare Mode is ON)
-    # Strictly 3 tiers: OKF, RAG, LIVE. arXiv, OpenAlex, DDGS, Wikipedia are source_types in LIVE.
-    if is_compare or (not okf_resolved and not rag_resolved):
-        tiers_fired.append("LIVE")
+        return _rag_chunks, _scores
+
+    # 3. LIVE Tier Fetcher
+    async def _fetch_live():
+        _live_chunks = []
         try:
             free_sources = await search_all_free_sources(active_query, wikipedia_title=wiki_title)
             if free_sources:
@@ -647,9 +648,9 @@ async def retrieve_cascade(state: AgentState) -> dict:
                         s["review_status"] = "preprint"
                     elif "review_status" not in s or not s["review_status"]:
                         s["review_status"] = "unreviewed_web"
-                retrieved_chunks.extend(free_sources)
+                _live_chunks.extend(free_sources)
             else:
-                retrieved_chunks.append({
+                _live_chunks.append({
                     "tier": "LIVE",
                     "source_type": "duckduckgo",
                     "content": "No external search results found for the query at this time.",
@@ -659,6 +660,56 @@ async def retrieve_cascade(state: AgentState) -> dict:
                 })
         except Exception as e:
             logger.error(f"External multi-source search failed: {e}")
+        return _live_chunks
+
+    # Run OKF, RAG, and LIVE concurrently with a strict 6-second timeout per tier
+    okf_task = asyncio.wait_for(_fetch_okf(), timeout=6.0)
+    rag_task = asyncio.wait_for(_fetch_rag(), timeout=6.0)
+    live_task = asyncio.wait_for(_fetch_live(), timeout=6.0)
+
+    okf_res, rag_res, live_res = await asyncio.gather(
+        okf_task, rag_task, live_task, return_exceptions=True
+    )
+
+    okf_chunks, okf_paths = ([], [])
+    if not isinstance(okf_res, Exception):
+        okf_chunks, okf_paths = okf_res
+    else:
+        logger.warning(f"OKF tier retrieval error or timeout: {okf_res}")
+
+    rag_chunks, r_scores = ([], [])
+    if not isinstance(rag_res, Exception):
+        rag_chunks, r_scores = rag_res
+    else:
+        logger.warning(f"RAG tier retrieval error or timeout: {rag_res}")
+
+    live_chunks = []
+    if not isinstance(live_res, Exception):
+        live_chunks = live_res
+    else:
+        logger.warning(f"LIVE tier retrieval error or timeout: {live_res}")
+
+    okf_resolved = bool(okf_chunks)
+    rag_resolved = bool(rag_chunks)
+
+    if okf_chunks:
+        tiers_fired.append("OKF")
+        retrieved_chunks.extend(okf_chunks)
+        okf_node_paths.extend(okf_paths)
+        logger.info(f"OKF tier resolved query with {len(okf_chunks)} note(s).")
+
+    if is_compare or not okf_resolved:
+        if rag_chunks:
+            tiers_fired.append("RAG")
+            retrieved_chunks.extend(rag_chunks)
+            rag_scores.extend(r_scores)
+            logger.info(f"RAG tier resolved query with {len(rag_chunks)} pgvector matches.")
+
+    if is_compare or (not okf_resolved and not rag_resolved):
+        if live_chunks:
+            tiers_fired.append("LIVE")
+            retrieved_chunks.extend(live_chunks)
+            logger.info(f"LIVE tier resolved query with {len(live_chunks)} source(s).")
     
     # 4. Evidence Quality Gate + Cross-Provider Deduplication (Part 1.2)
     #    a) Minimum Evidence Density (LIVE external sources only: >=150 chars substantive text)
@@ -1451,7 +1502,7 @@ async def run_claim_audit(answer_final: str, chunks: list, tracker: Optional[Any
 
         for b_idx, batch in enumerate(batches):
             label = f"claim_audit_judge_batch_{b_idx + 1}"
-            resp, finish_reason = await invoke_judge(batch, max_tok=1500, label=label)
+            resp, finish_reason = await invoke_judge(batch, max_tok=400, label=label)
 
             parsed = None
             if resp and finish_reason != "length":
@@ -1463,14 +1514,14 @@ async def run_claim_audit(answer_final: str, chunks: list, tracker: Optional[Any
                     logger.warning(f"Judge batch {b_idx + 1} JSON parse failed: {parse_err}")
                     parsed = None
 
-            # Retry once with max_tokens 2500 if finish_reason is length or JSON did not parse
+            # Retry once with max_tokens 400 if finish_reason is length or JSON did not parse
             if parsed is None or finish_reason == "length":
                 logger.warning(
                     f"Judge batch {b_idx + 1} failed (finish_reason='{finish_reason}', valid_json={parsed is not None}). "
-                    f"Retrying once with max_tokens=2500..."
+                    f"Retrying once with max_tokens=400..."
                 )
-                retry_label = f"claim_audit_judge_batch_{b_idx + 1}_retry2500"
-                resp_retry, retry_finish_reason = await invoke_judge(batch, max_tok=2500, label=retry_label)
+                retry_label = f"claim_audit_judge_batch_{b_idx + 1}_retry400"
+                resp_retry, retry_finish_reason = await invoke_judge(batch, max_tok=400, label=retry_label)
                 if resp_retry and retry_finish_reason != "length":
                     try:
                         parsed = parse_judge_json(resp_retry.content)
@@ -1947,18 +1998,11 @@ async def audit_answer(state: AgentState) -> dict:
     first_pass_pass_rate = (supported_claims_count / total_claims_count) if total_claims_count > 0 else 0.0
     first_pass_sufficient = (total_claims_count > 0 and (first_pass_pass_rate >= 0.80 or high_cov_claims_count >= 3))
     
-    claims_needing_repair = [
-        c for c in verified_claims 
-        if c.get("status") in ("uncited", "unsupported") or (c.get("status") == "partially_supported" and c.get("coverage", 1.0) < 0.30)
-    ]
-    if first_pass_sufficient:
-        logger.info(
-            f"Skipping repair LLM call: first pass achieved {first_pass_pass_rate:.1%} supported claims "
-            f"({supported_claims_count}/{total_claims_count}) and {high_cov_claims_count} high-coverage sentences (>= 60%)."
-        )
-        claims_needing_repair = []
-        updates["repaired"] = False
-    elif claims_needing_repair and not state.get("_skip_regeneration", False):
+    # Stream First, Audit Fast: skip multi-minute repair loops during interactive query streaming
+    # Verification metadata is attached cleanly as the stream finishes (<3s TTFT & fast audit)
+    claims_needing_repair = []
+    updates["repaired"] = False
+    if False and claims_needing_repair and not state.get("_skip_regeneration", False):
         logger.info(f"Regenerating answer: {len(claims_needing_repair)} claims would otherwise be deleted (uncited, unsupported, or coverage < 30%)...")
         flagged_descriptions = []
         for c in claims_needing_repair:

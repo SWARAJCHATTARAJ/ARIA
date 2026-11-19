@@ -482,9 +482,9 @@ async def query_pipeline(req: QueryRequest, request: Request):
         try:
             while True:
                 try:
-                    chunk = await asyncio.wait_for(sse_queue.get(), timeout=2.0)
+                    chunk = await asyncio.wait_for(sse_queue.get(), timeout=8.0)
                 except asyncio.TimeoutError:
-                    yield ": heartbeat\n\n"
+                    yield ": keep-alive\n\n"
                     continue
                 if chunk == STREAM_END:
                     break

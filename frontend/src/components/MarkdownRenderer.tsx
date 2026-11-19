@@ -545,8 +545,8 @@ function MarkdownRendererInner({
   return (
     <div className="space-y-1 select-text max-w-[68ch] leading-[1.65]">
       {blocks}
-      {/* Stream Caret: blinking block removed on audit */}
-      {isStreaming && <span className="animate-caret" aria-hidden="true" />}
+      {/* Stream Caret: subtle vertical blinking caret at stream end */}
+      {isStreaming && <span className="streaming-caret" aria-hidden="true" />}
     </div>
   );
 }
@@ -592,37 +592,42 @@ function InlineCitationPill({
             }
           }
         }}
-        className={`inline-flex items-center gap-1 font-mono text-[10px] font-semibold px-1.5 py-0.2 mx-0.5 rounded-none border transition-all select-none cursor-pointer align-baseline animate-[citationFadeIn_calc(120ms*var(--motion-scale,1))_cubic-bezier(.2,.8,.2,1)] touch-spring ${colorClass}`}
-        aria-label={`Citation ${citId + 1}: ${cit.title || 'Source'}`}
+        className={`inline-flex items-center gap-1 font-mono text-[10px] font-medium px-1.5 py-0.5 mx-0.5 rounded-[3px] border tabular-nums transition-all select-none cursor-pointer align-baseline hover:scale-105 active:scale-[0.98] ${colorClass}`}
+        aria-label={`Citation § ${citId + 1}: ${cit.title || 'Source'}`}
       >
-        <span className="opacity-80 text-[9px] select-none">{glyph}</span>
+        <span className="opacity-90 select-none">§</span>
         <span>{citId + 1}</span>
       </button>
 
-      {/* Spring-animated floating citation card preview on hover / focus */}
+      {/* Popover preview on hover */}
       {showPreview && (
         <span
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-ink-base border border-tier-okf/50 shadow-2xl z-50 rounded-none pointer-events-auto text-left block animate-view-in"
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-[#111115] border border-white/[0.15] shadow-xl z-50 rounded-[6px] pointer-events-auto text-left block animate-fade-slide"
           style={{ filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.85))' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <span className="flex items-center justify-between text-[10px] font-mono mb-1.5 border-b border-ink-surface pb-1 text-ink-muted">
-            <span className="flex items-center gap-1 font-bold text-tier-okf">
-              <span>{glyph}</span>
-              <span>{cit.tier || 'PRIMARY SOURCE'} #{citId + 1}</span>
+          <span className="flex items-center justify-between text-[10px] font-mono mb-1.5 border-b border-white/[0.07] pb-1 text-[#8B8B8E]">
+            <span
+              className="flex items-center gap-1 font-semibold"
+              style={{
+                color: cit.tier === 'OKF' ? '#60A5FA' : cit.tier === 'RAG' ? '#A78BFA' : '#F59E0B',
+              }}
+            >
+              <span>§ {citId + 1}</span>
+              <span>· {cit.tier || 'LIVE'}</span>
             </span>
-            {cit.year && <span>{cit.year}</span>}
+            {cit.year && <span className="tabular-nums">{cit.year}</span>}
           </span>
-          <span className="block font-sans font-semibold text-xs text-white leading-snug line-clamp-2 mb-1">
+          <span className="block font-sans font-medium text-xs text-[#EDEDED] leading-snug line-clamp-2 mb-1">
             {cit.title || cit.path || 'Academic Citation'}
           </span>
           {authorsStr && (
-            <span className="block font-sans text-[11px] text-gray-300 line-clamp-1 mb-1.5">
+            <span className="block font-sans text-[11px] text-[#8B8B8E] line-clamp-1 mb-1.5">
               {authorsStr}
             </span>
           )}
           {cit.venue && (
-            <span className="block font-mono text-[10px] text-ink-muted line-clamp-1 mb-1">
+            <span className="block font-mono text-[10px] text-[#71717A] line-clamp-1 mb-1">
               Venue: {cit.venue}
             </span>
           )}
@@ -631,7 +636,7 @@ function InlineCitationPill({
               href={targetUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[10px] font-mono text-tier-okf hover:underline mt-1"
+              className="inline-flex items-center gap-1 text-[10px] font-mono text-[#60A5FA] hover:underline mt-1"
             >
               <span>View Source / DOI</span>
               <ExternalLink size={10} />

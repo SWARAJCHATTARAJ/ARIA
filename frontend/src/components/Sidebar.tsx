@@ -41,7 +41,7 @@ export default function Sidebar({
 
   return (
     <nav
-      className={`h-full bg-[#141416] border-r border-[#262629] p-4 flex flex-col justify-between select-none transition-all duration-200 overflow-hidden ${
+      className={`h-full bg-[#0C0C0F] border-r border-white/[0.07] p-3.5 flex flex-col justify-between select-none sidebar-smooth overflow-hidden ${
         isRail ? 'w-16' : 'w-64'
       }`}
     >
@@ -50,16 +50,16 @@ export default function Sidebar({
         {/* Top Header */}
         <div className={`flex items-center ${isRail ? 'justify-center' : 'justify-between'}`}>
           {!isRail ? (
-            <div className="flex items-center gap-2">
-              <span className="text-[14px] font-semibold text-[#EDEDED] tracking-wider font-mono">
+            <div className="flex items-center gap-2.5">
+              <span className="text-[14px] font-semibold text-[#EDEDED] tracking-[-0.02em] font-mono">
                 ARIA
               </span>
-              <span className="text-[12px] text-[#8B8B8E] font-mono">
+              <span className="text-[11px] text-[#71717A] font-mono tabular-nums">
                 v2.0
               </span>
             </div>
           ) : (
-            <span className="text-[12px] font-mono font-semibold text-[#5E8BFF]">
+            <span className="text-[13px] font-mono font-semibold text-[#60A5FA]">
               A
             </span>
           )}
@@ -67,11 +67,11 @@ export default function Sidebar({
           {onToggleCollapsed && (
             <button
               onClick={onToggleCollapsed}
-              className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#1B1B1E] transition-colors"
-              title={isRail ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-all"
+              title={isRail ? 'Expand sidebar (Ctrl+B / ⌘B)' : 'Collapse sidebar (Ctrl+B / ⌘B)'}
               aria-label={isRail ? 'Expand sidebar' : 'Collapse sidebar'}
             >
-              {isRail ? <Menu size={16} /> : <PanelLeftOpen size={16} />}
+              {isRail ? <PanelLeftOpen size={16} /> : <PanelLeftOpen size={16} className="rotate-180" />}
             </button>
           )}
         </div>
@@ -80,13 +80,13 @@ export default function Sidebar({
         {onOpenCommandPalette && !isRail && (
           <button
             onClick={onOpenCommandPalette}
-            className="w-full flex items-center justify-between px-3 py-2 bg-[#0A0A0B] border border-[#262629] rounded-[6px] text-[12px] text-[#8B8B8E] hover:text-[#EDEDED] hover:border-[#38383C] transition-colors"
+            className="w-full flex items-center justify-between px-3 py-2 bg-[#09090B] border border-white/[0.07] rounded-[6px] text-[12px] text-[#8B8B8E] hover:text-[#EDEDED] hover:border-white/[0.15] active:scale-[0.98] transition-all cursor-pointer"
           >
             <span className="flex items-center gap-2">
-              <Command size={14} />
+              <Command size={13} className="text-[#71717A]" />
               <span>Search</span>
             </span>
-            <kbd className="px-1.5 py-0.5 bg-[#141416] border border-[#262629] text-[12px] font-mono rounded-[4px]">
+            <kbd className="px-1.5 py-0.5 bg-[#111115] border border-white/[0.07] text-[10px] font-mono rounded-[4px] text-[#71717A]">
               ⌘K
             </kbd>
           </button>
@@ -101,45 +101,45 @@ export default function Sidebar({
                 key={id}
                 onClick={() => onTabChange(id)}
                 title={isRail ? label : undefined}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-[6px] text-[14px] transition-colors ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-[6px] text-[13px] tracking-[-0.01em] transition-all active:scale-[0.98] cursor-pointer ${
                   isActive
-                    ? 'bg-[#1B1B1E] text-[#EDEDED] font-medium border border-[#262629]'
-                    : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#1B1B1E] border border-transparent'
+                    ? 'bg-[#18181E] text-[#EDEDED] font-medium border border-white/[0.07]'
+                    : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#111115] border border-transparent'
                 } ${isRail ? 'justify-center px-0' : ''}`}
               >
-                <Icon size={16} className={isActive ? 'text-[#5E8BFF]' : ''} />
+                <Icon size={16} className={isActive ? 'text-[#60A5FA]' : 'text-[#8B8B8E]'} />
                 {!isRail && <span>{label}</span>}
               </button>
             );
           })}
 
-          <div className="my-2 border-t border-[#262629]" />
+          <div className="my-2 border-t border-white/[0.07]" />
 
           <button
             onClick={() => onTabChange('settings')}
             title={isRail ? 'Settings' : undefined}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-[6px] text-[14px] transition-colors ${
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-[6px] text-[13px] tracking-[-0.01em] transition-all active:scale-[0.98] cursor-pointer ${
               activeTab === 'settings'
-                ? 'bg-[#1B1B1E] text-[#EDEDED] font-medium border border-[#262629]'
-                : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#1B1B1E] border border-transparent'
+                ? 'bg-[#18181E] text-[#EDEDED] font-medium border border-white/[0.07]'
+                : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#111115] border border-transparent'
             } ${isRail ? 'justify-center px-0' : ''}`}
           >
-            <Settings size={16} className={activeTab === 'settings' ? 'text-[#5E8BFF]' : ''} />
+            <Settings size={16} className={activeTab === 'settings' ? 'text-[#60A5FA]' : 'text-[#8B8B8E]'} />
             {!isRail && <span>Settings</span>}
           </button>
         </div>
       </div>
 
       {/* User Session Footer */}
-      <div className="pt-4 border-t border-[#262629]">
+      <div className="pt-3 border-t border-white/[0.07]">
         {user && (
           <div className={`flex items-center ${isRail ? 'justify-center' : 'justify-between'} gap-2`}>
             {!isRail && (
               <div className="min-w-0 flex-1">
-                <p className="text-[14px] font-medium text-[#EDEDED] truncate">
+                <p className="text-[13px] font-medium text-[#EDEDED] truncate">
                   {user.name}
                 </p>
-                <p className="text-[12px] font-mono text-[#8B8B8E] truncate">
+                <p className="text-[11px] font-mono text-[#71717A] truncate">
                   {user.provider === 'github' ? `@${user.username}` : user.email}
                 </p>
               </div>
@@ -148,9 +148,9 @@ export default function Sidebar({
               onClick={() => signOut()}
               title="Sign out"
               aria-label="Sign out"
-              className="p-2 text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#1B1B1E] rounded-[6px] transition-colors"
+              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#18181E] active:scale-[0.98] rounded-[6px] transition-all"
             >
-              <LogOut size={16} />
+              <LogOut size={15} />
             </button>
           </div>
         )}

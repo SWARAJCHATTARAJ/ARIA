@@ -95,12 +95,15 @@ function AppShell() {
   const [activeTelemetry, setActiveTelemetry] = useState<MessageTelemetry | undefined>(undefined);
   const [selectedCitationId, setSelectedCitationId] = useState<number | null>(null);
 
-  // Global Ctrl+K / Cmd+K listener
+  // Global Ctrl+K / Cmd+K listener and Ctrl+B / Cmd+B sidebar toggle
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsCommandPaletteOpen((prev) => !prev);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setIsRailCollapsed((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -132,7 +135,7 @@ function AppShell() {
   return (
     <div
       data-runtime={isNativeRuntime ? 'native' : 'web'}
-      className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-[#0A0A0B] text-[#EDEDED] font-sans overflow-hidden relative select-none"
+      className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-[#09090B] text-[#EDEDED] font-sans overflow-hidden relative select-none"
     >
       {/* Mobile Top Bar (< 768px) */}
       <MobileTopBar
@@ -151,7 +154,7 @@ function AppShell() {
         aria-hidden={!isMobileDrawerOpen}
       />
       <aside
-        className={`md:hidden fixed inset-y-0 left-0 z-50 h-full w-64 max-w-[85vw] bg-[#141416] border-r border-[#262629] safe-pt safe-pb overflow-y-auto ${
+        className={`md:hidden fixed inset-y-0 left-0 z-50 h-full w-64 max-w-[85vw] bg-[#0C0C0F] border-r border-white/[0.07] safe-pt safe-pb overflow-y-auto ${
           isMobileDrawerOpen ? 'aria-drawer-open' : 'aria-drawer'
         } ${isMobileDrawerOpen ? '' : 'pointer-events-none'}`}
         aria-hidden={!isMobileDrawerOpen}
@@ -163,8 +166,8 @@ function AppShell() {
         />
       </aside>
 
-      {/* Desktop Rail (>= 768px md:block): collapsible */}
-      <div className="hidden md:block shrink-0 h-full bg-[#141416]">
+      {/* Desktop Sidebar (>= 768px md:block): fluid GPU-accelerated collapsible */}
+      <div className="hidden md:block shrink-0 h-full bg-[#0C0C0F]">
         <Sidebar
           activeTab={activeTab}
           onTabChange={handleTabChange}
@@ -174,22 +177,10 @@ function AppShell() {
         />
       </div>
 
-      {/* Slim Vertical Spine between Sidebar and Content on New Question (xl+ only) */}
-      {activeTab === 'query' && !isFocusMode && (
-        <aside className="hidden xl:flex shrink-0 w-32 border-r border-[#262629] bg-[#141416] p-4 flex-col justify-center select-none">
-          <PipelineSpine
-            mode="live"
-            stage={activeTelemetry?.stage}
-            tiersFired={activeTelemetry?.retrieval?.tiers}
-            isComplete={activeTelemetry?.stage === 'complete'}
-          />
-        </aside>
-      )}
-
       {/* Center Thread Workspace */}
       <main
         key={activeTab}
-        className="flex-1 flex flex-col h-full md:border-r border-[#262629] bg-[#0A0A0B] transition-all w-full overflow-hidden pb-14 md:pb-0 animate-fade-slide relative"
+        className="flex-1 flex flex-col h-full md:border-r border-white/[0.07] bg-[#09090B] transition-all w-full overflow-hidden pb-14 md:pb-0 animate-fade-slide relative"
       >
         {activeTab === 'home' && <Home onStartQuery={handleOpenQuery} />}
         {activeTab === 'query' && (
@@ -223,7 +214,7 @@ function AppShell() {
             className="lg:hidden fixed inset-0 bg-black/60 z-40"
             onClick={() => setSourcePanelOpen(false)}
           />
-          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#141416] border-l border-[#262629] flex-shrink-0 transition-transform duration-200">
+          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#111115] border-l border-white/[0.07] flex-shrink-0 transition-transform duration-200">
             <SourcePanel
               onClose={() => setSourcePanelOpen(false)}
               activeQuery={hasQuery}

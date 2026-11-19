@@ -3,34 +3,33 @@
 @tailwind utilities;
 
 /* ======================================================================
-   ARIA PRODUCT DESIGN SYSTEM (Linear / Vercel / Stripe Standard)
-   Canvas: #0A0A0B
-   Panels/Cards: #141416
-   Borders: #262629
-   Text Primary: #EDEDED (Inter 400/600)
+   ARIA PRODUCT DESIGN SYSTEM (Obsidian Dark Standard)
+   Canvas: #09090B
+   Sidebar: #0C0C0F
+   Panels/Surfaces/Cards: #111115
+   Borders: Hairline 1px solid rgba(255, 255, 255, 0.07)
+   Text Primary: #EDEDED
    Text Secondary: #8B8B8E
-   Tiers (labels only): OKF #5E8BFF · RAG #A78BFA · LIVE #34D399
-   Accent: #5E8BFF
-   Type scale: 12px, 14px, 16px, 24px, 40px (Nothing between)
-   Base unit: 4px
+   Accents: OKF #60A5FA · RAG #A78BFA · LIVE #F59E0B
    ====================================================================== */
 :root {
   color-scheme: dark;
 
-  --aria-canvas: #0a0a0b;
-  --aria-surface: #141416;
-  --aria-card: #141416;
-  --aria-elevated: #141416;
-  --aria-border: #262629;
-  --aria-border-hover: #38383c;
+  --aria-canvas: #09090b;
+  --aria-sidebar: #0c0c0f;
+  --aria-surface: #111115;
+  --aria-card: #111115;
+  --aria-elevated: #111115;
+  --aria-border: rgba(255, 255, 255, 0.07);
+  --aria-border-hover: rgba(255, 255, 255, 0.14);
   --aria-text-primary: #ededed;
   --aria-text-secondary: #8b8b8e;
-  --aria-accent: #5e8bff;
-  --aria-accent-hover: #4e7bf0;
+  --aria-accent: #60a5fa;
+  --aria-accent-hover: #3b82f6;
 
-  --aria-tier-okf: #5e8bff;
+  --aria-tier-okf: #60a5fa;
   --aria-tier-rag: #a78bfa;
-  --aria-tier-live: #34d399;
+  --aria-tier-live: #f59e0b;
 
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -54,7 +53,7 @@ body,
 #root {
   width: 100%;
   height: 100%;
-  background-color: #0a0a0b;
+  background-color: #09090b;
   color: #ededed;
   font-family: var(--font-sans);
   font-size: 14px;
@@ -65,17 +64,21 @@ body,
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Typography refinements */
+h1, h2, h3, h4, .heading-tight {
+  letter-spacing: -0.02em;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
 /* Safe-area insets */
 .safe-pt { padding-top: max(var(--sat), 8px); }
 .safe-pb { padding-bottom: max(var(--sab), 8px); }
 
 /* ======================================================================
-   PERMITTED ANIMATIONS ONLY
-   1) Fade + slide-up on new content (200ms ease-out)
-   2) Pipeline stage indicators lighting up in real time
-   3) Streaming text appearing token-by-token
-   4) Simple spinner only while waiting
-   NO idle/looping animations anywhere on any screen.
+   ANIMATIONS & TACTILE INTERACTIONS (60fps, Subtle & Human-Crafted)
    ====================================================================== */
 @keyframes fadeSlideUp {
   from {
@@ -93,13 +96,49 @@ body,
   animation: fadeSlideUp calc(200ms * var(--motion-scale, 1)) ease-out both;
 }
 
+/* Streaming Blinking Caret */
+@keyframes caretBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
 
-/* Primary Button: Solid fill #5E8BFF, 6px radius */
+.streaming-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.15em;
+  background-color: #60a5fa;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: caretBlink 800ms ease-in-out infinite;
+}
+
+/* Smooth Accordion Height Transitions */
+.accordion-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.accordion-grid.open {
+  grid-template-rows: 1fr;
+}
+
+.accordion-inner {
+  overflow: hidden;
+}
+
+/* GPU-Accelerated Sidebar Transition */
+.sidebar-smooth {
+  transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: width;
+}
+
+/* Primary Button: Solid fill #60A5FA, 6px radius with active press */
 .btn-primary {
-  background: #5e8bff;
-  color: #ffffff;
+  background: #60a5fa;
+  color: #09090b;
   font-size: 14px;
-  font-weight: 400;
+  font-weight: 500;
   border-radius: 6px;
   padding: 8px 16px;
   border: 1px solid transparent;
@@ -108,17 +147,21 @@ body,
   justify-content: center;
   gap: 8px;
   cursor: pointer;
-  transition: background-color 150ms ease;
+  transition: transform 100ms ease, background-color 150ms ease, opacity 150ms ease;
 }
 .btn-primary:hover:not(:disabled) {
-  background: #4e7bf0;
+  background: #3b82f6;
+  color: #ffffff;
+}
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
 }
 .btn-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
-/* Secondary Button: Outline #262629, 6px radius */
+/* Secondary Button: Hairline border, 6px radius with active press */
 .btn-secondary {
   background: transparent;
   color: #ededed;
@@ -126,41 +169,44 @@ body,
   font-weight: 400;
   border-radius: 6px;
   padding: 8px 16px;
-  border: 1px solid #262629;
+  border: 1px solid rgba(255, 255, 255, 0.07);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   cursor: pointer;
-  transition: background-color 150ms ease, border-color 150ms ease;
+  transition: transform 100ms ease, background-color 150ms ease, border-color 150ms ease, opacity 150ms ease;
 }
 .btn-secondary:hover:not(:disabled) {
-  background: #141416;
-  border-color: #38383c;
+  background: #111115;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.btn-secondary:active:not(:disabled) {
+  transform: scale(0.98);
 }
 .btn-secondary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 /* Clean Scrollbars */
 .hud-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #262629 #0a0a0b;
+  scrollbar-color: rgba(255, 255, 255, 0.12) #09090b;
 }
 .hud-scroll::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 .hud-scroll::-webkit-scrollbar-track {
-  background: #0a0a0b;
+  background: #09090b;
 }
 .hud-scroll::-webkit-scrollbar-thumb {
-  background: #262629;
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 3px;
 }
 .hud-scroll::-webkit-scrollbar-thumb:hover {
-  background: #38383c;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 /* Monospace technical data text */
@@ -171,7 +217,10 @@ body,
 /* Mobile drawer GPU transition */
 .aria-drawer {
   transform: translate3d(-100%, 0, 0);
-  transition: transform 200ms ease-out;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.aria-drawer-open {
+  transform: translate3d(0, 0, 0);
 }
 .aria-drawer-open {
   transform: translate3d(0, 0, 0);

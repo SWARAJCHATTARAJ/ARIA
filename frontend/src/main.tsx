@@ -3,6 +3,14 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import './styles/index.css';
+import { registerSW } from 'virtual:pwa-register';
+
+// Auto-update service worker immediately with skipWaiting / clientsClaim
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  registerSW({
+    immediate: true,
+  });
+}
 
 // Initialize motion scale for slow motion captures (?slow=1 sets --motion-scale: 5)
 if (typeof window !== 'undefined') {

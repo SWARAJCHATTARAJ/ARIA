@@ -7,31 +7,33 @@ export default {
   theme: {
     extend: {
       colors: {
-        canvas: '#0A0A0B',
-        panel: '#141416',
-        card: '#141416',
-        border: '#262629',
+        canvas: '#09090B',
+        sidebar: '#0C0C0F',
+        surface: '#111115',
+        panel: '#111115',
+        card: '#111115',
+        border: 'rgba(255, 255, 255, 0.07)',
         'text-primary': '#EDEDED',
         'text-secondary': '#8B8B8E',
         accent: {
-          DEFAULT: '#5E8BFF',
-          hover: '#4E7BF0',
+          DEFAULT: '#60A5FA',
+          hover: '#3B82F6',
         },
         tier: {
-          okf: '#5E8BFF',
+          okf: '#60A5FA',
           rag: '#A78BFA',
-          live: '#34D399',
+          live: '#F59E0B',
         },
-        // Mapped legacy aliases to exact non-negotiable palette
+        // Mapped aliases to exact Obsidian palette
         ink: {
-          base: '#0A0A0B',
-          surface: '#141416',
-          card: '#141416',
-          elevated: '#141416',
-          hover: '#1B1B1E',
+          base: '#09090B',
+          surface: '#111115',
+          card: '#111115',
+          elevated: '#111115',
+          hover: '#18181E',
           secondary: '#8B8B8E',
           muted: '#8B8B8E',
-          faint: '#8B8B8E',
+          faint: '#71717A',
         },
         warning: {
           DEFAULT: '#EF4444',

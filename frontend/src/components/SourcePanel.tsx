@@ -80,57 +80,161 @@ export default function SourcePanel({
   const confidenceScore = audit?.confidence ? Math.round(audit.confidence * 100) : 88;
 
   return (
-    <aside className="h-full flex flex-col bg-[#141416] border-l border-[#262629] text-[#EDEDED] select-text overflow-hidden">
+    <aside className="h-full flex flex-col bg-[#111115] border-l border-white/[0.07] text-[#EDEDED] select-text overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-[#262629] flex items-center justify-between shrink-0 bg-[#141416]">
-        <h2 className="text-[16px] font-semibold text-[#EDEDED]">
-          Sources & Audit
-        </h2>
+      <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between shrink-0 bg-[#0C0C0F]">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[13px] font-semibold text-[#EDEDED] tracking-[-0.02em] font-mono">
+            Sources & Verification
+          </h2>
+          <span className="text-[11px] font-mono text-[#71717A] tabular-nums">
+            ({citations.length})
+          </span>
+        </div>
         <button
           onClick={onClose}
-          className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#1B1B1E] transition-colors cursor-pointer"
+          className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-all cursor-pointer"
           aria-label="Close source panel"
         >
-          <X size={16} />
+          <X size={15} />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 hud-scroll">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5 hud-scroll">
         {!activeQuery && citations.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center py-20 text-[#8B8B8E]">
             <p className="text-[14px]">No sources retrieved yet.</p>
-            <p className="text-[12px] text-[#8B8B8E]/60 mt-1">Submit a question to view primary sources.</p>
+            <p className="text-[12px] text-[#71717A] mt-1 font-mono">Submit a query to inspect primary sources.</p>
           </div>
         ) : (
           <>
-            {/* Audit Summary Card */}
-            <div className="p-4 bg-[#0A0A0B] border border-[#262629] rounded-[8px] space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-[#262629]">
-                <span className="text-[12px] font-mono text-[#8B8B8E]">Router</span>
-                <span className="text-[12px] font-mono text-[#5E8BFF] font-semibold">Cascade (Tri-Tier)</span>
+            {/* Verification Summary Card */}
+            <div className="p-3.5 bg-[#09090B] border border-white/[0.07] rounded-[8px] space-y-2.5">
+              <div className="flex items-center justify-between pb-2 border-b border-white/[0.05] text-[11px] font-mono">
+                <span className="text-[#8B8B8E]">Routing Pipeline</span>
+                <span className="text-[#60A5FA] font-semibold">Cascade (Tri-Tier Concurrent)</span>
               </div>
-              <div className="flex items-center justify-between pb-2 border-b border-[#262629]">
-                <span className="text-[12px] font-mono text-[#8B8B8E]">Claim Verification</span>
-                <span className="text-[12px] font-mono text-[#EDEDED]">
+              <div className="flex items-center justify-between pb-2 border-b border-white/[0.05] text-[11px] font-mono">
+                <span className="text-[#8B8B8E]">Claim Verification</span>
+                <span className="text-[#EDEDED] tabular-nums">
                   {claimsTotalCount > 0 ? `${claimsSupportedCount}/${claimsTotalCount} Verified` : 'Audited'}
                 </span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] font-mono text-[#8B8B8E]">Confidence Score</span>
-                <span className="text-[12px] font-mono text-[#34D399] font-semibold">
+              <div className="flex items-center justify-between text-[11px] font-mono">
+                <span className="text-[#8B8B8E]">Entailment Confidence</span>
+                <span className="text-[#60A5FA] tabular-nums font-semibold">
                   {confidenceScore}%
                 </span>
               </div>
             </div>
 
+            {/* Citations List */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[12px] font-mono font-semibold text-[#8B8B8E] uppercase tracking-wider">
+                  Retrieved Primary Sources
+                </h3>
+                <span className="text-[11px] font-mono text-[#71717A] tabular-nums">
+                  {citations.length} Sources
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                {citations.map((cit) => {
+                  const isSelected = selectedCitationId === cit.id;
+                  const tierColor =
+                    cit.tier === 'OKF' ? '#60A5FA' : cit.tier === 'RAG' ? '#A78BFA' : '#F59E0B';
+                  const targetUrl = cit.doi
+                    ? cit.doi.startsWith('http')
+                      ? cit.doi
+                      : `https://doi.org/${cit.doi}`
+                    : cit.url || (cit.arxiv_id ? `https://arxiv.org/abs/${cit.arxiv_id}` : '');
+
+                  return (
+                    <div
+                      key={cit.id}
+                      id={`citation-card-${cit.id}`}
+                      ref={(el) => (cardRefs.current[cit.id] = el)}
+                      onClick={() => onSelectCitation && onSelectCitation(cit.id)}
+                      className={`p-3.5 bg-[#09090B] border rounded-[8px] space-y-2 cursor-pointer transition-all active:scale-[0.99] ${
+                        isSelected
+                          ? 'border-[#60A5FA] ring-1 ring-[#60A5FA]/20'
+                          : 'border-white/[0.07] hover:border-white/[0.15]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-mono font-semibold text-[#EDEDED] tabular-nums">
+                            § {cit.id + 1}
+                          </span>
+                          <span
+                            className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-[3px] border"
+                            style={{
+                              color: tierColor,
+                              borderColor: `${tierColor}40`,
+                              backgroundColor: `${tierColor}15`,
+                            }}
+                          >
+                            {cit.tier || 'LIVE'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyBibtex(cit);
+                            }}
+                            className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[4px] hover:bg-[#18181E] active:scale-[0.98] transition-all"
+                            title="Copy BibTeX"
+                          >
+                            {copiedId === cit.id ? <Check size={12} className="text-[#60A5FA]" /> : <Copy size={12} />}
+                          </button>
+                          {targetUrl && (
+                            <a
+                              href={targetUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-1 text-[#8B8B8E] hover:text-[#60A5FA] rounded-[4px] hover:bg-[#18181E] active:scale-[0.98] transition-all"
+                              title="Open Source Link"
+                            >
+                              <ExternalLink size={12} />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      <p className="text-[13px] font-medium text-[#EDEDED] leading-snug">
+                        {cit.title || 'Untitled Reference'}
+                      </p>
+
+                      <div className="text-[11px] font-mono text-[#71717A] leading-relaxed">
+                        {Array.isArray(cit.authors) ? cit.authors.slice(0, 3).join(', ') : cit.authors || 'Unknown'}
+                        {cit.year ? ` · ${cit.year}` : ''}
+                        {cit.venue ? ` · ${cit.venue}` : ''}
+                      </div>
+
+                      {cit.snippet && (
+                        <div className="p-2.5 bg-[#111115] border border-white/[0.05] rounded-[6px] text-[11px] font-mono text-[#A1A1AA] leading-relaxed evidence-snippet border-l-2 border-l-[#60A5FA]">
+                          {cit.snippet}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Claims Verification List */}
             {normalizedClaims.length > 0 && (
-              <div className="space-y-3">
+              <div className="space-y-3 pt-3 border-t border-white/[0.07]">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-[14px] font-semibold text-[#EDEDED]">
+                  <h3 className="text-[12px] font-mono font-semibold text-[#8B8B8E] uppercase tracking-wider">
                     Claim Entailment
                   </h3>
-                  <span className="text-[12px] font-mono text-[#8B8B8E]">
+                  <span className="text-[11px] font-mono text-[#71717A] tabular-nums">
                     {claimsSupportedCount}/{claimsTotalCount}
                   </span>
                 </div>
@@ -139,19 +243,19 @@ export default function SourcePanel({
                   {normalizedClaims.map((claim) => (
                     <div
                       key={claim.claim_id}
-                      className="p-3 bg-[#0A0A0B] border border-[#262629] rounded-[8px] space-y-2"
+                      className="p-3 bg-[#09090B] border border-white/[0.07] rounded-[8px] space-y-1.5"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <p className="text-[14px] text-[#EDEDED] leading-snug">
+                        <p className="text-[12px] text-[#EDEDED] leading-relaxed">
                           {claim.text}
                         </p>
                         <span
-                          className={`text-[12px] font-mono shrink-0 px-2 py-0.5 rounded-[4px] border ${
+                          className={`text-[10px] font-mono shrink-0 px-1.5 py-0.5 rounded-[3px] border ${
                             claim.status === 'supported'
-                              ? 'text-[#5E8BFF] border-[#5E8BFF]/30 bg-[#5E8BFF]/10'
+                              ? 'text-[#60A5FA] border-[#60A5FA]/30 bg-[#60A5FA]/10'
                               : claim.status === 'partially_supported'
-                              ? 'text-[#34D399] border-[#34D399]/30 bg-[#34D399]/10'
-                              : 'text-[#EF4444] border-[#EF4444]/30 bg-[#EF4444]/10'
+                              ? 'text-[#F59E0B] border-[#F59E0B]/30 bg-[#F59E0B]/10'
+                              : 'text-red-400 border-red-500/30 bg-red-500/10'
                           }`}
                         >
                           {claim.status === 'supported' ? 'Supported' : claim.status === 'partially_supported' ? 'Partial' : 'Unsupported'}
@@ -160,19 +264,19 @@ export default function SourcePanel({
 
                       {claim.citation_ids && claim.citation_ids.length > 0 && (
                         <div className="flex items-center gap-1 pt-1">
-                          <span className="text-[12px] font-mono text-[#8B8B8E]">Cited:</span>
+                          <span className="text-[10px] font-mono text-[#71717A]">Cited:</span>
                           {claim.citation_ids.map((cid) => {
                             const cit = citationMap.get(cid);
-                            const tierColor = cit?.tier === 'OKF' ? '#5E8BFF' : cit?.tier === 'RAG' ? '#A78BFA' : '#34D399';
+                            const tierColor = cit?.tier === 'OKF' ? '#60A5FA' : cit?.tier === 'RAG' ? '#A78BFA' : '#F59E0B';
                             return (
                               <button
                                 key={cid}
                                 type="button"
                                 onClick={() => onSelectCitation && onSelectCitation(cid)}
-                                className="px-1.5 py-0.5 bg-[#141416] border border-[#262629] text-[12px] font-mono rounded-[4px] hover:border-[#38383C]"
+                                className="px-1.5 py-0.2 bg-[#111115] border border-white/[0.07] text-[10px] font-mono rounded-[3px] hover:border-white/[0.18] tabular-nums active:scale-[0.98] transition-all"
                                 style={{ color: tierColor }}
                               >
-                                #{cid + 1}
+                                § {cid + 1}
                               </button>
                             );
                           })}
@@ -183,91 +287,6 @@ export default function SourcePanel({
                 </div>
               </div>
             )}
-
-            {/* Citations List */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-[14px] font-semibold text-[#EDEDED]">
-                  Retrieved Sources
-                </h3>
-                <span className="text-[12px] font-mono text-[#8B8B8E]">
-                  {citations.length} Sources
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                {citations.map((cit) => {
-                  const isSelected = selectedCitationId === cit.id;
-                  const tierColor = cit.tier === 'OKF' ? '#5E8BFF' : cit.tier === 'RAG' ? '#A78BFA' : '#34D399';
-
-                  return (
-                    <div
-                      key={cit.id}
-                      ref={(el) => (cardRefs.current[cit.id] = el)}
-                      onClick={() => onSelectCitation && onSelectCitation(cit.id)}
-                      className={`p-4 bg-[#0A0A0B] border rounded-[8px] space-y-2 cursor-pointer transition-colors ${
-                        isSelected ? 'border-[#5E8BFF]' : 'border-[#262629] hover:border-[#38383C]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-mono text-[#8B8B8E]">
-                            [{cit.id + 1}]
-                          </span>
-                          <span
-                            className="text-[12px] font-mono font-semibold"
-                            style={{ color: tierColor }}
-                          >
-                            {cit.tier}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopyBibtex(cit);
-                            }}
-                            className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[4px] hover:bg-[#141416] transition-colors"
-                            title="Copy BibTeX"
-                          >
-                            {copiedId === cit.id ? <Check size={12} className="text-[#34D399]" /> : <Copy size={12} />}
-                          </button>
-                          {cit.url && (
-                            <a
-                              href={cit.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[4px] hover:bg-[#141416] transition-colors"
-                            >
-                              <ExternalLink size={12} />
-                            </a>
-                          )}
-                        </div>
-                      </div>
-
-                      <p className="text-[14px] font-medium text-[#EDEDED] leading-snug">
-                        {cit.title || 'Untitled Reference'}
-                      </p>
-
-                      <div className="text-[12px] text-[#8B8B8E] leading-relaxed">
-                        {Array.isArray(cit.authors) ? cit.authors.slice(0, 3).join(', ') : cit.authors || 'Unknown'}
-                        {cit.year ? ` · ${cit.year}` : ''}
-                        {cit.venue ? ` · ${cit.venue}` : ''}
-                      </div>
-
-                      {cit.snippet && (
-                        <div className="p-2 bg-[#141416] border border-[#262629] rounded-[6px] text-[12px] font-mono text-[#8B8B8E] leading-relaxed">
-                          {cit.snippet}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           </>
         )}
       </div>
