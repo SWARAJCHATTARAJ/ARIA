@@ -220,7 +220,7 @@ function AppShell() {
       </main>
 
       {/* Right Source Panel / Research Inspector */}
-      {isSourcePanelOpen && activeTab === 'query' && (
+      {isSourcePanelOpen && (
         <>
           <div
             className="lg:hidden fixed inset-0 bg-black/60 z-40 transition-opacity duration-200"

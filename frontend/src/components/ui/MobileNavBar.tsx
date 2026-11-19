@@ -12,8 +12,8 @@ interface MobileTopBarProps {
 }
 
 export function MobileTopBar({
-  activeTab,
-  hasQuery = false,
+  activeTab: _activeTab,
+  hasQuery: _hasQuery = false,
   isInspectorOpen = false,
   onTabChange,
   onOpenDrawer,
@@ -29,13 +29,13 @@ export function MobileTopBar({
   };
 
   return (
-    <header className="md:hidden flex items-center justify-between px-3 h-12 bg-[#09090B] border-b border-white/[0.06] shrink-0 z-30 pt-[env(safe-area-inset-top,0px)] select-none">
+    <header className="md:hidden flex items-center justify-between px-3 h-11 bg-[#09090B] border-b border-white/[0.06] shrink-0 z-30 pt-[env(safe-area-inset-top,0px)] select-none">
       {/* Left: Clean ≡ menu icon button */}
       <div className="flex items-center">
         <button
           type="button"
           onClick={onOpenDrawer}
-          className="p-2 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-white/[0.04] active:scale-[0.98] transition-all cursor-pointer"
+          className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-white/[0.04] active:scale-[0.98] transition-all cursor-pointer"
           aria-label="Open navigation menu"
         >
           <Menu size={18} strokeWidth={1.8} />
@@ -48,33 +48,33 @@ export function MobileTopBar({
         onClick={handleNewQuestion}
         title="ARIA"
       >
-        <span className="font-sans text-[14px] font-medium text-[#EDEDED] tracking-[0.14em]">
+        <span className="font-sans text-[13px] font-medium text-[#EDEDED] tracking-[0.14em]">
           ARIA
         </span>
       </div>
 
-      {/* Right: Minimal + (New Question) and Research Inspector (only visible on active research thread) */}
+      {/* Right: Research Inspector toggle and + (New Question) permanently visible */}
       <div className="flex items-center gap-1">
-        {activeTab === 'query' && hasQuery && onToggleInspector && (
+        {onToggleInspector && (
           <button
             type="button"
             onClick={onToggleInspector}
-            className={`p-2 rounded-[6px] transition-all active:scale-[0.98] cursor-pointer ${
+            className={`p-1.5 rounded-[6px] transition-all active:scale-[0.98] cursor-pointer ${
               isInspectorOpen
-                ? 'text-[#60A5FA] bg-white/[0.06]'
+                ? 'text-[#60A5FA] bg-white/[0.08]'
                 : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-white/[0.04]'
             }`}
             title="Toggle Research Inspector"
             aria-label="Toggle Research Inspector"
           >
-            <PanelRightOpen size={18} strokeWidth={1.8} />
+            <PanelRightOpen size={17} strokeWidth={1.8} />
           </button>
         )}
 
         <button
           type="button"
           onClick={handleNewQuestion}
-          className="p-2 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-white/[0.04] active:scale-[0.98] transition-all cursor-pointer"
+          className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-white/[0.04] active:scale-[0.98] transition-all cursor-pointer"
           title="New Question"
           aria-label="New Question"
         >

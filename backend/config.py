@@ -41,6 +41,19 @@ class Settings(BaseSettings):
 
     def get_allowed_origins_list(self) -> List[str]:
         raw_origins = [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+        # Always include native Capacitor, Tauri, and production web origins by default
+        default_native_origins = [
+            "https://localhost",
+            "http://localhost",
+            "capacitor://localhost",
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://aria.swarajchattaraj.tech",
+        ]
+        for origin in default_native_origins:
+            if origin not in raw_origins:
+                raw_origins.append(origin)
+
         if self.environment.lower() in ("development", "dev", "local"):
             dev_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
             for d in dev_origins:

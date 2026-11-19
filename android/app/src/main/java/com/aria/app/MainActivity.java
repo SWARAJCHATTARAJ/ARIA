@@ -23,6 +23,7 @@ public class MainActivity extends BridgeActivity {
                 settings.setCacheMode(WebSettings.LOAD_DEFAULT);
                 settings.setDomStorageEnabled(true);
                 settings.setDatabaseEnabled(true);
+                settings.setTextZoom(100);
             }
         }
     }

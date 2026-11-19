@@ -36,12 +36,12 @@ app = FastAPI(title="ARIA API", version="2.0.0")
 app.include_router(export.router)
 app.include_router(okf.router)
 
-# Setup CORS - locked to settings.get_allowed_origins_list()
+# Setup CORS - always includes native Capacitor & Tauri origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_allowed_origins_list(),
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 

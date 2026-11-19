@@ -26,6 +26,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
+import { DomainPicker } from './ui/DomainPicker';
 import { streamQuery } from '../services/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim, HistoryEntry, FigureData, ChartData } from '../types';
 import { API_BASE_URL } from '../services/config';
@@ -504,11 +505,11 @@ function SearchSubmitButton({
       <button
         type="button"
         onClick={onStop}
-        className="w-8 h-8 bg-[#18181E] hover:bg-[#202026] border border-red-500/40 text-red-400 rounded-full flex items-center justify-center transition-all active:scale-[0.95] cursor-pointer shrink-0"
+        className="w-7 h-7 bg-[#18181E] hover:bg-[#202026] border border-red-500/40 text-red-400 rounded-full flex items-center justify-center transition-all active:scale-[0.95] cursor-pointer shrink-0"
         title="Stop streaming (Esc)"
         aria-label="Stop streaming"
       >
-        <Square size={11} className="fill-current" />
+        <Square size={10} className="fill-current" />
       </button>
     );
   }
@@ -517,13 +518,13 @@ function SearchSubmitButton({
     <button
       type="submit"
       disabled={disabled}
-      className="search-btn-trigger w-8 h-8 bg-[#60A5FA] hover:bg-[#3B82F6] disabled:opacity-30 disabled:cursor-not-allowed text-[#09090B] hover:text-white rounded-full transition-all active:scale-[0.94] flex items-center justify-center cursor-pointer shadow-sm shrink-0"
+      className="search-btn-trigger w-7 h-7 bg-[#60A5FA] hover:bg-[#3B82F6] disabled:opacity-30 disabled:cursor-not-allowed text-[#09090B] hover:text-white rounded-full transition-all active:scale-[0.94] flex items-center justify-center cursor-pointer shadow-sm shrink-0"
       title="Synthesize Evidence (Enter)"
       aria-label="Synthesize query"
     >
       <svg
-        width="14"
-        height="14"
+        width="13"
+        height="13"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -1137,6 +1138,10 @@ export default function ThreadView({
           friendlyMsg = 'Authentication required or session expired (HTTP 401).';
         } else if (status === 500 || rawMsg.includes('500')) {
           friendlyMsg = 'Server encountered an internal error. Please retry.';
+        } else if (rawMsg.toLowerCase().includes('failed to fetch') || rawMsg.toLowerCase().includes('networkerror')) {
+          friendlyMsg = `Network connection failed (${API_BASE_URL}). Please verify your connection or backend status.`;
+        } else if (status) {
+          friendlyMsg = `Request failed (HTTP ${status}): ${rawMsg}`;
         }
 
         const errorTelemetry: MessageTelemetry = {
@@ -1335,10 +1340,10 @@ export default function ThreadView({
         {messages.length === 0 && (
           <div className="flex-1 min-h-[70vh] flex flex-col items-center justify-center py-8 animate-fade-slide">
             <div className="w-full max-w-2xl text-center space-y-2 mb-6">
-              <h1 className="text-[22px] sm:text-[26px] font-medium tracking-[-0.025em] text-zinc-100 font-sans">
+              <h1 className="text-[19px] sm:text-[24px] font-medium tracking-[-0.02em] text-zinc-100 font-sans">
                 What would you like to research?
               </h1>
-              <p className="text-[13px] text-zinc-400 leading-relaxed max-w-sm mx-auto font-sans">
+              <p className="text-[12px] text-zinc-400 leading-relaxed max-w-[300px] mx-auto font-sans">
                 Grounded scientific synthesis across verified knowledge graphs, dense vector indexes, and primary literature.
               </p>
             </div>
@@ -1365,27 +1370,17 @@ export default function ThreadView({
                 }}
                 placeholder="Ask a research question or enter a scientific concept..."
                 rows={2}
-                className="w-full bg-transparent px-2 pt-1 pb-2 text-[14px] sm:text-[15px] font-normal text-[#EDEDED] placeholder:text-zinc-500 focus:outline-none resize-none leading-relaxed font-sans"
+                className="w-full bg-transparent px-3 py-2.5 text-[13.5px] font-normal text-[#EDEDED] placeholder:text-zinc-500 focus:outline-none resize-none leading-snug font-sans"
                 aria-label="Research query"
               />
 
               <div className="flex items-center justify-between pt-2 border-t border-white/[0.05] mt-1">
-                {/* Minimal borderless-until-hover compact selector pill */}
-                <div className="relative flex items-center">
-                  <select
-                    value={selectedTopic}
-                    onChange={(e) => setSelectedTopic(e.target.value)}
-                    className="bg-transparent hover:bg-white/[0.04] text-[12px] text-zinc-400 hover:text-zinc-200 font-sans rounded-md px-2 py-1 focus:outline-none cursor-pointer transition-colors appearance-none pr-5"
-                    title="Domain scope"
-                  >
-                    {DOMAIN_OPTIONS.map((d) => (
-                      <option key={d.id} value={d.id} className="bg-[#0B0F1A] text-[#EDEDED]">
-                        {d.label}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown size={11} className="absolute right-1.5 pointer-events-none text-zinc-500" />
-                </div>
+                {/* Sleek custom Obsidian DomainPicker */}
+                <DomainPicker
+                  value={selectedTopic}
+                  onChange={setSelectedTopic}
+                  direction="down"
+                />
 
                 <div className="flex items-center gap-2 ml-auto">
                   <span className="hidden sm:inline text-[11px] text-zinc-500 font-sans">Enter ↵</span>
@@ -1406,7 +1401,7 @@ export default function ThreadView({
                     key={pill.id}
                     type="button"
                     onClick={() => executeQuery(pill.query)}
-                    className="text-[12px] font-sans text-zinc-400 hover:text-zinc-200 border border-white/[0.06] hover:border-white/[0.14] bg-white/[0.02] hover:bg-white/[0.05] rounded-full px-3 py-1.5 transition-all active:scale-[0.98] cursor-pointer"
+                    className="text-[11.5px] font-sans text-zinc-400 hover:text-zinc-200 border border-white/[0.06] hover:border-white/[0.14] bg-white/[0.02] hover:bg-white/[0.05] rounded-full px-2.5 py-1 transition-all active:scale-[0.98] cursor-pointer"
                   >
                     {pill.label}
                   </button>
@@ -1450,7 +1445,7 @@ export default function ThreadView({
           <div key={msg.id} className="space-y-4">
             {msg.role === 'user' ? (
               <div className="flex justify-end">
-                <div className="p-3.5 px-4 bg-[#18181E] border border-white/[0.07] rounded-[8px] text-[14px] text-[#EDEDED] max-w-2xl leading-relaxed">
+                <div className="p-3 px-3.5 bg-[#18181E] border border-white/[0.07] rounded-[8px] text-[13.5px] text-[#EDEDED] max-w-2xl leading-[1.6]">
                   {msg.content}
                 </div>
               </div>
@@ -1468,16 +1463,16 @@ export default function ThreadView({
 
                 {/* Error Banner with Retry */}
                 {msg.error && (
-                  <div className="p-3 bg-[#09090B] border border-red-500/40 text-red-400 text-[12px] font-mono rounded-[6px] flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle size={14} className="shrink-0" />
-                      <span>{msg.error}</span>
+                  <div className="p-3 bg-[#09090B] border border-red-500/30 text-red-400 text-[12px] font-mono rounded-[8px] flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <AlertCircle size={14} className="shrink-0 text-red-400" />
+                      <span className="truncate">{msg.error}</span>
                     </div>
                     {msg.query && (
                       <button
                         type="button"
                         onClick={() => executeQuery(msg.query!)}
-                        className="shrink-0 px-2.5 py-1 bg-[#111115] hover:bg-[#18181E] border border-white/[0.07] text-[#EDEDED] text-[11px] rounded transition-colors flex items-center gap-1 cursor-pointer"
+                        className="shrink-0 px-2.5 py-1 bg-white/[0.05] hover:bg-white/[0.10] border border-white/[0.10] text-[#EDEDED] text-[11px] rounded transition-colors flex items-center gap-1 cursor-pointer"
                         title="Retry query"
                       >
                         <RotateCcw size={11} />
@@ -1488,7 +1483,7 @@ export default function ThreadView({
                 )}
 
                 {/* Markdown Content */}
-                <div className="text-[14px] text-[#EDEDED] leading-relaxed">
+                <div className="text-[13.5px] text-[#EDEDED] leading-[1.6]">
                   {msg.content ? (
                     <MarkdownRenderer
                       content={msg.content}
@@ -1643,22 +1638,13 @@ export default function ThreadView({
             onSubmit={handleSubmit}
             className="flex items-center gap-2 max-w-4xl mx-auto bg-[#0B0F1A] border border-white/[0.08] focus-within:border-white/[0.18] rounded-2xl p-2 transition-all duration-150"
           >
-            {/* Minimal compact domain selector */}
-            <div className="relative flex items-center shrink-0">
-              <select
-                value={selectedTopic}
-                onChange={(e) => setSelectedTopic(e.target.value)}
-                className="bg-transparent hover:bg-white/[0.04] text-[12px] text-zinc-400 hover:text-zinc-200 font-sans rounded-md px-2 py-1.5 focus:outline-none cursor-pointer transition-colors appearance-none pr-5 max-w-[105px] sm:max-w-none truncate"
-                title="Domain scope"
-              >
-                {DOMAIN_OPTIONS.map((d) => (
-                  <option key={d.id} value={d.id} className="bg-[#0B0F1A] text-[#EDEDED]">
-                    {d.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={11} className="absolute right-1.5 pointer-events-none text-zinc-500" />
-            </div>
+            {/* Sleek custom Obsidian DomainPicker */}
+            <DomainPicker
+              value={selectedTopic}
+              onChange={setSelectedTopic}
+              direction="up"
+              className="shrink-0"
+            />
 
             <textarea
               ref={textareaRef}
@@ -1677,7 +1663,7 @@ export default function ThreadView({
               }}
               placeholder="Ask a follow-up or research question..."
               rows={1}
-              className="flex-1 bg-transparent px-2 py-1.5 text-[14px] sm:text-[15px] font-normal text-[#EDEDED] placeholder:text-zinc-500 focus:outline-none resize-none leading-relaxed font-sans"
+              className="flex-1 bg-transparent px-3 py-2 text-[13.5px] font-normal text-[#EDEDED] placeholder:text-zinc-500 focus:outline-none resize-none leading-snug font-sans"
             />
 
             <SearchSubmitButton

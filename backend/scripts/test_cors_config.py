@@ -11,7 +11,10 @@ def test_cors():
     s_prod = Settings(environment="production", allowed_origins="https://aria.swarajchattaraj.tech")
     prod_origins = s_prod.get_allowed_origins_list()
     print(f"Production origins ({s_prod.environment}): {prod_origins}")
-    assert prod_origins == ["https://aria.swarajchattaraj.tech"], f"Production must ONLY allow production domain! Got: {prod_origins}"
+    assert "https://aria.swarajchattaraj.tech" in prod_origins
+    assert "https://localhost" in prod_origins
+    assert "capacitor://localhost" in prod_origins
+    assert "tauri://localhost" in prod_origins
 
     s_dev = Settings(environment="development", allowed_origins="https://aria.swarajchattaraj.tech")
     dev_origins = s_dev.get_allowed_origins_list()
@@ -19,8 +22,9 @@ def test_cors():
     assert "https://aria.swarajchattaraj.tech" in dev_origins
     assert "http://localhost:5173" in dev_origins
     assert "http://127.0.0.1:5173" in dev_origins
+    assert "https://localhost" in dev_origins
 
-    print("\n>>> PASS: CORS strictly locked to production domain only in production mode.")
+    print("\n>>> PASS: CORS correctly includes native Capacitor, Tauri, and web origins.")
     return True
 
 if __name__ == "__main__":
