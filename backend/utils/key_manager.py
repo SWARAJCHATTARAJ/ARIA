@@ -94,6 +94,8 @@ class KeyRotationManager:
             "api_key": key,
             "model_name": model_name,
             "temperature": temperature,
+            "request_timeout": extra_kwargs.pop("request_timeout", 25.0),
+            "max_retries": extra_kwargs.pop("max_retries", 0),
             **extra_kwargs
         }
         if max_tokens:
@@ -113,7 +115,8 @@ class KeyRotationManager:
     ) -> Any:
         """
         Executes an LLM function with automatic failover across key pool.
-        Catches 429 RateLimitError and 402/403 Quota errors, switching keys seamlessly.
+        Catches 429 RateLimitError, 402/403 Quota, 5xx server errors, and timeouts,
+        switching keys seamlessly.
         """
         max_attempts = max(1, len(self.keys))
         last_error = None
@@ -125,16 +128,23 @@ class KeyRotationManager:
                 return await invoke_fn(key, *args, **kwargs)
             except Exception as exc:
                 err_str = str(exc).lower()
-                is_rate_limit = (
+                is_failover_trigger = (
                     "429" in err_str or
                     "rate limit" in err_str or
                     "tokens per minute" in err_str or
                     "tpm" in err_str or
                     "quota" in err_str or
                     "402" in err_str or
-                    "403" in err_str
+                    "403" in err_str or
+                    "timeout" in err_str or
+                    "timed out" in err_str or
+                    "500" in err_str or
+                    "502" in err_str or
+                    "503" in err_str or
+                    "504" in err_str or
+                    isinstance(exc, (asyncio.TimeoutError, httpx.TimeoutException))
                 )
-                if is_rate_limit and attempt < max_attempts - 1:
+                if is_failover_trigger and attempt < max_attempts - 1:
                     logger.warning(
                         f"Failover trigger on {masked}: {exc}. Rotating to next key in pool (attempt {attempt + 1}/{max_attempts})."
                     )

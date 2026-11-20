@@ -585,6 +585,248 @@ function SearchSubmitButton({
   );
 }
 
+interface MessageItemProps {
+  msg: Message;
+  isCopied: boolean;
+  isSaved: boolean;
+  isExportingPdf: boolean;
+  isBackendReachable: boolean;
+  isMockActive: boolean;
+  feedbackStatus?: string;
+  onCitationClick: (citation: Citation) => void;
+  onExecuteQuery: (query: string) => void;
+  onCopy: (id: string, content: string) => void;
+  onDownloadBibtex: (citations?: Citation[]) => void;
+  onDownloadMarkdown: (msg: Message) => void;
+  onDownloadPdf: (msg: Message) => void;
+  onSaveToCollection: (msg: Message) => void;
+  onFeedback: (msg: Message, type: 'positive' | 'negative') => void;
+}
+
+const MessageItem = React.memo(
+  function MessageItem({
+    msg,
+    isCopied,
+    isSaved,
+    isExportingPdf,
+    isBackendReachable,
+    isMockActive,
+    feedbackStatus,
+    onCitationClick,
+    onExecuteQuery,
+    onCopy,
+    onDownloadBibtex,
+    onDownloadMarkdown,
+    onDownloadPdf,
+    onSaveToCollection,
+    onFeedback,
+  }: MessageItemProps) {
+    if (msg.role === 'user') {
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <div className="p-3 px-3.5 bg-[#18181E] border border-white/[0.07] rounded-[8px] text-[13.5px] text-[#EDEDED] max-w-2xl leading-[1.6]">
+              {msg.content}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        <div className="p-3.5 sm:p-6 bg-[#111115] border border-white/[0.07] rounded-[8px] space-y-4 w-full">
+          {/* Header Verification Strip with Inline Collapsible Research Trace */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/[0.07]">
+            <ResearchTraceBar
+              telemetry={msg.telemetry}
+              isStreaming={msg.isStreaming}
+              citationsCount={msg.citations?.length || 0}
+              hasError={Boolean(msg.error)}
+            />
+          </div>
+
+          {/* Error Banner with Retry */}
+          {msg.error && (
+            <div className="p-3 bg-[#09090B] border border-red-500/30 text-red-400 text-[12px] font-mono rounded-[8px] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertCircle size={14} className="shrink-0 text-red-400" />
+                <span className="truncate">{msg.error}</span>
+              </div>
+              {msg.query && (
+                <button
+                  type="button"
+                  onClick={() => onExecuteQuery(msg.query!)}
+                  className="shrink-0 px-2.5 py-1 bg-white/[0.05] hover:bg-white/[0.10] border border-white/[0.10] text-[#EDEDED] text-[11px] rounded transition-colors flex items-center gap-1 cursor-pointer"
+                  title="Retry query"
+                >
+                  <RotateCcw size={11} />
+                  <span>Retry</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Markdown Content */}
+          <div className="text-[13.5px] text-[#EDEDED] leading-[1.6]">
+            {msg.content ? (
+              <MarkdownRenderer
+                content={msg.content}
+                citations={msg.citations}
+                onCitationClick={onCitationClick}
+                isStreaming={msg.isStreaming}
+                auditClaims={msg.telemetry?.audit?.claims?.filter((c): c is AuditClaim => typeof c === 'object' && c !== null)}
+                answerFinal={msg.telemetry?.audit?.answer_final}
+              />
+            ) : msg.isStreaming ? (
+              <div className="flex items-center gap-2 py-4 text-[#8B8B8E] text-[13px] font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA] animate-pulse" />
+                <span>Retrieving and synthesizing primary evidence...</span>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Verified Topic Figures & Diagrams */}
+          {!msg.isStreaming && (msg.figures || msg.telemetry?.figures) && (
+            <VisualFiguresGrid figures={msg.figures || msg.telemetry?.figures} />
+          )}
+
+          {/* Topic-Wise Quantitative Data Graph */}
+          {!msg.isStreaming && (msg.chart || msg.telemetry?.chart) && (
+            <TopicChart chart={msg.chart || msg.telemetry?.chart} />
+          )}
+
+          {/* Contextual Follow-Up Questions */}
+          {!msg.isStreaming && msg.content && (
+            <div className="pt-3 border-t border-white/[0.05] space-y-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#71717A]">
+                <Sparkles size={11} className="text-[#60A5FA]" />
+                <span>Follow-up Research Questions</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {getFollowUpQuestions(msg.query || '', msg.content).map((fq, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => onExecuteQuery(fq)}
+                    className="text-left px-3 py-1.5 bg-[#09090B] hover:bg-[#18181E] border border-white/[0.07] hover:border-white/[0.14] rounded-[6px] text-[12px] text-[#EDEDED] flex items-center gap-1.5 active:scale-[0.98] transition-all cursor-pointer group"
+                  >
+                    <span className="line-clamp-1">{fq}</span>
+                    <ArrowUpRight size={11} className="text-[#71717A] group-hover:text-[#60A5FA] shrink-0 transition-colors" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Action Bar */}
+          {!msg.isStreaming && msg.content && (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/[0.07]">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => onCopy(msg.id, msg.content)}
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  {isCopied ? <Check size={13} className="text-[#60A5FA]" /> : <Copy size={13} />}
+                  <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                </button>
+
+                <button
+                  onClick={() => onDownloadBibtex(msg.citations)}
+                  disabled={!msg.citations || msg.citations.length === 0}
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
+                  title="Export BibTeX"
+                >
+                  <Download size={13} />
+                  <span>.BIB</span>
+                </button>
+
+                <button
+                  onClick={() => onDownloadMarkdown(msg)}
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                  title="Export Markdown (.md)"
+                >
+                  <FileText size={13} />
+                  <span>.MD</span>
+                </button>
+
+                <button
+                  onClick={() => onDownloadPdf(msg)}
+                  disabled={isExportingPdf}
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
+                  title="Export PDF Report"
+                >
+                  {isExportingPdf ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin text-[#60A5FA]" />
+                      <span>Exporting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileText size={13} />
+                      <span>PDF</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => onSaveToCollection(msg)}
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                  title="Save to Collection"
+                >
+                  <Bookmark
+                    size={13}
+                    className={isSaved ? 'text-[#60A5FA] fill-[#60A5FA]' : ''}
+                  />
+                  <span>{isSaved ? 'Saved' : 'Save'}</span>
+                </button>
+              </div>
+
+              {isBackendReachable && !isMockActive && (
+                <div className="flex items-center gap-2">
+                  {feedbackStatus ? (
+                    <span className="text-[12px] font-mono text-[#60A5FA] flex items-center gap-1">
+                      <Check size={13} /> Feedback Recorded
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => onFeedback(msg, 'positive')}
+                        className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                        title="Helpful"
+                      >
+                        <ThumbsUp size={13} />
+                      </button>
+                      <button
+                        onClick={() => onFeedback(msg, 'negative')}
+                        className="p-1 text-[#8B8B8E] hover:text-red-400 active:scale-[0.98] transition-all cursor-pointer"
+                        title="Unhelpful"
+                      >
+                        <ThumbsDown size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  },
+  (prev, next) => {
+    return (
+      prev.msg === next.msg &&
+      prev.isCopied === next.isCopied &&
+      prev.isSaved === next.isSaved &&
+      prev.isExportingPdf === next.isExportingPdf &&
+      prev.isBackendReachable === next.isBackendReachable &&
+      prev.isMockActive === next.isMockActive &&
+      prev.feedbackStatus === next.feedbackStatus
+    );
+  }
+);
+
 interface ThreadViewProps {
   onCitationClick: (citation: Citation) => void;
   isFocusMode: boolean;
@@ -1061,7 +1303,7 @@ export default function ThreadView({
     let pendingEvents: any[] = [];
     let throttleTimer: number | null = null;
     let lastFlushTime = 0;
-    const THROTTLE_INTERVAL_MS = 50; // Smooth 20fps token batching
+    const THROTTLE_INTERVAL_MS = 65; // Responsive 60-80ms token batching for smooth WebView scrolling
 
     const flushEvents = () => {
       if (throttleTimer !== null) {
@@ -1142,107 +1384,136 @@ export default function ThreadView({
       streamHeaders['Authorization'] = `Bearer ${accessToken}`;
     }
 
-    streamQuery({
-      query: queryText.trim(),
-      topic: selectedTopic !== 'auto' ? selectedTopic : undefined,
-      compareMode: false,
-      signal: abortController.signal,
-      mockFixtureKey: mockKey,
-      customHeaders: streamHeaders,
+    (async () => {
+      try {
+        await streamQuery({
+          query: queryText.trim(),
+          topic: selectedTopic !== 'auto' ? selectedTopic : undefined,
+          compareMode: false,
+          signal: abortController.signal,
+          mockFixtureKey: mockKey,
+          customHeaders: streamHeaders,
 
-      onMockState: (isMock) => {
-        if (onMockStateChange) onMockStateChange(isMock);
-      },
-      onEvent: (evt) => {
-        pendingEvents.push(evt);
-        if (
-          evt.event === 'done' ||
-          evt.event === 'error' ||
-          evt.event === 'audit' ||
-          evt.event === 'route' ||
-          evt.event === 'retrieve'
-        ) {
-          scheduleFlush(true);
-        } else {
-          scheduleFlush(false);
-        }
-      },
-      onError: (err: any) => {
-        // If aborted by user, clean exit without error banner
-        if (abortController.signal.aborted) {
+          onMockState: (isMock) => {
+            if (onMockStateChange) onMockStateChange(isMock);
+          },
+          onEvent: (evt) => {
+            pendingEvents.push(evt);
+            if (
+              evt.event === 'done' ||
+              evt.event === 'error' ||
+              evt.event === 'audit' ||
+              evt.event === 'route' ||
+              evt.event === 'retrieve'
+            ) {
+              scheduleFlush(true);
+            } else {
+              scheduleFlush(false);
+            }
+          },
+          onError: (err: any) => {
+            // If aborted by user, clean exit without error banner
+            if (abortController.signal.aborted) {
+              setIsLoading(false);
+              return;
+            }
+            scheduleFlush(true);
+            if (streamThrottleCleanupRef.current) {
+              streamThrottleCleanupRef.current();
+              streamThrottleCleanupRef.current = null;
+            }
+            setIsLoading(false);
+            if (onQueryErrorChange) onQueryErrorChange(true);
+            const status = err?.status;
+            const rawMsg = err?.message || 'Failed to connect to backend';
+
+            let friendlyMsg = rawMsg;
+            if (status === 401 || rawMsg.includes('401') || rawMsg.toLowerCase().includes('unauthorized')) {
+              friendlyMsg = 'Authentication required or session expired (HTTP 401).';
+            } else if (status === 500 || rawMsg.includes('500')) {
+              friendlyMsg = 'Server encountered an internal error. Please retry.';
+            } else if (rawMsg.toLowerCase().includes('failed to fetch') || rawMsg.toLowerCase().includes('networkerror')) {
+              friendlyMsg = `Network connection failed (${API_BASE_URL}). Please verify your connection or backend status.`;
+            } else if (status) {
+              friendlyMsg = `Request failed (HTTP ${status}): ${rawMsg}`;
+            }
+
+            const errorTelemetry: MessageTelemetry = {
+              ...currentTelemetry,
+              stage: 'error',
+            };
+            if (onUpdateActiveTelemetry) {
+              onUpdateActiveTelemetry(errorTelemetry);
+            }
+
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === ariaMsgId
+                  ? {
+                      ...msg,
+                      isStreaming: false,
+                      error: friendlyMsg,
+                      telemetry: errorTelemetry,
+                    }
+                  : msg
+              )
+            );
+          },
+          onDone: () => {
+            scheduleFlush(true);
+            if (streamThrottleCleanupRef.current) {
+              streamThrottleCleanupRef.current();
+              streamThrottleCleanupRef.current = null;
+            }
+            setIsLoading(false);
+            if (onQueryErrorChange) onQueryErrorChange(false);
+            setMessages((prev) =>
+              prev.map((msg) => (msg.id === ariaMsgId ? { ...msg, isStreaming: false } : msg))
+            );
+            if (!isMockActive && !mockKey && finalContentRef.current) {
+              try {
+                addHistoryEntry({
+                  query: lastQueryRef.current,
+                  snippet: finalContentRef.current
+                    .replace(/[#*`>\[\]]/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .slice(0, 220),
+                  confidence: finalConfidenceRef.current,
+                });
+              } catch {
+                // storage quiet ignore
+              }
+            }
+          },
+        });
+      } catch (err: any) {
+        if (!abortController.signal.aborted) {
           setIsLoading(false);
-          return;
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === ariaMsgId
+                ? {
+                    ...msg,
+                    isStreaming: false,
+                    error: err?.message || 'Unexpected streaming error',
+                  }
+                : msg
+            )
+          );
         }
-        scheduleFlush(true);
+      } finally {
+        // Guaranteed cleanup of streaming state across all paths
+        setIsLoading(false);
         if (streamThrottleCleanupRef.current) {
           streamThrottleCleanupRef.current();
           streamThrottleCleanupRef.current = null;
         }
-        setIsLoading(false);
-        if (onQueryErrorChange) onQueryErrorChange(true);
-        const status = err?.status;
-        const rawMsg = err?.message || 'Failed to connect to backend';
-
-        let friendlyMsg = rawMsg;
-        if (status === 401 || rawMsg.includes('401') || rawMsg.toLowerCase().includes('unauthorized')) {
-          friendlyMsg = 'Authentication required or session expired (HTTP 401).';
-        } else if (status === 500 || rawMsg.includes('500')) {
-          friendlyMsg = 'Server encountered an internal error. Please retry.';
-        } else if (rawMsg.toLowerCase().includes('failed to fetch') || rawMsg.toLowerCase().includes('networkerror')) {
-          friendlyMsg = `Network connection failed (${API_BASE_URL}). Please verify your connection or backend status.`;
-        } else if (status) {
-          friendlyMsg = `Request failed (HTTP ${status}): ${rawMsg}`;
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
         }
-
-        const errorTelemetry: MessageTelemetry = {
-          ...currentTelemetry,
-          stage: 'error',
-        };
-        if (onUpdateActiveTelemetry) {
-          onUpdateActiveTelemetry(errorTelemetry);
-        }
-
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === ariaMsgId
-              ? {
-                  ...msg,
-                  isStreaming: false,
-                  error: friendlyMsg,
-                  telemetry: errorTelemetry,
-                }
-              : msg
-          )
-        );
-      },
-      onDone: () => {
-        scheduleFlush(true);
-        if (streamThrottleCleanupRef.current) {
-          streamThrottleCleanupRef.current();
-          streamThrottleCleanupRef.current = null;
-        }
-        setIsLoading(false);
-        if (onQueryErrorChange) onQueryErrorChange(false);
-        setMessages((prev) =>
-          prev.map((msg) => (msg.id === ariaMsgId ? { ...msg, isStreaming: false } : msg))
-        );
-        if (!isMockActive && !mockKey && finalContentRef.current) {
-          try {
-            addHistoryEntry({
-              query: lastQueryRef.current,
-              snippet: finalContentRef.current
-                .replace(/[#*`>\[\]]/g, ' ')
-                .replace(/\s+/g, ' ')
-                .trim()
-                .slice(0, 220),
-              confidence: finalConfidenceRef.current,
-            });
-          } catch {
-            // storage quiet ignore
-          }
-        }
-      },
-    });
+      }
+    })();
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -1516,200 +1787,24 @@ export default function ThreadView({
         )}
 
         {messages.map((msg) => (
-          <div key={msg.id} className="space-y-4">
-            {msg.role === 'user' ? (
-              <div className="flex justify-end">
-                <div className="p-3 px-3.5 bg-[#18181E] border border-white/[0.07] rounded-[8px] text-[13.5px] text-[#EDEDED] max-w-2xl leading-[1.6]">
-                  {msg.content}
-                </div>
-              </div>
-            ) : (
-              <div className="p-3.5 sm:p-6 bg-[#111115] border border-white/[0.07] rounded-[8px] space-y-4 w-full">
-                {/* Header Verification Strip with Inline Collapsible Research Trace */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/[0.07]">
-                  <ResearchTraceBar
-                    telemetry={msg.telemetry}
-                    isStreaming={msg.isStreaming}
-                    citationsCount={msg.citations?.length || 0}
-                    hasError={Boolean(msg.error)}
-                  />
-                </div>
-
-                {/* Error Banner with Retry */}
-                {msg.error && (
-                  <div className="p-3 bg-[#09090B] border border-red-500/30 text-red-400 text-[12px] font-mono rounded-[8px] flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <AlertCircle size={14} className="shrink-0 text-red-400" />
-                      <span className="truncate">{msg.error}</span>
-                    </div>
-                    {msg.query && (
-                      <button
-                        type="button"
-                        onClick={() => executeQuery(msg.query!)}
-                        className="shrink-0 px-2.5 py-1 bg-white/[0.05] hover:bg-white/[0.10] border border-white/[0.10] text-[#EDEDED] text-[11px] rounded transition-colors flex items-center gap-1 cursor-pointer"
-                        title="Retry query"
-                      >
-                        <RotateCcw size={11} />
-                        <span>Retry</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Markdown Content */}
-                <div className="text-[13.5px] text-[#EDEDED] leading-[1.6]">
-                  {msg.content ? (
-                    <MarkdownRenderer
-                      content={msg.content}
-                      citations={msg.citations}
-                      onCitationClick={onCitationClick}
-                      isStreaming={msg.isStreaming}
-                      auditClaims={msg.telemetry?.audit?.claims?.filter((c): c is AuditClaim => typeof c === 'object' && c !== null)}
-                      answerFinal={msg.telemetry?.audit?.answer_final}
-                    />
-                  ) : msg.isStreaming ? (
-                    <div className="flex items-center gap-2 py-4 text-[#8B8B8E] text-[13px] font-mono">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA] animate-pulse" />
-                      <span>Retrieving and synthesizing primary evidence...</span>
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Verified Topic Figures & Diagrams */}
-                {!msg.isStreaming && (msg.figures || msg.telemetry?.figures) && (
-                  <VisualFiguresGrid figures={msg.figures || msg.telemetry?.figures} />
-                )}
-
-                {/* Topic-Wise Quantitative Data Graph */}
-                {!msg.isStreaming && (msg.chart || msg.telemetry?.chart) && (
-                  <TopicChart chart={msg.chart || msg.telemetry?.chart} />
-                )}
-
-                {/* Contextual Follow-Up Questions */}
-                {!msg.isStreaming && msg.content && (
-                  <div className="pt-3 border-t border-white/[0.05] space-y-2">
-                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#71717A]">
-                      <Sparkles size={11} className="text-[#60A5FA]" />
-                      <span>Follow-up Research Questions</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {getFollowUpQuestions(msg.query || '', msg.content).map((fq, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => executeQuery(fq)}
-                          className="text-left px-3 py-1.5 bg-[#09090B] hover:bg-[#18181E] border border-white/[0.07] hover:border-white/[0.14] rounded-[6px] text-[12px] text-[#EDEDED] flex items-center gap-1.5 active:scale-[0.98] transition-all cursor-pointer group"
-                        >
-                          <span className="line-clamp-1">{fq}</span>
-                          <ArrowUpRight size={11} className="text-[#71717A] group-hover:text-[#60A5FA] shrink-0 transition-colors" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Action Bar */}
-                {!msg.isStreaming && msg.content && (
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/[0.07]">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => handleCopy(msg.id, msg.content)}
-                        className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
-                      >
-                        {copiedMsgId === msg.id ? <Check size={13} className="text-[#60A5FA]" /> : <Copy size={13} />}
-                        <span>{copiedMsgId === msg.id ? 'Copied' : 'Copy'}</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleDownloadBibtex(msg.citations)}
-                        disabled={!msg.citations || msg.citations.length === 0}
-                        className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
-                        title="Export BibTeX"
-                      >
-                        <Download size={13} />
-                        <span>.BIB</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleDownloadMarkdown(msg)}
-                        className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
-                        title="Export Markdown (.md)"
-                      >
-                        <FileText size={13} />
-                        <span>.MD</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleDownloadPdf(msg)}
-                        disabled={isExportingPdf[msg.id]}
-                        className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
-                        title="Export PDF Report"
-                      >
-                        {isExportingPdf[msg.id] ? (
-                          <>
-                            <Loader2 size={12} className="animate-spin text-[#60A5FA]" />
-                            <span>Exporting...</span>
-                          </>
-                        ) : (
-                          <>
-                            <FileText size={13} />
-                            <span>PDF</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => handleSaveToCollection(msg)}
-                        className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
-                        title="Save to Collection"
-                      >
-                        <Bookmark
-                          size={13}
-                          className={
-                            savedCollectionIds[msg.id] || isInCollection(msg.query || '')
-                              ? 'text-[#60A5FA] fill-[#60A5FA]'
-                              : ''
-                          }
-                        />
-                        <span>
-                          {savedCollectionIds[msg.id] || isInCollection(msg.query || '')
-                            ? 'Saved'
-                            : 'Save'}
-                        </span>
-                      </button>
-                    </div>
-
-                    {isBackendReachable && !isMockActive && (
-                      <div className="flex items-center gap-2">
-                        {feedbackSent[msg.id] ? (
-                          <span className="text-[12px] font-mono text-[#60A5FA] flex items-center gap-1">
-                            <Check size={13} /> Feedback Recorded
-                          </span>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleFeedback(msg, 'positive')}
-                              className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
-                              title="Helpful"
-                            >
-                              <ThumbsUp size={13} />
-                            </button>
-                            <button
-                              onClick={() => handleFeedback(msg, 'negative')}
-                              className="p-1 text-[#8B8B8E] hover:text-red-400 active:scale-[0.98] transition-all cursor-pointer"
-                              title="Unhelpful"
-                            >
-                              <ThumbsDown size={13} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <MessageItem
+            key={msg.id}
+            msg={msg}
+            isCopied={copiedMsgId === msg.id}
+            isSaved={Boolean(savedCollectionIds[msg.id] || isInCollection(msg.query || ''))}
+            isExportingPdf={Boolean(isExportingPdf[msg.id])}
+            isBackendReachable={isBackendReachable}
+            isMockActive={isMockActive}
+            feedbackStatus={feedbackSent[msg.id]}
+            onCitationClick={onCitationClick}
+            onExecuteQuery={executeQuery}
+            onCopy={handleCopy}
+            onDownloadBibtex={handleDownloadBibtex}
+            onDownloadMarkdown={handleDownloadMarkdown}
+            onDownloadPdf={handleDownloadPdf}
+            onSaveToCollection={handleSaveToCollection}
+            onFeedback={handleFeedback}
+          />
         ))}
         <div ref={messagesEndRef} />
       </div>

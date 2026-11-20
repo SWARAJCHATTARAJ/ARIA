@@ -11,6 +11,7 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "ARIA-Scientific-Assistant/2.0 (https://aria.swarajchattaraj.tech; contact@swarajchattaraj.tech)"
+EXTERNAL_MEDIA_TIMEOUT = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
 
 # UI, navigation, and non-subject terms to discard from media searches
 MEDIA_REJECT_TERMS = {
@@ -151,7 +152,7 @@ async def fetch_verified_figures(
     figures: List[Dict[str, Any]] = []
     seen_urls = set()
 
-    async with httpx.AsyncClient(timeout=4.0) as client:
+    async with httpx.AsyncClient(timeout=EXTERNAL_MEDIA_TIMEOUT) as client:
         resolved_title = clean_topic
 
         # 1. Canonical Wikipedia Summary / PageImage (Highest precision)
@@ -580,15 +581,19 @@ def render_chart_matplotlib(chart_data: Optional[Dict[str, Any]]) -> Optional[by
     """
     Renders publication-style chart bytes using Matplotlib (Agg backend).
     White background, clean academic typography, sharp 300 DPI, fits standard page widths.
+    Strictly closes every figure inside a try ... finally: plt.close(fig); plt.close('all') block
+    to eliminate memory leaks on the server.
     """
     if not chart_data:
         return None
-    try:
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-        import numpy as np
 
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    fig = None
+    try:
         categories = chart_data.get("categories") or []
         series = chart_data.get("series") or []
         if not categories or not series:
@@ -654,21 +659,30 @@ def render_chart_matplotlib(chart_data: Optional[Dict[str, Any]]) -> Optional[by
         plt.tight_layout()
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=300, facecolor=fig.get_facecolor(), edgecolor='none', bbox_inches='tight')
-        plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
     except Exception as e:
         logger.error(f"Matplotlib chart rendering failed: {e}")
         return None
+    finally:
+        if fig is not None:
+            try:
+                plt.close(fig)
+            except Exception:
+                pass
+        try:
+            plt.close('all')
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
 # Safe Image Downloader with Pillow Verification for PDF
 # ---------------------------------------------------------------------------
 
-async def download_image_safe(url: str, timeout: float = 3.5) -> Optional[bytes]:
+async def download_image_safe(url: str, timeout: Optional[float] = None) -> Optional[bytes]:
     """
-    Downloads image with a 3.5-second timeout and proper User-Agent header.
+    Downloads image with strict timeout and proper User-Agent header.
     Validates and converts image via Pillow to a standard RGB JPEG/PNG byte stream.
     Skips cleanly on network or decoding error without crashing.
     """
@@ -677,7 +691,7 @@ async def download_image_safe(url: str, timeout: float = 3.5) -> Optional[bytes]
 
     try:
         headers = {"User-Agent": USER_AGENT}
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=EXTERNAL_MEDIA_TIMEOUT) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code != 200:
                 return None

@@ -11,6 +11,7 @@ import { SettingsProvider } from './context/SettingsContext';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import LoginScreen from './components/LoginScreen';
 import AuthModal from './components/ui/AuthModal';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 import { Loader2 } from 'lucide-react';
 
 const MarkdownTestHarness = lazy(() => import('./components/MarkdownTestHarness'));
@@ -47,8 +48,10 @@ export default function App() {
   return (
     <AuthProvider>
       <SettingsProvider>
-        <ConnectivityBanner />
-        <RootGate />
+        <ErrorBoundary surface="Workspace">
+          <ConnectivityBanner />
+          <RootGate />
+        </ErrorBoundary>
       </SettingsProvider>
     </AuthProvider>
   );
@@ -188,36 +191,38 @@ function AppShell() {
       </div>
 
       {/* Center Thread Workspace */}
-      <main
-        key={activeTab}
-        className="flex-1 flex flex-col h-full md:border-r border-white/[0.07] bg-[#09090B] transition-all w-full overflow-hidden animate-fade-slide relative"
-      >
-        {activeTab === 'query' && (
-          <ThreadView
-            onCitationClick={handleCitationClick}
-            isFocusMode={isFocusMode}
-            onToggleFocus={() => setIsFocusMode(!isFocusMode)}
-            onQueryStateChange={setHasQuery}
-            onUpdateActiveTelemetry={setActiveTelemetry}
-            onUpdateActiveCitations={setActiveCitations}
-            onMockStateChange={setIsMockActive}
-            activeTelemetry={activeTelemetry}
-            activeCitations={activeCitations}
-            isMockActive={isMockActive}
-            pendingQuery={pendingQuery}
-            onPendingQueryConsumed={() => setPendingQuery(null)}
-            onSourcesExpand={handleSourcesExpand}
-            onToggleSidebar={() => setIsMobileDrawerOpen(true)}
-            isInspectorOpen={isSourcePanelOpen}
-            onToggleInspector={() => setSourcePanelOpen((prev) => !prev)}
-            onQueryErrorChange={setHasActiveError}
-          />
-        )}
-        {activeTab === 'history' && <HistoryView onOpenQuery={handleOpenQuery} />}
-        {activeTab === 'collections' && <CollectionsView />}
-        {activeTab === 'okf' && <OkfSpaceView />}
-        {activeTab === 'settings' && <SettingsView />}
-      </main>
+      <ErrorBoundary surface="Workspace">
+        <main
+          key={activeTab}
+          className="flex-1 flex flex-col h-full md:border-r border-white/[0.07] bg-[#09090B] transition-all w-full overflow-hidden animate-fade-slide relative"
+        >
+          {activeTab === 'query' && (
+            <ThreadView
+              onCitationClick={handleCitationClick}
+              isFocusMode={isFocusMode}
+              onToggleFocus={() => setIsFocusMode(!isFocusMode)}
+              onQueryStateChange={setHasQuery}
+              onUpdateActiveTelemetry={setActiveTelemetry}
+              onUpdateActiveCitations={setActiveCitations}
+              onMockStateChange={setIsMockActive}
+              activeTelemetry={activeTelemetry}
+              activeCitations={activeCitations}
+              isMockActive={isMockActive}
+              pendingQuery={pendingQuery}
+              onPendingQueryConsumed={() => setPendingQuery(null)}
+              onSourcesExpand={handleSourcesExpand}
+              onToggleSidebar={() => setIsMobileDrawerOpen(true)}
+              isInspectorOpen={isSourcePanelOpen}
+              onToggleInspector={() => setSourcePanelOpen((prev) => !prev)}
+              onQueryErrorChange={setHasActiveError}
+            />
+          )}
+          {activeTab === 'history' && <HistoryView onOpenQuery={handleOpenQuery} />}
+          {activeTab === 'collections' && <CollectionsView />}
+          {activeTab === 'okf' && <OkfSpaceView />}
+          {activeTab === 'settings' && <SettingsView />}
+        </main>
+      </ErrorBoundary>
 
       {/* Right Source Panel / Research Inspector */}
       {isSourcePanelOpen && (

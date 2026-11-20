@@ -13,7 +13,7 @@ interface MarkdownRendererProps {
 }
 
 export function cleanCompoundHyphens(text: string): string {
-  if (!text) return text;
+  if (!text || !text.includes('_')) return text;
   // Replace underscores that join compound words / technical terms with standard hyphens
   // e.g. fixed_bit -> fixed-bit, 8_bit -> 8-bit, sub_spaces -> sub-spaces, Graph_Based -> Graph-Based,
   // IVF_PQ -> IVF-PQ, fine_grained -> fine-grained, off_target -> off-target
@@ -191,7 +191,7 @@ function MarkdownRendererInner({
     // 5. **bold**
     // 6. *italic*
     // 7. [text](url)
-    const tokenRegex = /(\[\[c:(\d+)\]\])|(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\])|(?:\$([^\$\n]+?)\$|\\\(([\s\S]+?)\\\))|(`([^`]+)`)|(?:\*\*([^*]+)\*\*)|(?:\*([^*]+)\*)|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g;
+    const tokenRegex = /(\[\[c:(\d+)\]\])|(?:\$\$([\s\S]{1,2000}?)\$\$|\\\[([^\\\]]{1,2000}?)\\\])|(?:\$([^\$\n]{1,500}?)\$|\\\(([^\)\n]{1,500}?)\\\))|(`([^`\n]+)`)|(?:\*\*([^*\n]+)\*\*)|(?:\*([^*\n]+)\*)|(\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\))/g;
     let lastIndex = 0;
     let match: RegExpExecArray | null;
     let i = 0;
@@ -430,20 +430,19 @@ function MarkdownRendererInner({
 
   // Structured Block Parsing: Headings, Code blocks, Tables, Lists, Paragraphs
   const blocks = React.useMemo(() => {
-    // 1. Break displayContent into line spans with absolute offsets
+    // 1. Break displayContent into line spans with absolute offsets in linear O(n) time
     const lineSpans: LineSpan[] = [];
-    const lineRegex = /(.*?)(\r?\n|$)/g;
-    let match: RegExpExecArray | null;
-    while ((match = lineRegex.exec(displayContent)) !== null) {
-      if (match.index === displayContent.length) break;
-      const lineText = match[1];
-      const sep = match[2];
+    const rawLines = displayContent.split('\n');
+    let offset = 0;
+    for (let i = 0; i < rawLines.length; i++) {
+      let lText = rawLines[i];
+      if (lText.endsWith('\r')) lText = lText.slice(0, -1);
       lineSpans.push({
-        text: lineText,
-        start: match.index,
-        end: match.index + lineText.length,
+        text: lText,
+        start: offset,
+        end: offset + lText.length,
       });
-      if (!sep) break;
+      offset += rawLines[i].length + 1;
     }
 
     const result: React.ReactNode[] = [];

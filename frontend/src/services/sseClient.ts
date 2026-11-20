@@ -77,14 +77,18 @@ export async function streamQuery({
   // Read API base URL from shared config module
   const url = `${API_BASE_URL}/api/query`;
 
-  // 1. Safely retrieve the current session token via supabase.auth.getSession()
+  // 1. Safely retrieve the current session token via supabase.auth.getSession() with 5s timeout guard
   let token: string | undefined;
   if (supabase) {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) =>
+        setTimeout(() => resolve({ data: { session: null } }), 5000)
+      );
+      const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
       token = session?.access_token;
     } catch (err) {
-      console.warn('Failed to retrieve Supabase session token:', err);
+      console.warn('Failed to retrieve Supabase session token (or timed out after 5s):', err);
     }
   }
 
@@ -162,13 +166,35 @@ export async function streamQuery({
     let buffer = '';
     let receivedDone = false;
 
+    // 30-Second Inactivity Watchdog: if no data or heartbeat comments arrive for 30s, abort cleanly
+    const readWithWatchdog = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+      let timeoutId: any;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('Connection timed out: No data or heartbeats received from server for 30 seconds. Please retry.'));
+        }, 30000);
+      });
+
+      try {
+        const result = await Promise.race([reader.read(), timeoutPromise]);
+        clearTimeout(timeoutId);
+        return result;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        try {
+          await reader.cancel();
+        } catch {}
+        throw err;
+      }
+    };
+
     while (true) {
       if (signal?.aborted) {
         reader.cancel();
         return;
       }
 
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithWatchdog();
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });

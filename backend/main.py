@@ -127,6 +127,7 @@ async def test_key_endpoint(req: KeyTestRequest, request: Request):
     return res
 
 @app.post("/api/query")
+@app.post("/api/research")
 async def query_pipeline(req: QueryRequest, request: Request):
     """
     Main endpoint for ARIA query pipeline.
@@ -398,11 +399,25 @@ async def query_pipeline(req: QueryRequest, request: Request):
                         yield f"data: {json.dumps({'event': 'done'})}\n\n"
                         return
 
-                    active_writer = km.create_chat_groq(model_name=settings.groq_writer_model, temperature=0.0)
-                    async for chunk in active_writer.astream(messages, max_tokens=1200):
+                    active_writer = km.create_chat_groq(
+                        model_name=settings.groq_writer_model,
+                        temperature=0.0,
+                        request_timeout=25.0,
+                        max_retries=0
+                    )
+                    stream_iter = active_writer.astream(messages, max_tokens=1200).__aiter__()
+                    while True:
                         if time.time() - start_time > MAX_STREAM_DURATION_SECONDS:
                             logger.warning(f"[{request_id}] Stream exceeded 90s limit during token streaming.")
                             break
+                        if await request.is_disconnected():
+                            logger.info(f"[{request_id}] Client disconnected during token streaming. Stopping.")
+                            return
+                        try:
+                            chunk = await asyncio.wait_for(stream_iter.__anext__(), timeout=25.0)
+                        except StopAsyncIteration:
+                            break
+
                         full_resp = chunk if full_resp is None else full_resp + chunk
                         delta = chunk.content
                         if delta:
@@ -415,11 +430,17 @@ async def query_pipeline(req: QueryRequest, request: Request):
                     break
                 except Exception as stream_err:
                     err_str = str(stream_err).lower()
-                    is_busy = "429" in err_str or "rate limit" in err_str or "ratelimit" in err_str or "quota" in err_str or "402" in err_str or "403" in err_str or "tpm" in err_str
+                    is_busy = (
+                        "429" in err_str or "rate limit" in err_str or "ratelimit" in err_str or
+                        "quota" in err_str or "402" in err_str or "403" in err_str or "tpm" in err_str or
+                        "timeout" in err_str or "timed out" in err_str or "500" in err_str or
+                        "502" in err_str or "503" in err_str or "504" in err_str or
+                        isinstance(stream_err, (asyncio.TimeoutError, httpx.TimeoutException))
+                    )
                     if is_busy and attempt < max_writer_attempts - 1 and len(full_answer) == 0:
                         failed_key = km.get_healthy_key()
                         km.mark_key_rate_limited(failed_key)
-                        logger.warning(f"[{request_id}] Writer rate limit hit. Rotating key to next in pool (attempt {attempt + 1}/{max_writer_attempts}).")
+                        logger.warning(f"[{request_id}] Writer rate limit or timeout hit ({stream_err}). Rotating key to next in pool (attempt {attempt + 1}/{max_writer_attempts}).")
                         continue
                     if is_busy:
                         headers = getattr(stream_err, "response", None)
@@ -561,12 +582,15 @@ async def query_pipeline(req: QueryRequest, request: Request):
 
         producer_task = asyncio.create_task(producer())
         try:
+            # Immediate initial SSE event (< 100ms) so Vercel / Caddy never time out waiting for first byte
+            yield f"data: {json.dumps({'event': 'start', 'status': 'planning', 'thread_id': thread_id})}\n\n"
+
             while True:
                 if await request.is_disconnected():
                     logger.info(f"[{request_id}] Client disconnected (active loop). Terminating SSE stream.")
                     break
                 try:
-                    chunk = await asyncio.wait_for(sse_queue.get(), timeout=2.0)
+                    chunk = await asyncio.wait_for(sse_queue.get(), timeout=6.0)
                 except asyncio.TimeoutError:
                     if await request.is_disconnected():
                         logger.info(f"[{request_id}] Client disconnected during keep-alive wait. Terminating SSE stream.")
@@ -589,7 +613,13 @@ async def query_pipeline(req: QueryRequest, request: Request):
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={"X-Content-Type-Options": "nosniff", "X-Request-ID": request_id}
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+            "X-Request-ID": request_id
+        }
     )
 
 @app.get("/api/test-queue")
@@ -1036,11 +1066,12 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
                 chart_for_pdf = None
 
         if chart_for_pdf and "chart_bytes" not in chart_for_pdf:
-            c_bytes = render_chart_matplotlib(chart_for_pdf)
+            c_bytes = await asyncio.to_thread(render_chart_matplotlib, chart_for_pdf)
             if c_bytes:
                 chart_for_pdf["chart_bytes"] = c_bytes
 
-        pdf_bytes = generate_research_pdf(
+        pdf_bytes = await asyncio.to_thread(
+            generate_research_pdf,
             query=req.query,
             answer_final=answer_for_pdf,
             confidence=confidence_for_pdf,

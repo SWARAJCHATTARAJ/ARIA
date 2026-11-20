@@ -737,10 +737,10 @@ async def retrieve_cascade(state: AgentState) -> dict:
             logger.error(f"External multi-source search failed: {e}")
         return _live_chunks
 
-    # Run OKF, RAG, and LIVE concurrently with an 8.0-second timeout for LIVE
-    okf_task = asyncio.wait_for(_fetch_okf(), timeout=6.0)
-    rag_task = asyncio.wait_for(_fetch_rag(), timeout=6.0)
-    live_task = asyncio.wait_for(_fetch_live(), timeout=8.0)
+    # Run OKF, RAG, and LIVE concurrently with a strict 12.0-second timeout per tier
+    okf_task = asyncio.wait_for(_fetch_okf(), timeout=12.0)
+    rag_task = asyncio.wait_for(_fetch_rag(), timeout=12.0)
+    live_task = asyncio.wait_for(_fetch_live(), timeout=12.0)
 
     okf_res, rag_res, live_res = await asyncio.gather(
         okf_task, rag_task, live_task, return_exceptions=True

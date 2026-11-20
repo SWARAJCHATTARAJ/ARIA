@@ -31,6 +31,9 @@ AFFILIATION_KEYWORDS = {
     "ministry", "association", "technology and medicine"
 }
 
+# Strict network timeout limits: fail fast on connect/read rather than blocking pipeline
+EXTERNAL_SEARCH_TIMEOUT = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
+
 ARXIV_TOPIC_CATEGORIES = {
     "cs": "cat:cs.*",
     "physics": "(cat:physics.*+OR+cat:astro-ph.*)",
@@ -245,7 +248,7 @@ async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Option
     start_iso = datetime.datetime.now().isoformat()
     status_str = "error"
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=EXTERNAL_SEARCH_TIMEOUT, follow_redirects=True) as client:
             resp = await client.get(url)
             status_str = f"HTTP {resp.status_code}"
             if resp.status_code == 200 and resp.text:
@@ -350,7 +353,7 @@ async def search_openalex(query: str, max_results: int = 3, topic: Optional[str]
     start_iso = datetime.datetime.now().isoformat()
     status_str = "error"
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=EXTERNAL_SEARCH_TIMEOUT, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
             status_str = f"HTTP {resp.status_code}"
             if resp.status_code == 200:
@@ -498,7 +501,7 @@ async def search_duckduckgo(query: str, max_results: int = 3) -> List[Dict[str, 
         start_iso_fb = datetime.datetime.now().isoformat()
         status_fb = "error"
         try:
-            async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=EXTERNAL_SEARCH_TIMEOUT, follow_redirects=True) as client:
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 }
@@ -579,7 +582,7 @@ async def search_semantic_scholar(query: str, max_results: int = 3) -> List[Dict
     start_iso = datetime.datetime.now().isoformat()
     status_str = "error"
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=EXTERNAL_SEARCH_TIMEOUT, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
             status_str = f"HTTP {resp.status_code}"
             if resp.status_code == 200:
@@ -653,7 +656,7 @@ async def search_wikipedia(query: str, max_results: int = 1, exact_title: Option
     if target_title and target_title.strip():
         clean_target = target_title.strip()
         try:
-            async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=EXTERNAL_SEARCH_TIMEOUT, follow_redirects=True) as client:
                 wiki_rest_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(clean_target.replace(' ', '_'))}"
                 w_resp = await client.get(wiki_rest_url, headers=headers)
                 if w_resp.status_code == 200:
@@ -969,7 +972,7 @@ async def fetch_readable_text(url: Optional[str], query: str, fallback_snippet: 
     try:
         transport = SSRFSafeTransport()
         # Use httpx with follow_redirects=False to manually inspect every redirect hop
-        async with httpx.AsyncClient(transport=transport, timeout=5.0, follow_redirects=False) as client:
+        async with httpx.AsyncClient(transport=transport, timeout=EXTERNAL_SEARCH_TIMEOUT, follow_redirects=False) as client:
             while redirect_count <= max_redirects:
                 resp = await client.get(current_url, headers=headers)
                 status_fetch = f"HTTP {resp.status_code}"
