@@ -60,7 +60,7 @@ def parse_okf_file(file_path: str) -> dict:
     frontmatter = OKFFrontmatter(**parsed_yaml)
     
     return {
-        "metadata": frontmatter.model_dump() if hasattr(frontmatter, "model_dump") else frontmatter.dict(),
+        "metadata": frontmatter.model_dump(),
         "content": markdown_content
     }
 

@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 
-export const FALLBACK_PRODUCTION_API = 'https://aria.swarajchattaraj.tech';
+export const FALLBACK_PRODUCTION_API = 'https://20.196.152.197.sslip.io';
 
 function resolveApiBaseUrl(): string {
   const envUrl = (
@@ -9,15 +9,24 @@ function resolveApiBaseUrl(): string {
     ''
   ).trim();
 
-  if (Capacitor.isNativePlatform()) {
-    // On native mobile devices, localhost or relative paths point to the device loopback and will fail
-    if (!envUrl || envUrl.startsWith('/') || envUrl.includes('localhost') || envUrl.includes('127.0.0.1')) {
-      return FALLBACK_PRODUCTION_API;
+  // If explicitly configured to a real non-Vercel backend URL, honor it
+  if (
+    envUrl &&
+    !envUrl.startsWith('/') &&
+    !envUrl.includes('aria.swarajchattaraj.tech') &&
+    !envUrl.includes('vercel.app')
+  ) {
+    if (Capacitor.isNativePlatform()) {
+      if (!envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+        return envUrl;
+      }
+    } else {
+      return envUrl;
     }
-    return envUrl;
   }
 
-  return envUrl || FALLBACK_PRODUCTION_API;
+  // Direct Azure VM Caddy HTTPS origin bypasses Vercel proxy entirely across Web, Android, and Windows
+  return FALLBACK_PRODUCTION_API;
 }
 
 export const API_BASE_URL: string = resolveApiBaseUrl();

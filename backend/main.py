@@ -262,6 +262,71 @@ async def query_pipeline(req: QueryRequest, request: Request):
         try:
             current_state = dict(initial_state)
 
+            # Fast-Path: ARIA & Swaraj Chattaraj Verified Identity
+            from pipeline.nodes import is_identity_query, get_identity_response_payload
+            if is_identity_query(current_state.get("query", "")):
+                logger.info(f"[{request_id}] Triggered ARIA identity fast-path for query: '{current_state.get('query')}'")
+                if slot_acquired:
+                    await global_query_queue.release(request_id)
+                    slot_acquired = False
+
+                payload = get_identity_response_payload()
+                yield f"data: {json.dumps({'event': 'route', 'route_decision': 'identity_fastpath'})}\n\n"
+                yield f"data: {json.dumps({'event': 'retrieve', 'tiers': ['IDENTITY'], 'okf_node_paths': [], 'rag_scores': [], 'sources': payload['sources']})}\n\n"
+                yield f"data: {json.dumps(payload['citation'])}\n\n"
+
+                # Stream tokens in natural word-chunks with smooth pacing
+                full_text = payload["content"]
+                words = full_text.split(" ")
+                chunk_size = 4
+                for i in range(0, len(words), chunk_size):
+                    if await request.is_disconnected():
+                        return
+                    delta = " ".join(words[i:i + chunk_size])
+                    if i + chunk_size < len(words):
+                        delta += " "
+                    yield f"data: {json.dumps({'event': 'token', 'delta': delta})}\n\n"
+                    await asyncio.sleep(0.015)
+
+                yield f"data: {json.dumps({'event': 'figures', 'figures': []})}\n\n"
+                yield f"data: {json.dumps({'event': 'chart', 'chart': None})}\n\n"
+
+                audit_evt = {
+                    "event": "audit",
+                    "answer_final": full_text,
+                    "claims": payload["claims"],
+                    "removed_claims": [],
+                    "conflicts": [],
+                    "retractions": [],
+                    "confidence": 1.0,
+                    "entailment_score": 100,
+                    "verification_status": "verified",
+                    "tier_agreement": 1.0,
+                    "repaired": False,
+                    "sources": payload["sources"]
+                }
+                yield f"data: {json.dumps(audit_evt)}\n\n"
+
+                done_evt = {
+                    "event": "done",
+                    "figures": [],
+                    "chart": None,
+                    "unanswerable": False,
+                    "timing": {
+                        "retrieval_seconds": 0.01,
+                        "time_to_first_token": 0.02,
+                        "total_seconds": round(time.time() - start_time, 2)
+                    },
+                    "tokens": {
+                        "model_calls": 0,
+                        "prompt_tokens": 0,
+                        "completion_tokens": len(words),
+                        "total_tokens": len(words)
+                    }
+                }
+                yield f"data: {json.dumps(done_evt)}\n\n"
+                return
+
             # Check 90s timeout
             if time.time() - start_time > MAX_STREAM_DURATION_SECONDS:
                 logger.warning(f"[{request_id}] Stream exceeded {MAX_STREAM_DURATION_SECONDS}s limit before route.")

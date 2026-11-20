@@ -166,13 +166,16 @@ export async function streamQuery({
     let buffer = '';
     let receivedDone = false;
 
-    // 30-Second Inactivity Watchdog: if no data or heartbeat comments arrive for 30s, abort cleanly
+    // Hard 25-Second Inactivity Watchdog:
+    // Reset on every incoming byte (including ": keep-alive" comments).
+    // If 25 seconds pass with zero bytes, abort cleanly and report timeout.
+    const WATCHDOG_TIMEOUT_MS = 25000;
     const readWithWatchdog = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
       let timeoutId: any;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => {
-          reject(new Error('Connection timed out: No data or heartbeats received from server for 30 seconds. Please retry.'));
-        }, 30000);
+          reject(new Error('Connection timed out: No data or heartbeats received from server for 25 seconds. Please retry.'));
+        }, WATCHDOG_TIMEOUT_MS);
       });
 
       try {
@@ -188,85 +191,86 @@ export async function streamQuery({
       }
     };
 
+    let pendingTokenDelta = '';
+    const flushPendingToken = () => {
+      if (pendingTokenDelta) {
+        onEvent({ event: 'token', delta: pendingTokenDelta });
+        pendingTokenDelta = '';
+      }
+    };
+
+    const processFrame = (frame: string) => {
+      const trimmed = frame.trim();
+      if (!trimmed) return;
+
+      const lines = trimmed.split(/\r?\n/);
+      let eventData = '';
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        // Explicitly ignore SSE comment lines starting with ":" (e.g. ": keep-alive")
+        if (line.startsWith(':')) {
+          continue;
+        }
+        if (line.startsWith('data:')) {
+          const chunkData = line.slice(5).trim();
+          eventData = eventData ? `${eventData}\n${chunkData}` : chunkData;
+        }
+      }
+
+      if (!eventData) return;
+
+      try {
+        const parsed = JSON.parse(eventData);
+        if (parsed.event === 'token' && typeof parsed.delta === 'string') {
+          pendingTokenDelta += parsed.delta;
+        } else {
+          flushPendingToken();
+          if (parsed.event === 'done') {
+            receivedDone = true;
+          }
+          onEvent(parsed);
+        }
+      } catch {
+        // Skip malformed frames gracefully
+      }
+    };
+
     while (true) {
       if (signal?.aborted) {
-        reader.cancel();
+        try {
+          await reader.cancel();
+        } catch {}
         return;
       }
 
       const { done, value } = await readWithWatchdog();
-      if (done) break;
+      if (done) {
+        // Flush remaining multi-byte sequences from TextDecoder
+        buffer += decoder.decode(new Uint8Array(), { stream: false });
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Split on SSE frame delimiter "\n\n"
-      const parts = buffer.split('\n\n');
-      buffer = parts.pop() || ''; // Preserve incomplete trailing chunk
-
-      let pendingTokenDelta = '';
-      const flushPendingToken = () => {
-        if (pendingTokenDelta) {
-          onEvent({ event: 'token', delta: pendingTokenDelta });
-          pendingTokenDelta = '';
-        }
-      };
-
-      for (const part of parts) {
-        const trimmed = part.trim();
-        if (!trimmed) continue;
-
-        const lines = trimmed.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('data:')) {
-            const dataStr = line.replace(/^data:\s*/, '').trim();
-            try {
-              const parsed = JSON.parse(dataStr);
-              if (parsed.event === 'token' && typeof parsed.delta === 'string') {
-                pendingTokenDelta += parsed.delta;
-              } else {
-                flushPendingToken();
-                if (parsed.event === 'done') {
-                  receivedDone = true;
-                }
-                onEvent(parsed);
-              }
-            } catch {
-              // Gracefully skip corrupted frames
-            }
-          }
-        }
+      // Scan for SSE message boundaries: handle both \r\n\r\n and \n\n
+      let boundaryIndex: number;
+      while ((boundaryIndex = buffer.search(/\r?\n\r?\n/)) !== -1) {
+        const match = buffer.match(/\r?\n\r?\n/);
+        const delimiterLen = match ? match[0].length : 2;
+        const frame = buffer.slice(0, boundaryIndex);
+        buffer = buffer.slice(boundaryIndex + delimiterLen);
+        processFrame(frame);
       }
       flushPendingToken();
     }
 
-    // Process leftover buffer content
+    // Process any remaining complete or incomplete frames in buffer after EOF
     if (buffer.trim()) {
-      let pendingTokenDelta = '';
-      const lines = buffer.trim().split('\n');
-      for (const line of lines) {
-        if (line.startsWith('data:')) {
-          const dataStr = line.replace(/^data:\s*/, '').trim();
-          try {
-            const parsed = JSON.parse(dataStr);
-            if (parsed.event === 'token' && typeof parsed.delta === 'string') {
-              pendingTokenDelta += parsed.delta;
-            } else {
-              if (pendingTokenDelta) {
-                onEvent({ event: 'token', delta: pendingTokenDelta });
-                pendingTokenDelta = '';
-              }
-              if (parsed.event === 'done') receivedDone = true;
-              onEvent(parsed);
-            }
-          } catch {}
-        }
-      }
-      if (pendingTokenDelta) {
-        onEvent({ event: 'token', delta: pendingTokenDelta });
-      }
+      processFrame(buffer);
     }
+    flushPendingToken();
 
-    // Handle stream ending prematurely without an explicit done event
+    // Force clean termination on EOF: always emit 'done' if not received yet
     if (!receivedDone && !signal?.aborted) {
       onEvent({ event: 'done' });
     }

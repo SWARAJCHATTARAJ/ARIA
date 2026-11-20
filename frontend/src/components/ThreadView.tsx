@@ -1008,76 +1008,60 @@ export default function ThreadView({
       if (streamThrottleCleanupRef.current) {
         streamThrottleCleanupRef.current();
       }
-      if (streamScrollTimerRef.current !== undefined) {
-        window.clearTimeout(streamScrollTimerRef.current);
-      }
     };
   }, []);
 
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
-  const isNearBottomRef = useRef(true);
-  const scrollRafRef = useRef<number | undefined>(undefined);
-  const streamScrollTimerRef = useRef<number | undefined>(undefined);
-  const lastScrollTimeRef = useRef<number>(0);
+  const isAutoScrollEnabledRef = useRef<boolean>(true);
   const streamThrottleCleanupRef = useRef<(() => void) | null>(null);
+  const pendingEventsRef = useRef<any[]>([]);
 
-  const debouncedScrollToBottom = useCallback(() => {
-    if (!isNearBottomRef.current) return;
-    const now = performance.now();
-    if (now - lastScrollTimeRef.current >= 100) {
-      lastScrollTimeRef.current = now;
-      if (streamScrollTimerRef.current !== undefined) {
-        window.clearTimeout(streamScrollTimerRef.current);
-        streamScrollTimerRef.current = undefined;
-      }
-      messagesEndRef.current?.scrollIntoView({
-        behavior: 'auto',
-        block: 'end',
-      });
-    } else if (streamScrollTimerRef.current === undefined) {
-      streamScrollTimerRef.current = window.setTimeout(() => {
-        streamScrollTimerRef.current = undefined;
-        lastScrollTimeRef.current = performance.now();
-        if (isNearBottomRef.current) {
-          messagesEndRef.current?.scrollIntoView({
-            behavior: 'auto',
-            block: 'end',
-          });
-        }
-      }, 100);
+  // Smooth direct scroll without fighting compositor or touch events
+  const performAutoScroll = useCallback(() => {
+    if (!isAutoScrollEnabledRef.current) return;
+    const container = messagesScrollRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
     }
   }, []);
 
   useEffect(() => {
     const el = messagesScrollRef.current;
     if (!el) return;
-    const onScroll = () => {
-      if (scrollRafRef.current !== undefined) return;
-      scrollRafRef.current = window.requestAnimationFrame(() => {
-        scrollRafRef.current = undefined;
-        isNearBottomRef.current =
-          el.scrollHeight - el.scrollTop - el.clientHeight < 160;
-      });
+
+    // Track user scroll position: if scrolled > 80px up, pause auto-scroll immediately
+    const checkScrollPosition = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distanceFromBottom > 80) {
+        isAutoScrollEnabledRef.current = false;
+      } else if (distanceFromBottom <= 20) {
+        isAutoScrollEnabledRef.current = true;
+      }
     };
-    el.addEventListener('scroll', onScroll, { passive: true });
+
+    const handleUserInteraction = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distanceFromBottom > 80) {
+        isAutoScrollEnabledRef.current = false;
+      }
+    };
+
+    el.addEventListener('scroll', checkScrollPosition, { passive: true });
+    el.addEventListener('wheel', handleUserInteraction, { passive: true });
+    el.addEventListener('touchstart', handleUserInteraction, { passive: true });
+
     return () => {
-      el.removeEventListener('scroll', onScroll);
-      if (scrollRafRef.current !== undefined) {
-        window.cancelAnimationFrame(scrollRafRef.current);
-        scrollRafRef.current = undefined;
-      }
-      if (streamScrollTimerRef.current !== undefined) {
-        window.clearTimeout(streamScrollTimerRef.current);
-      }
+      el.removeEventListener('scroll', checkScrollPosition);
+      el.removeEventListener('wheel', handleUserInteraction);
+      el.removeEventListener('touchstart', handleUserInteraction);
     };
   }, []);
 
+  // Direct scroll on new message arrival (no smooth scroll loops)
   useEffect(() => {
-    if (!isNearBottomRef.current) return;
-    messagesEndRef.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'end',
-    });
+    if (isAutoScrollEnabledRef.current && messagesScrollRef.current) {
+      messagesScrollRef.current.scrollTop = messagesScrollRef.current.scrollHeight;
+    }
   }, [messages.length]);
 
   const handleStopGeneration = () => {
@@ -1300,10 +1284,10 @@ export default function ThreadView({
       };
     };
 
-    let pendingEvents: any[] = [];
+    pendingEventsRef.current = [];
     let throttleTimer: number | null = null;
     let lastFlushTime = 0;
-    const THROTTLE_INTERVAL_MS = 65; // Responsive 60-80ms token batching for smooth WebView scrolling
+    const THROTTLE_INTERVAL_MS = 75; // Responsive ~75ms token batching for smooth WebView/Tauri scrolling
 
     const flushEvents = () => {
       if (throttleTimer !== null) {
@@ -1312,9 +1296,9 @@ export default function ThreadView({
       }
       lastFlushTime = performance.now();
 
-      if (pendingEvents.length === 0) return;
-      const events = pendingEvents;
-      pendingEvents = [];
+      if (pendingEventsRef.current.length === 0) return;
+      const events = pendingEventsRef.current;
+      pendingEventsRef.current = [];
 
       const coalescedEvents: any[] = [];
       for (const e of events) {
@@ -1347,7 +1331,7 @@ export default function ThreadView({
         onUpdateActiveTelemetry(currentTelemetry);
       }
 
-      debouncedScrollToBottom();
+      performAutoScroll();
     };
 
     const scheduleFlush = (immediate = false) => {
@@ -1373,7 +1357,7 @@ export default function ThreadView({
         window.clearTimeout(throttleTimer);
         throttleTimer = null;
       }
-      pendingEvents = [];
+      pendingEventsRef.current = [];
     };
 
     if (onUpdateActiveCitations) onUpdateActiveCitations([]);
@@ -1398,7 +1382,7 @@ export default function ThreadView({
             if (onMockStateChange) onMockStateChange(isMock);
           },
           onEvent: (evt) => {
-            pendingEvents.push(evt);
+            pendingEventsRef.current.push(evt);
             if (
               evt.event === 'done' ||
               evt.event === 'error' ||
@@ -1468,7 +1452,19 @@ export default function ThreadView({
             setIsLoading(false);
             if (onQueryErrorChange) onQueryErrorChange(false);
             setMessages((prev) =>
-              prev.map((msg) => (msg.id === ariaMsgId ? { ...msg, isStreaming: false } : msg))
+              prev.map((msg) => {
+                if (msg.id !== ariaMsgId) return msg;
+                const finalStage = msg.telemetry?.stage === 'error' ? 'error' : 'complete';
+                return {
+                  ...msg,
+                  isStreaming: false,
+                  telemetry: {
+                    ...(msg.telemetry || {}),
+                    stage: finalStage,
+                  },
+                  error: !msg.content && !msg.error ? 'No response received from model.' : msg.error,
+                };
+              })
             );
             if (!isMockActive && !mockKey && finalContentRef.current) {
               try {
@@ -1505,6 +1501,9 @@ export default function ThreadView({
       } finally {
         // Guaranteed cleanup of streaming state across all paths
         setIsLoading(false);
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === ariaMsgId && msg.isStreaming ? { ...msg, isStreaming: false } : msg))
+        );
         if (streamThrottleCleanupRef.current) {
           streamThrottleCleanupRef.current();
           streamThrottleCleanupRef.current = null;

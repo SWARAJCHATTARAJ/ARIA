@@ -137,6 +137,22 @@ function AppShell() {
     setSourcePanelOpen(true);
   }, []);
 
+  const handleToggleInspector = useCallback(() => {
+    setSourcePanelOpen((prev) => !prev);
+  }, []);
+
+  const handleCloseInspector = useCallback(() => {
+    setSourcePanelOpen(false);
+  }, []);
+
+  const handleOpenDrawer = useCallback(() => {
+    setIsMobileDrawerOpen(true);
+  }, []);
+
+  const handleCloseDrawer = useCallback(() => {
+    setIsMobileDrawerOpen(false);
+  }, []);
+
   return (
     <div
       data-runtime={isNativeRuntime ? 'native' : 'web'}
@@ -148,14 +164,14 @@ function AppShell() {
         hasQuery={hasQuery}
         isInspectorOpen={isSourcePanelOpen}
         onTabChange={handleTabChange}
-        onOpenDrawer={() => setIsMobileDrawerOpen(true)}
+        onOpenDrawer={handleOpenDrawer}
         onNewQuestion={() => {
           setPendingQuery(null);
           setHasQuery(false);
           setActiveTab('query');
           setIsMobileDrawerOpen(false);
         }}
-        onToggleInspector={() => setSourcePanelOpen((prev) => !prev)}
+        onToggleInspector={handleToggleInspector}
       />
 
       {/* Mobile Slide-Over Navigation Drawer (< 768px) */}
@@ -163,11 +179,11 @@ function AppShell() {
         className={`md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-200 ${
           isMobileDrawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
-        onClick={() => setIsMobileDrawerOpen(false)}
+        onClick={handleCloseDrawer}
         aria-hidden={!isMobileDrawerOpen}
       />
       <aside
-        className={`md:hidden fixed inset-y-0 left-0 z-50 h-full w-72 max-w-[85vw] bg-[#0C0C0F] border-r border-white/[0.07] overflow-y-auto ${
+        className={`md:hidden fixed inset-y-0 left-0 z-50 h-full w-72 max-w-[85vw] bg-[#0C0C0F] border-r border-white/[0.07] overflow-y-auto overscroll-contain will-change-transform ${
           isMobileDrawerOpen ? 'aria-drawer-open' : 'aria-drawer'
         } ${isMobileDrawerOpen ? '' : 'pointer-events-none'}`}
         aria-hidden={!isMobileDrawerOpen}
@@ -211,9 +227,9 @@ function AppShell() {
               pendingQuery={pendingQuery}
               onPendingQueryConsumed={() => setPendingQuery(null)}
               onSourcesExpand={handleSourcesExpand}
-              onToggleSidebar={() => setIsMobileDrawerOpen(true)}
+              onToggleSidebar={handleOpenDrawer}
               isInspectorOpen={isSourcePanelOpen}
-              onToggleInspector={() => setSourcePanelOpen((prev) => !prev)}
+              onToggleInspector={handleToggleInspector}
               onQueryErrorChange={setHasActiveError}
             />
           )}
@@ -229,12 +245,12 @@ function AppShell() {
         <>
           <div
             className="lg:hidden fixed inset-0 bg-black/60 z-40 transition-opacity duration-200"
-            onClick={() => setSourcePanelOpen(false)}
+            onClick={handleCloseInspector}
             aria-hidden="true"
           />
-          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#111115] border-l border-white/[0.07] flex-shrink-0 right-sidebar-smooth">
+          <aside className="fixed inset-y-0 right-0 z-50 w-[88vw] max-w-sm lg:relative lg:w-96 h-full bg-[#111115] border-l border-white/[0.07] flex-shrink-0 right-sidebar-smooth overscroll-contain will-change-transform">
             <SourcePanel
-              onClose={() => setSourcePanelOpen(false)}
+              onClose={handleCloseInspector}
               activeQuery={hasQuery}
               citations={activeCitations}
               telemetry={activeTelemetry}

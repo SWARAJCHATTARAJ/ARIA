@@ -2584,3 +2584,174 @@ async def expand_to_full_research_paper(
 
     logger.info(f"Manuscript expansion complete: {len(expanded_text.split())} words, {len(claims)} audited claims, confidence={confidence}")
     return expanded_text, claims, confidence
+
+
+def is_identity_query(query: str) -> bool:
+    """
+    Fast intent check for queries regarding ARIA v2.0 or its creator Swaraj Chattaraj.
+    Matches casual wording, creator questions, and minor typos while strictly ignoring
+    scientific topics, operas/music, or unrelated queries.
+    """
+    if not query:
+        return False
+    q = query.lower().strip()
+    # Normalize punctuation to spaces
+    q_clean = re.sub(r'[^\w\s]', ' ', q)
+    tokens = [t for t in q_clean.split() if t]
+    if not tokens:
+        return False
+    token_set = set(tokens)
+
+    # 1. Swaraj Chattaraj intent
+    if "swaraj" in token_set or "chattaraj" in token_set:
+        return True
+
+    # 2. Strict negative exclusions for music/opera "aria" or code attributes
+    negative_words = {
+        "opera", "music", "song", "singing", "soprano", "tenor", "composer",
+        "aria-hidden", "aria-label", "aria-expanded", "arias", "puccini", "verdi"
+    }
+    if token_set.intersection(negative_words):
+        return False
+
+    # 3. Direct normalized match against common canonical questions
+    canonical_phrases = {
+        "who built you", "who made you", "who created you", "who designed you",
+        "who developed you", "who programmed you", "who invented you",
+        "who built u", "who made u", "who created u",
+        "who is your creator", "who is your developer", "who is your author",
+        "who is your maker", "who is your architect", "who is your builder",
+        "who created aria", "who built aria", "who made aria", "who designed aria",
+        "who developed aria", "who programmed aria", "who invented aria",
+        "who is aria", "what is aria", "what is aria v2", "what is aria ai",
+        "about aria", "tell me about aria", "tell me about yourself",
+        "who are you", "who are u", "what are you", "what are u",
+        "what does aria do", "what can aria do", "how does aria work",
+        "how do you work", "introduce yourself"
+    }
+    normalized_phrase = " ".join(tokens)
+    if normalized_phrase in canonical_phrases:
+        return True
+
+    # 4. Pattern-based matching for casual phrasing and minor typos
+    creator_verbs = {
+        "built", "build", "builder", "make", "maker", "made",
+        "created", "create", "creator", "developed", "develop", "developer",
+        "designed", "design", "designer", "architect", "engineered",
+        "authored", "author", "invented", "inventor", "coded", "coder",
+        "programmed", "programmer"
+    }
+    aria_targets = {"you", "u", "aria", "assistant", "system", "bot", "engine", "workbench", "app"}
+
+    has_creator = bool(token_set.intersection(creator_verbs))
+    has_target = bool(token_set.intersection(aria_targets))
+
+    # "who made this app", "who built you", "creator of aria"
+    if has_creator and has_target:
+        return True
+    if has_creator and ("who" in token_set or "whose" in token_set):
+        return True
+
+    # Questions specifically asking what/how about ARIA
+    if "aria" in token_set:
+        query_intents = {"what", "who", "how", "about", "tell", "explain", "info", "help"}
+        action_words = {"is", "are", "does", "do", "can", "work", "works", "created", "origin"}
+        if token_set.intersection(query_intents) and (token_set.intersection(action_words) or len(tokens) <= 3):
+            return True
+
+    return False
+
+
+def get_identity_response_payload() -> dict:
+    """
+    Returns verified profile data and synthesis text for ARIA v2.0 and its creator Swaraj Chattaraj.
+    """
+    content = (
+        "### ARIA v2.0 (Autonomous Research & Intelligence Assistant)\n\n"
+        "**ARIA** is an autonomous scientific synthesis engine and technical workbench architected and developed by **Swaraj Chattaraj** [[c:0]]. "
+        "Engineered for hallucination-free empirical research, ARIA couples frontier reasoning with deterministic multi-tier literature retrieval and automated claim verification.\n\n"
+        "---\n\n"
+        "### Core Architecture & Capabilities\n\n"
+        "1. **Tri-Tier Evidence Cascade Retrieval:**\n"
+        "   - **Open Knowledge Foundation (OKF):** Curated, verified hierarchical topic graphs providing foundational domain definitions.\n"
+        "   - **Dense Vector RAG:** High-dimensional semantic indexing over dense technical documentation and literature corpora.\n"
+        "   - **Real-Time Academic Literature:** Concurrent live querying across **arXiv preprints**, **OpenAlex authoritative works**, and canonical **Wikipedia** articles with strict topical relevance scoring.\n\n"
+        "2. **Deterministic Claim Verification & Audit:**\n"
+        "   - Every factual assertion, metric, date, and definition is audited against primary retrieved chunks [[c:0]].\n"
+        "   - Unsupported claims are detected, repaired, or pruned to eliminate hallucinations.\n"
+        "   - Syntheses include transparent entailment scores, citation traces (`[[c:0]]`), and confidence metrics.\n\n"
+        "3. **Quantitative Grounding & Scientific Visuals:**\n"
+        "   - **Inline Mathematics:** Native LaTeX parsing powered by KaTeX.\n"
+        "   - **Verified Figures:** High-resolution schematics, astronomical imagery, and microscopy fetched strictly from canonical peer-reviewed and Wikimedia sources.\n"
+        "   - **Topic-Wise Visual Charts:** Generated strictly when at least 3 distinct, verified data points share identical metrics and units.\n\n"
+        "4. **Academic Export Suite:**\n"
+        "   - **Publication-Grade PDF:** Two-column academic layout featuring vector figures, equations, and full bibliography.\n"
+        "   - **BibTeX (.bib) & Markdown (.md):** Instant citation exports with clean DOIs and author metadata.\n\n"
+        "5. **Cross-Platform Availability:**\n"
+        "   - **Web Application:** High-performance responsive research workbench.\n"
+        "   - **Windows Desktop:** Standalone `.exe` application powered by Tauri.\n"
+        "   - **Android Mobile:** Native `.apk` built with Capacitor featuring binary PDF sharing and local caching.\n\n"
+        "---\n"
+        "*Architected and engineered by **Swaraj Chattaraj** · Designed for researchers, engineers, and scientists.*"
+    )
+
+    claims = [
+        {
+            "claim": "ARIA v2.0 was architected and developed by Swaraj Chattaraj as an autonomous scientific synthesis engine.",
+            "status": "supported",
+            "source": "ARIA System Profile",
+            "quotes": ["ARIA is an autonomous scientific synthesis engine and technical workbench architected and developed by Swaraj Chattaraj."]
+        },
+        {
+            "claim": "ARIA features tri-tier evidence cascade retrieval across OKF, RAG, and live academic sources (arXiv, OpenAlex, Wikipedia).",
+            "status": "supported",
+            "source": "ARIA System Profile",
+            "quotes": ["Tri-Tier Evidence Cascade Retrieval across OKF, RAG, arXiv, OpenAlex, and Wikipedia."]
+        },
+        {
+            "claim": "ARIA is available across Web, Windows desktop (.exe), and Android (.apk) platforms.",
+            "status": "supported",
+            "source": "ARIA System Profile",
+            "quotes": ["Cross-Platform Availability across Web, Windows Desktop, and Android Mobile."]
+        }
+    ]
+
+    source_entry = {
+        "source": "ARIA System Profile",
+        "source_type": "system",
+        "tier": "IDENTITY",
+        "similarity": 1.0,
+        "is_retracted": False,
+        "rank": 1,
+        "published": "2026",
+        "cited": True
+    }
+
+    citation_entry = {
+        "event": "citation",
+        "id": 0,
+        "title": "ARIA System Architecture & Creator Profile",
+        "path": "system/identity",
+        "url": "https://swarajchattaraj.tech",
+        "authors": ["Swaraj Chattaraj"],
+        "year": "2026",
+        "venue": "ARIA Autonomous Research",
+        "snippet": "ARIA v2.0 was designed, architected, and developed by Swaraj Chattaraj as an autonomous scientific synthesis engine featuring tri-tier retrieval, deterministic claim verification, and academic exports.",
+        "source_type": "system",
+        "tier": "IDENTITY",
+        "doi": None,
+        "arxiv_id": None,
+        "is_retracted": False,
+        "review_status": "verified",
+        "similarity": 1.0,
+        "cited": True,
+        "rank": 1,
+        "published": "2026"
+    }
+
+    return {
+        "content": content,
+        "claims": claims,
+        "sources": [source_entry],
+        "citation": citation_entry
+    }

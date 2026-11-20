@@ -26,8 +26,8 @@ jobs:
     permissions:
       contents: write
     env:
-      VITE_API_URL: https://aria.swarajchattaraj.tech
-      VITE_API_BASE_URL: https://aria.swarajchattaraj.tech
+      VITE_API_URL: https://20.196.152.197.sslip.io
+      VITE_API_BASE_URL: https://20.196.152.197.sslip.io
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       VITE_BUILD_TARGET: native
@@ -153,8 +153,8 @@ jobs:
     permissions:
       contents: write
     env:
-      VITE_API_URL: https://aria.swarajchattaraj.tech
-      VITE_API_BASE_URL: https://aria.swarajchattaraj.tech
+      VITE_API_URL: https://20.196.152.197.sslip.io
+      VITE_API_BASE_URL: https://20.196.152.197.sslip.io
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       VITE_BUILD_TARGET: native

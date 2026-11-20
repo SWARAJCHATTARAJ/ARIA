@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     aria_port: int = 8000
     dristi_url: str = "http://localhost:8001"
-    allowed_origins: str = "https://aria.swarajchattaraj.tech"
+    allowed_origins: str = "https://aria.swarajchattaraj.tech,https://swarajchattaraj.tech,https://20.196.152.197.sslip.io"
     environment: str = "development"
     fetch_top_n: int = 2
     supabase_jwt_secret: str = ""
@@ -49,6 +49,8 @@ class Settings(BaseSettings):
             "tauri://localhost",
             "http://tauri.localhost",
             "https://aria.swarajchattaraj.tech",
+            "https://swarajchattaraj.tech",
+            "https://20.196.152.197.sslip.io",
         ]
         for origin in default_native_origins:
             if origin not in raw_origins:
