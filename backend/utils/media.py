@@ -175,9 +175,20 @@ async def fetch_verified_figures(
                             if _is_image_valid(src, w, h, fn, desc):
                                 score = _score_image_candidate(fn, desc, keywords)
                                 if score >= 0.0:
-                                    cap = data.get("description") or f"Scientific overview of {resolved_title}."
+                                    raw_fn_clean = urllib.parse.unquote(fn)
+                                    fn_title = re.sub(r'[\._-]', ' ', raw_fn_clean.rsplit('.', 1)[0]).strip()
+                                    fn_title = re.sub(r'\s+(?:svg|png|jpg|jpeg)\b', '', fn_title, flags=re.I).strip()
+                                    is_descriptive = len(fn_title.split()) >= 2 and any(k in fn_title.lower() for k in ("diagram", "structure", "cell", "model", "schematic", "overview", "anatomy", "cycle", "pathway", "curve", "spectrum", "formula"))
+                                    if is_descriptive:
+                                        fig_display_title = fn_title.title()
+                                        raw_desc = (data.get("description") or "").strip()
+                                        cap = f"{fig_display_title}. {raw_desc}".strip(". ") if raw_desc else fig_display_title
+                                    else:
+                                        fig_display_title = resolved_title
+                                        cap = data.get("description") or f"Scientific overview of {resolved_title}."
+
                                     figures.append({
-                                        "title": resolved_title,
+                                        "title": fig_display_title,
                                         "caption": cap,
                                         "url": src,
                                         "source_url": data.get("content_urls", {}).get("desktop", {}).get("page", ""),

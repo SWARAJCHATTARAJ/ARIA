@@ -5,11 +5,15 @@ import fitz
 import re
 
 # Set path to backend
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, backend_dir)
 
-from utils.pdf_generator import generate_research_pdf, generate_academic_paper_title
+from dotenv import load_dotenv
+load_dotenv(os.path.join(backend_dir, ".env"))
+
+from utils.pdf_generator import generate_research_pdf, generate_academic_paper_title, is_page_empty_or_header_only
 from pipeline.nodes import expand_to_full_research_paper
-from utils.academic_search import search_all_free_sources, clean_scraped_reference_text
+from utils.academic_search import search_all_free_sources, search_wikipedia, clean_scraped_reference_text
 
 async def main():
     print("=" * 60)
@@ -120,6 +124,110 @@ async def main():
     assert "V. CONCLUSION" in full_pdf_text, "Missing Section V"
     assert "VI. REFERENCES" in full_pdf_text, "Missing Section VI"
     assert "APPENDIX: VERIFICATION AUDIT LEDGER" in full_pdf_text, "Missing Appendix"
+
+    # 7. Test Wikipedia Action API Extended Grounding Coverage (~2,500-3,500 chars)
+    print("\n[7] Testing search_wikipedia Action API extended coverage:")
+    wiki_res = await search_wikipedia("Cell", canonical_topic="Cell (biology)")
+    assert wiki_res, "Failed to retrieve Wikipedia article for Cell (biology)"
+    wiki_snippet = wiki_res[0].get("snippet", "")
+    print(f"Wikipedia 'Cell (biology)' snippet length: {len(wiki_snippet)} characters")
+    assert len(wiki_snippet) >= 2500, f"Expected >= 2500 chars of encyclopedic grounding, got {len(wiki_snippet)}"
+    assert any(term in wiki_snippet.lower() for term in ("prokaryot", "eukaryot")), "Foundational cell biology terms missing from Wikipedia snippet!"
+    print("  -> Wikipedia extended grounding coverage PASS!")
+
+    # 8. Test Word Collisions, Glyph Spacing, Trailing Blank Page & Table II Wrapping
+    print("\n[8] Testing Glyph Spacing, Character Collisions, Blank Page Cleanup & Table II:")
+    test_query = "Cell biological architecture and mechanisms"
+    test_canon = "Cell (biology)"
+    test_body = """
+# I. INTRODUCTION & EXECUTIVE DEFINITION
+The cell is encompassing — the somatic cells of biological systems [1]. The genetic pathway proceeds from DNA → RNA → protein with typical diameter 10–100 µm while smaller cells measure ~200 µm in specialized assemblies [1]. Precise dimensional quantification will be essential for cellular engineering [1].
+
+- **Model Integration Across Scales:** Systems-level models capture subcellular dynamics and signaling cascades [1].
+
+# II. CORE MECHANISMS, THEORETICAL ARCHITECTURE & METHODOLOGY
+Prokaryotes lack a membrane-bound nucleus and organelles [1]. Eukaryotic compartmentalization enables specialized biological reactions [1].
+
+# III. QUANTITATIVE PROPERTIES & COMPARATIVE ANALYSIS
+| Property | Typical Value | Biological Scale |
+| Cell diameter | 10–100 µm | Cellular |
+| Organelle diameter | 0.5–5 µm | Subcellular |
+| Ribosome size | ~20–30 nm | Macromolecular |
+
+# IV. EMPIRICAL APPLICATIONS, OPERATIONAL IMPACT & TECHNICAL LIMITATIONS
+Tissue engineering and synthetic cell biology rely on validated molecular models [1].
+
+# V. CONCLUSION & OPEN RESEARCH DIRECTIONS
+Cellular architecture provides the blueprint for synthetic biology [1].
+"""
+
+    test_claims = [
+        {"text": "The cell is encompassing — the somatic cells of biological systems.", "citation_ids": [0], "status": "supported", "coverage": 0.95},
+        {"text": "The genetic pathway proceeds from DNA → RNA → protein with typical diameter 10–100 µm while smaller cells measure ~200 µm in specialized assemblies.", "citation_ids": [0], "status": "supported", "coverage": 0.90},
+        {"text": "Prokaryotes lack a membrane-bound nucleus and organelles.", "citation_ids": [0], "status": "supported", "coverage": 0.92},
+        {"text": "Eukaryotic compartmentalization enables specialized biological reactions.", "citation_ids": [0], "status": "supported", "coverage": 0.88},
+    ]
+
+    test_sources = [
+        {
+            "title": "Wikipedia: Cell (biology)",
+            "venue": "Wikipedia",
+            "snippet": wiki_snippet,
+            "url": "https://en.wikipedia.org/wiki/Cell_(biology)",
+            "source_type": "wikipedia",
+            "tier": "LIVE",
+            "review_status": "unreviewed_web"
+        }
+    ]
+
+    test_pdf_bytes = generate_research_pdf(
+        query=test_query,
+        answer_final=test_body,
+        confidence=0.92,
+        tiers=["LIVE"],
+        claims=test_claims,
+        sources=test_sources,
+        canonical_topic=test_canon,
+        full_ledger=True,
+        clickable_urls=True
+    )
+
+    test_doc = fitz.open(stream=test_pdf_bytes, filetype="pdf")
+    test_page_count = len(test_doc)
+    print(f"Generated test PDF page count: {test_page_count} pages")
+
+    # Assert no trailing blank or header-only page
+    assert not is_page_empty_or_header_only(test_doc[-1]), "Trailing page is blank or header-only!"
+
+    test_pdf_full_text = ""
+    for p_no in range(test_page_count):
+        test_pdf_full_text += test_doc[p_no].get_text() + "\n"
+
+    # Assert exact words without character eating or collisions
+    assert "encompassing — the somatic cells" in test_pdf_full_text, "Failed to preserve 'encompassing — the somatic cells'!"
+    assert "DNA → RNA → protein" in test_pdf_full_text, "Failed to preserve 'DNA → RNA → protein'!"
+    assert "10–100 µm" in test_pdf_full_text, "Failed to preserve '10–100 µm'!"
+    assert "~200 µm" in test_pdf_full_text, "Failed to preserve '~200 µm'!"
+    assert "will be essential" in test_pdf_full_text, "Failed to preserve 'will be essential'!"
+
+    # Assert collisions NEVER occur
+    assert "encompassinthe" not in test_pdf_full_text, "Found character collision 'encompassinthe'!"
+    assert "somatizells" not in test_pdf_full_text, "Found character collision 'somatizells'!"
+    assert "DNRNA" not in test_pdf_full_text, "Found character collision 'DNRNA'!"
+
+    # Assert bullet bold lead-in preserves colon
+    assert "Model Integration Across Scales:" in test_pdf_full_text, "Bullet bold lead-in colon was stripped!"
+
+    # Assert Index Terms exclude stop-words and platform names
+    if "Index Terms -- " in test_pdf_full_text:
+        index_terms_line = test_pdf_full_text.split("Index Terms -- ")[1].split("\n")[0].lower()
+        print(f"Extracted Index Terms: {index_terms_line}")
+        assert "wikipedia" not in index_terms_line, "Platform 'wikipedia' leaked into Index Terms!"
+        assert "arxiv" not in index_terms_line, "Platform 'arxiv' leaked into Index Terms!"
+        assert "from" not in index_terms_line.split(", "), "Stop-word 'from' leaked into Index Terms!"
+        assert "and" not in index_terms_line.split(", "), "Stop-word 'and' leaked into Index Terms!"
+
+    print("  -> Glyph spacing, character collision, and blank page assertions PASS!")
 
     print("\n" + "=" * 60)
     print(f"ALL TESTS PASSED! PDF generated successfully with {page_count} pages, {words} words.")

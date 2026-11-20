@@ -640,11 +640,12 @@ async def search_semantic_scholar(query: str, max_results: int = 3) -> List[Dict
 
 async def search_wikipedia(query: str, max_results: int = 1, exact_title: Optional[str] = None, canonical_topic: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Encyclopedic reference search using Wikipedia. Returns canonical summary and key facts.
-    Tries the exact canonical Wikipedia page summary REST API first (<300ms) before library search.
+    Encyclopedic reference search using Wikipedia. Returns authoritative lead and core overview sections
+    (~2,500-3,500 characters) via Wikipedia Action API extracts (explaintext=1) so foundational facts
+    cited to Wikipedia ([1]) are verifiable in both synthesis and claim audit.
     """
     core_subject, _ = extract_core_subject_entities(query, canonical_topic)
-    target_title = exact_title or core_subject or query
+    target_title = exact_title or canonical_topic or core_subject or query
 
     results = []
     t0 = time.time()
@@ -652,91 +653,197 @@ async def search_wikipedia(query: str, max_results: int = 1, exact_title: Option
     status_str = "error"
     headers = {"User-Agent": "ARIA-Scientific-Assistant/2.0 (https://aria.swarajchattaraj.tech; contact@swarajchattaraj.tech)"}
 
-    # 1. Try exact canonical Wikipedia REST summary first
+    # 1. Action API prop=extracts query (explaintext=1 returns clean plaintext up to 3,500 chars)
     if target_title and target_title.strip():
         clean_target = target_title.strip()
+        candidates = [clean_target]
+        if canonical_topic:
+            clean_canon = urllib.parse.unquote(canonical_topic)
+            no_paren = clean_canon.split('(')[0].strip()
+            if no_paren and no_paren not in candidates:
+                candidates.append(no_paren)
+        if core_subject and core_subject not in candidates:
+            candidates.append(core_subject)
+        if query and query not in candidates:
+            candidates.append(query)
+
         try:
             async with httpx.AsyncClient(timeout=EXTERNAL_SEARCH_TIMEOUT, follow_redirects=True) as client:
-                wiki_rest_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(clean_target.replace(' ', '_'))}"
-                w_resp = await client.get(wiki_rest_url, headers=headers)
-                if w_resp.status_code == 200:
-                    w_data = w_resp.json()
-                    extract = w_data.get("extract", "").strip()
-                    title = w_data.get("title", clean_target)
-                    desc = w_data.get("description", "")
-                    page_url = w_data.get("content_urls", {}).get("desktop", {}).get("page") or f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+                for cand in candidates:
+                    wiki_action_url = (
+                        "https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1"
+                        f"&redirects=1&format=json&titles={urllib.parse.quote(cand)}"
+                    )
+                    w_resp = await client.get(wiki_action_url, headers=headers)
+                    if w_resp.status_code == 200:
+                        w_data = w_resp.json()
+                        pages = w_data.get("query", {}).get("pages", {})
+                        for pid, p in pages.items():
+                            if pid == "-1":
+                                continue
+                            raw_extract = p.get("extract", "").strip()
+                            title = p.get("title", cand)
+                            
+                            # If disambiguation page, resolve via opensearch
+                            lower_ext = raw_extract[:300].lower()
+                            if "may refer to:" in lower_ext or "most often refers to:" in lower_ext:
+                                op_url = (
+                                    "https://en.wikipedia.org/w/api.php?action=opensearch"
+                                    f"&search={urllib.parse.quote(cand)}&limit=5&namespace=0&format=json"
+                                )
+                                op_resp = await client.get(op_url, headers=headers)
+                                if op_resp.status_code == 200:
+                                    op_hits = op_resp.json()[1]
+                                    for hit in op_hits[1:]:
+                                        hit_url = (
+                                            "https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1"
+                                            f"&redirects=1&format=json&titles={urllib.parse.quote(hit)}"
+                                        )
+                                        hit_resp = await client.get(hit_url, headers=headers)
+                                        if hit_resp.status_code == 200:
+                                            hit_pages = hit_resp.json().get("query", {}).get("pages", {})
+                                            for h_pid, hp in hit_pages.items():
+                                                if h_pid != "-1":
+                                                    h_ext = hp.get("extract", "").strip()
+                                                    if h_ext and "may refer to:" not in h_ext[:200].lower() and "most often refers to:" not in h_ext[:200].lower():
+                                                        raw_extract = h_ext
+                                                        title = hp.get("title", hit)
+                                                        break
+                                        if raw_extract and "may refer to:" not in raw_extract[:200].lower() and "most often refers to:" not in raw_extract[:200].lower():
+                                            break
 
-                    if extract and len(extract) >= 60:
-                        prefix_desc = f" ({desc})" if desc else ""
-                        canonical_snippet = clean_scraped_reference_text(f"Canonical scientific definition{prefix_desc}: {extract}")
-                        results.append({
-                            "tier": "LIVE",
-                            "source_type": "wikipedia",
-                            "review_status": "unreviewed_web",
-                            "title": f"Wikipedia: {title}",
-                            "path": None,
-                            "url": page_url,
-                            "authors": None,
-                            "year": None,
-                            "venue": "Wikipedia",
-                            "snippet": canonical_snippet,
-                            "source": f"Wikipedia ({title})",
-                            "doi": None,
-                            "arxiv_id": None,
-                            "is_retracted": False,
-                            "published": None
-                        })
-                        status_str = f"Wikipedia REST hit: {title}"
+                            if raw_extract and len(raw_extract) >= 100:
+                                # Retrieve full lead and core overview sections (~2,500-3,500 characters)
+                                full_overview = raw_extract[:3500]
+                                clean_snippet = clean_scraped_reference_text(full_overview)
+                                page_url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+                                results.append({
+                                    "tier": "LIVE",
+                                    "source_type": "wikipedia",
+                                    "review_status": "unreviewed_web",
+                                    "title": f"Wikipedia: {title}",
+                                    "path": None,
+                                    "url": page_url,
+                                    "authors": None,
+                                    "year": None,
+                                    "venue": "Wikipedia",
+                                    "snippet": clean_snippet,
+                                    "content": clean_snippet,
+                                    "full_text": clean_snippet,
+                                    "source": f"Wikipedia ({title})",
+                                    "doi": None,
+                                    "arxiv_id": None,
+                                    "is_retracted": False,
+                                    "published": None
+                                })
+                                status_str = f"Wikipedia Action hit: {title}"
+                                break
+                    if results:
+                        break
+
+                # If direct candidates didn't match, search using list=search
+                if not results:
+                    search_q = canonical_topic or query
+                    s_url = (
+                        "https://en.wikipedia.org/w/api.php?action=query&list=search"
+                        f"&srsearch={urllib.parse.quote(search_q)}&utf8=1&format=json&srlimit=3"
+                    )
+                    s_resp = await client.get(s_url, headers=headers)
+                    if s_resp.status_code == 200:
+                        for hit in s_resp.json().get("query", {}).get("search", []):
+                            hit_title = hit.get("title")
+                            if not hit_title:
+                                continue
+                            hit_extract_url = (
+                                "https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1"
+                                f"&redirects=1&format=json&titles={urllib.parse.quote(hit_title)}"
+                            )
+                            h_resp = await client.get(hit_extract_url, headers=headers)
+                            if h_resp.status_code == 200:
+                                h_pages = h_resp.json().get("query", {}).get("pages", {})
+                                for h_pid, hp in h_pages.items():
+                                    if h_pid != "-1":
+                                        h_ext = hp.get("extract", "").strip()
+                                        if h_ext and len(h_ext) >= 100 and "may refer to:" not in h_ext[:200].lower() and "most often refers to:" not in h_ext[:200].lower():
+                                            full_overview = h_ext[:3500]
+                                            clean_snippet = clean_scraped_reference_text(full_overview)
+                                            page_url = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(hit_title.replace(' ', '_'))}"
+                                            results.append({
+                                                "tier": "LIVE",
+                                                "source_type": "wikipedia",
+                                                "review_status": "unreviewed_web",
+                                                "title": f"Wikipedia: {hit_title}",
+                                                "path": None,
+                                                "url": page_url,
+                                                "authors": None,
+                                                "year": None,
+                                                "venue": "Wikipedia",
+                                                "snippet": clean_snippet,
+                                                "content": clean_snippet,
+                                                "full_text": clean_snippet,
+                                                "source": f"Wikipedia ({hit_title})",
+                                                "doi": None,
+                                                "arxiv_id": None,
+                                                "is_retracted": False,
+                                                "published": None
+                                            })
+                                            status_str = f"Wikipedia search hit: {hit_title}"
+                                            break
+                            if results:
+                                break
         except Exception as e:
-            logger.debug(f"Wikipedia REST summary lookup failed: {e}")
+            logger.debug(f"Wikipedia Action extracts lookup failed: {e}")
 
-    # 2. Fallback to python wikipedia library search if REST API produced nothing
+    # 2. Fallback to python wikipedia library search if Action API produced nothing
     if not results:
         try:
             def _run_wiki():
                 import wikipedia
                 wikipedia.set_user_agent("ARIA-Scientific-Assistant/2.0 (https://aria.swarajchattaraj.tech; contact@swarajchattaraj.tech)")
                 ranked: List[tuple] = []
-                for candidate in [target_title, query]:
+                for candidate in [target_title, core_subject, query]:
                     if not candidate:
                         continue
                     try:
-                        summ = wikipedia.summary(candidate, sentences=4, auto_suggest=True)
-                        summ_clean = clean_scraped_reference_text(summ)
-                        if summ_clean and len(summ_clean) >= 60:
-                            ranked.append((candidate, summ_clean))
+                        p = wikipedia.page(candidate, auto_suggest=False)
+                        p_content = p.content[:3500] if hasattr(p, "content") else p.summary
+                        clean_content = clean_scraped_reference_text(p_content)
+                        if clean_content and len(clean_content) >= 100:
+                            ranked.append((p.title, clean_content, p.url))
                             break
                     except Exception:
                         pass
                 if not ranked:
-                    hits = wikipedia.search(target_title or query, results=max_results)
+                    hits = wikipedia.search(target_title or query, results=max_results + 1)
                     for hit in hits:
                         try:
-                            summ = wikipedia.summary(hit, sentences=4, auto_suggest=False)
-                            summ_clean = clean_scraped_reference_text(summ)
-                            if summ_clean and len(summ_clean) >= 60:
-                                ranked.append((hit, summ_clean))
+                            p = wikipedia.page(hit, auto_suggest=False)
+                            p_content = p.content[:3500] if hasattr(p, "content") else p.summary
+                            clean_content = clean_scraped_reference_text(p_content)
+                            if clean_content and len(clean_content) >= 100:
+                                ranked.append((p.title, clean_content, p.url))
                                 break
                         except Exception:
                             continue
                 return ranked
 
-            wiki_data = await asyncio.wait_for(asyncio.to_thread(_run_wiki), timeout=5.0)
+            wiki_data = await asyncio.wait_for(asyncio.to_thread(_run_wiki), timeout=6.0)
             status_str = f"Wikipedia library {len(wiki_data)} hits"
-            for hit, summary in wiki_data:
-                clean_summ = clean_scraped_reference_text(summary)
+            for hit_title, full_content, p_url in wiki_data:
                 results.append({
                     "tier": "LIVE",
                     "source_type": "wikipedia",
                     "review_status": "unreviewed_web",
-                    "title": f"Wikipedia: {hit}",
+                    "title": f"Wikipedia: {hit_title}",
                     "path": None,
-                    "url": f"https://en.wikipedia.org/wiki/{urllib.parse.quote(hit.replace(' ', '_'))}",
+                    "url": p_url or f"https://en.wikipedia.org/wiki/{urllib.parse.quote(hit_title.replace(' ', '_'))}",
                     "authors": None,
                     "year": None,
                     "venue": "Wikipedia",
-                    "snippet": clean_summ,
-                    "source": f"Wikipedia ({hit})",
+                    "snippet": full_content,
+                    "content": full_content,
+                    "full_text": full_content,
+                    "source": f"Wikipedia ({hit_title})",
                     "doi": None,
                     "arxiv_id": None,
                     "is_retracted": False,
@@ -748,6 +855,8 @@ async def search_wikipedia(query: str, max_results: int = 1, exact_title: Option
 
     t1 = time.time()
     end_iso = datetime.datetime.now().isoformat()
+    retrieval_tracker.record("provider_wikipedia", t0, t1, start_iso, end_iso, status_str)
+    return results[:max_results]
     retrieval_tracker.record("provider_wikipedia", t0, t1, start_iso, end_iso, status_str)
     return results[:max_results]
 

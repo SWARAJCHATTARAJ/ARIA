@@ -18,6 +18,7 @@ Guarantees on EVERY topic:
 """
 import fitz
 import io
+import os
 import logging
 import re
 import datetime
@@ -25,8 +26,55 @@ import unicodedata
 from typing import List, Dict, Any, Optional, Tuple
 import httpx
 from PIL import Image
+import matplotlib
 
 logger = logging.getLogger(__name__)
+
+# DejaVuSerif Unicode TrueType font setup
+_FONT_DIR = os.path.join(os.path.dirname(matplotlib.__file__), "mpl-data", "fonts", "ttf")
+_SERIF_REG = os.path.join(_FONT_DIR, "DejaVuSerif.ttf")
+_SERIF_BOLD = os.path.join(_FONT_DIR, "DejaVuSerif-Bold.ttf")
+_SERIF_ITAL = os.path.join(_FONT_DIR, "DejaVuSerif-Italic.ttf")
+_SERIF_BI = os.path.join(_FONT_DIR, "DejaVuSerif-BoldItalic.ttf")
+
+UNICODE_FONTS_AVAILABLE = all(os.path.exists(p) for p in (_SERIF_REG, _SERIF_BOLD, _SERIF_ITAL, _SERIF_BI))
+
+if UNICODE_FONTS_AVAILABLE:
+    FONT_MAP = {
+        "tiro": "serif-reg",
+        "tibo": "serif-bold",
+        "tiit": "serif-it",
+        "tibi": "serif-bi",
+    }
+    FONT_FILES = {
+        "serif-reg": _SERIF_REG,
+        "serif-bold": _SERIF_BOLD,
+        "serif-it": _SERIF_ITAL,
+        "serif-bi": _SERIF_BI,
+    }
+    FONT_OBJS = {
+        name: fitz.Font(fontfile=path)
+        for name, path in FONT_FILES.items()
+    }
+else:
+    FONT_MAP = {
+        "tiro": "tiro",
+        "tibo": "tibo",
+        "tiit": "tiit",
+        "tibi": "tibi",
+    }
+    FONT_FILES = {}
+    FONT_OBJS = {}
+
+def get_text_width(text: str, fontname: str, fontsize: float) -> float:
+    mapped = FONT_MAP.get(fontname, fontname)
+    fobj = FONT_OBJS.get(mapped)
+    if fobj is not None:
+        try:
+            return fobj.text_length(text, fontsize=fontsize)
+        except Exception:
+            pass
+    return fitz.get_text_length(text, fontname=fontname, fontsize=fontsize)
 
 # Unicode spaces, dashes, quotes
 _SPACES = ["\u202f", "\u00a0", "\u2009", "\u2002", "\u2003", "\u2004", "\u2005", "\u2006", "\u2007", "\u2008", "\u200a", "\u200b", "\ufeff"]
@@ -148,6 +196,18 @@ def trim_incomplete_sentence(text: str) -> str:
         return s + "."
     return s
 
+def is_page_empty_or_header_only(page) -> bool:
+    """Checks whether a page contains only running header / page number lines or is completely blank."""
+    txt = page.get_text().strip()
+    if not txt:
+        return True
+    lines = [l.strip() for l in txt.split('\n') if l.strip()]
+    header_lines = [
+        l for l in lines
+        if "ARIA v2 AUTONOMOUS VERIFICATION PREPRINT" in l or re.match(r'^Page\s+\d+$', l)
+    ]
+    return len(lines) == len(header_lines)
+
 def sanitize_academic_text(text: str) -> str:
     r"""
     Comprehensive LaTeX-to-Unicode and PDF-safe math sanitizer.
@@ -162,10 +222,17 @@ def sanitize_academic_text(text: str) -> str:
     # 1. Unicode spaces, dashes, quotes
     for sp in _SPACES:
         s = s.replace(sp, " ")
-    for d in _DASHES:
-        s = s.replace(d, '–' if d in ("\u2013", "\u2014") else '-')
     for k, v in _QUOTES.items():
         s = s.replace(k, v)
+
+    # Normalize em-dashes with clean spacing so words don't collide
+    s = s.replace("\u2014", " — ").replace("\u2015", " — ")
+    s = re.sub(r'\s*—\s*', ' — ', s)
+    # Numeric ranges: e.g. 10 - 100 or 10 – 100 -> 10–100 (en-dash without spaces)
+    s = re.sub(r'(?<=\d)\s*[-–\u2013]\s*(?=\d)', '–', s)
+    # Remaining dashes
+    for d in ["\u2010", "\u2011", "\u2012"]:
+        s = s.replace(d, '-')
 
     # 2. Critical mathematical symbols & loss functions (NEVER silently drop \ell or \mathcal{L})
     s = re.sub(r'\\(?:mathcal|mathbf|mathrm|mathbb)\{L\}', 'L', s)
@@ -187,7 +254,8 @@ def sanitize_academic_text(text: str) -> str:
         s = re.sub(re.escape(gl) + r'\b', gch, s)
 
     # 4. LaTeX operators & relations
-    s = re.sub(r'\\(?:rightarrow|to|longrightarrow)\b', '→', s)
+    s = re.sub(r'\\(?:rightarrow|to|longrightarrow)\b', ' → ', s)
+    s = re.sub(r'\s*→\s*', ' → ', s)
     s = re.sub(r'\\(?:leftarrow|longleftarrow)\b', '←', s)
     s = re.sub(r'\\(?:Rightarrow|implies)\b', '⇒', s)
     s = re.sub(r'\\(?:Leftrightarrow|iff)\b', '⇔', s)
@@ -398,9 +466,9 @@ def _wrap_rich_runs(words: List[Tuple[str, str]], max_w: float, fontsize: float)
     lines: List[List[Tuple[str, str]]] = []
     cur: List[Tuple[str, str]] = []
     cur_w = 0.0
-    space_w = fitz.get_text_length(" ", fontname="tiro", fontsize=fontsize)
+    space_w = get_text_width(" ", fontname="tiro", fontsize=fontsize)
     for word, fontname in words:
-        w = fitz.get_text_length(word, fontname=fontname, fontsize=fontsize)
+        w = get_text_width(word, fontname=fontname, fontsize=fontsize)
         add = w if not cur else w + space_w
         if cur and cur_w + add > max_w:
             lines.append(cur)
@@ -586,9 +654,18 @@ class AcademicTwoColumnPaper:
         self.date_str = datetime.datetime.now().strftime("%B %Y")
 
         self.page = self.doc.new_page(width=self.PAGE_W, height=self.PAGE_H)
+        self._register_page_fonts(self.page)
         self.render_page1_header()
         self.current_col = 0
         self.y = self.start_y_col
+
+    def _register_page_fonts(self, page):
+        if UNICODE_FONTS_AVAILABLE:
+            for fname, fpath in FONT_FILES.items():
+                try:
+                    page.insert_font(fontname=fname, fontfile=fpath)
+                except Exception:
+                    pass
 
     def get_next_table_num(self) -> str:
         self.table_counter += 1
@@ -608,7 +685,7 @@ class AcademicTwoColumnPaper:
                 cur[-1] = f"{cur[-1]} {w}"
                 continue
             cand = " ".join(cur + [w])
-            if fitz.get_text_length(cand, fontname=fontname, fontsize=fontsize) <= max_w:
+            if get_text_width(cand, fontname=fontname, fontsize=fontsize) <= max_w:
                 cur.append(w)
             else:
                 if cur:
@@ -626,19 +703,33 @@ class AcademicTwoColumnPaper:
 
     def draw_rich_line(self, x: float, y: float, runs: List[Tuple[str, str]], fontsize: float, color=(0.12, 0.15, 0.18)) -> float:
         cursor = x
-        space_w = fitz.get_text_length(" ", fontname="tiro", fontsize=fontsize)
+        if not runs:
+            return cursor
+        
+        # Group contiguous words of the same font style into unified phrase strings
+        grouped: List[Tuple[str, str]] = []
         for word, fontname in runs:
             if not word:
                 continue
-            self.page.insert_text(fitz.Point(cursor, y), word, fontname=fontname, fontsize=fontsize, color=color)
-            cursor += fitz.get_text_length(word, fontname=fontname, fontsize=fontsize) + space_w
+            mapped_font = FONT_MAP.get(fontname, fontname)
+            if grouped and grouped[-1][1] == mapped_font:
+                grouped[-1] = (grouped[-1][0] + " " + word, mapped_font)
+            else:
+                grouped.append((word, mapped_font))
+
+        space_w = get_text_width(" ", fontname="tiro", fontsize=fontsize)
+        for idx, (phrase, fontname) in enumerate(grouped):
+            self.page.insert_text(fitz.Point(cursor, y), phrase, fontname=fontname, fontsize=fontsize, color=color)
+            w = get_text_width(phrase, fontname=fontname, fontsize=fontsize)
+            cursor += w + (space_w if idx < len(grouped) - 1 else 0.0)
         return cursor
 
     def add_link_text(self, x: float, y: float, label: str, uri: str, fontsize: float = 7.5) -> None:
         if not label or not uri:
             return
-        self.page.insert_text(fitz.Point(x, y), label, fontname="tiro", fontsize=fontsize, color=(0.02, 0.47, 0.66))
-        label_w = fitz.get_text_length(label, fontname="tiro", fontsize=fontsize)
+        fn = FONT_MAP.get("tiro", "tiro")
+        self.page.insert_text(fitz.Point(x, y), label, fontname=fn, fontsize=fontsize, color=(0.02, 0.47, 0.66))
+        label_w = get_text_width(label, fontname="tiro", fontsize=fontsize)
         underline_y = y + 2.0
         self.page.draw_line(fitz.Point(x, underline_y), fitz.Point(x + label_w, underline_y), color=(0.02, 0.47, 0.66), width=0.4)
         self.insert_uri_link(fitz.Rect(x, y - fontsize, x + label_w + 2, y + 3), uri)
@@ -650,41 +741,42 @@ class AcademicTwoColumnPaper:
     def advance_column(self):
         self.current_col = 0
         self.page = self.doc.new_page(width=self.PAGE_W, height=self.PAGE_H)
+        self._register_page_fonts(self.page)
         self.y = self.TOP_LIMIT_NEXT
         if len(self.academic_title) > 65:
             running_title = self.academic_title[:65].rsplit(' ', 1)[0] + "..."
         else:
             running_title = self.academic_title
-        self.page.insert_text(fitz.Point(self.MARGIN_L, 26), f"ARIA v2 AUTONOMOUS VERIFICATION PREPRINT  |  {running_title}", fontname="tiro", fontsize=7.5, color=(0.30, 0.35, 0.40))
-        self.page.insert_text(fitz.Point(self.MARGIN_R - 45, 26), f"Page {len(self.doc)}", fontname="tibo", fontsize=8.0, color=(0.30, 0.35, 0.40))
+        self.page.insert_text(fitz.Point(self.MARGIN_L, 26), f"ARIA v2 AUTONOMOUS VERIFICATION PREPRINT  |  {running_title}", fontname=FONT_MAP.get("tiro", "tiro"), fontsize=7.5, color=(0.30, 0.35, 0.40))
+        self.page.insert_text(fitz.Point(self.MARGIN_R - 45, 26), f"Page {len(self.doc)}", fontname=FONT_MAP.get("tibo", "tibo"), fontsize=8.0, color=(0.30, 0.35, 0.40))
         self.page.draw_line(fitz.Point(self.MARGIN_L, 32), fitz.Point(self.MARGIN_R, 32), color=(0.72, 0.76, 0.80), width=0.5)
 
     # -------------------------------------------------------------- page head
     def render_page1_header(self):
         # 1. Top Preprint Banner
         header_text = f"ARIA v2 AUTONOMOUS VERIFICATION PREPRINT  |  TIER: {self.tier_str.upper()}  |  AUDIT CONFIDENCE: {self.conf_pct}  |  {self.date_str.upper()}"
-        self.page.insert_text(fitz.Point(self.MARGIN_L, 26), header_text, fontname="tiro", fontsize=7.5, color=(0.28, 0.32, 0.36))
+        self.page.insert_text(fitz.Point(self.MARGIN_L, 26), header_text, fontname=FONT_MAP.get("tiro", "tiro"), fontsize=7.5, color=(0.28, 0.32, 0.36))
         self.page.draw_line(fitz.Point(self.MARGIN_L, 32), fitz.Point(self.MARGIN_R, 32), color=(0.72, 0.76, 0.80), width=0.6)
 
         # 2. Centered Formal Academic Title
         title_lines = self.wrap_line(self.academic_title, max_w=480.0, fontname="tibo", fontsize=15.0)
         cur_y = 56.0
         for tl in title_lines:
-            t_len = fitz.get_text_length(tl, fontname="tibo", fontsize=15.0)
+            t_len = get_text_width(tl, fontname="tibo", fontsize=15.0)
             x_pos = (self.PAGE_W - t_len) / 2.0
-            self.page.insert_text(fitz.Point(x_pos, cur_y), tl, fontname="tibo", fontsize=15.0, color=(0.08, 0.10, 0.12))
+            self.page.insert_text(fitz.Point(x_pos, cur_y), tl, fontname=FONT_MAP.get("tibo", "tibo"), fontsize=15.0, color=(0.08, 0.10, 0.12))
             cur_y += 18.0
 
         # 3. Centered Author & Affiliation Block
         cur_y += 4.0
         a1 = "ARIA v2 Autonomous Research & Intelligence Synthesis Engine"
-        t1_len = fitz.get_text_length(a1, fontname="tiro", fontsize=10.0)
-        self.page.insert_text(fitz.Point((self.PAGE_W - t1_len) / 2.0, cur_y), a1, fontname="tiro", fontsize=10.0, color=(0.14, 0.17, 0.20))
+        t1_len = get_text_width(a1, fontname="tiro", fontsize=10.0)
+        self.page.insert_text(fitz.Point((self.PAGE_W - t1_len) / 2.0, cur_y), a1, fontname=FONT_MAP.get("tiro", "tiro"), fontsize=10.0, color=(0.14, 0.17, 0.20))
         cur_y += 13.0
 
         a2 = "Department of Autonomous Verification & Multi-Tier Retrieval | Entailment & Entity Coverage Audited"
-        t2_len = fitz.get_text_length(a2, fontname="tiit", fontsize=8.5)
-        self.page.insert_text(fitz.Point((self.PAGE_W - t2_len) / 2.0, cur_y), a2, fontname="tiit", fontsize=8.5, color=(0.35, 0.38, 0.42))
+        t2_len = get_text_width(a2, fontname="tiit", fontsize=8.5)
+        self.page.insert_text(fitz.Point((self.PAGE_W - t2_len) / 2.0, cur_y), a2, fontname=FONT_MAP.get("tiit", "tiit"), fontsize=8.5, color=(0.35, 0.38, 0.42))
         cur_y += 16.0
 
         # 4. Indented Abstract & Index Terms Block
@@ -699,12 +791,12 @@ class AcademicTwoColumnPaper:
         abs_lines = self.wrap_line(abs_full, max_w=abs_w, fontname="tiro", fontsize=8.5)
         for idx, al in enumerate(abs_lines):
             if idx == 0 and al.startswith(abs_lead):
-                lead_w = fitz.get_text_length(abs_lead, fontname="tibi", fontsize=8.5)
-                self.page.insert_text(fitz.Point(abs_l, cur_y), abs_lead, fontname="tibi", fontsize=8.5, color=(0.08, 0.10, 0.12))
+                lead_w = get_text_width(abs_lead, fontname="tibi", fontsize=8.5)
+                self.page.insert_text(fitz.Point(abs_l, cur_y), abs_lead, fontname=FONT_MAP.get("tibi", "tibi"), fontsize=8.5, color=(0.08, 0.10, 0.12))
                 rem_text = al[len(abs_lead):]
-                self.page.insert_text(fitz.Point(abs_l + lead_w, cur_y), rem_text, fontname="tiro", fontsize=8.5, color=(0.12, 0.15, 0.18))
+                self.page.insert_text(fitz.Point(abs_l + lead_w, cur_y), rem_text, fontname=FONT_MAP.get("tiro", "tiro"), fontsize=8.5, color=(0.12, 0.15, 0.18))
             else:
-                self.page.insert_text(fitz.Point(abs_l, cur_y), al, fontname="tiro", fontsize=8.5, color=(0.12, 0.15, 0.18))
+                self.page.insert_text(fitz.Point(abs_l, cur_y), al, fontname=FONT_MAP.get("tiro", "tiro"), fontsize=8.5, color=(0.12, 0.15, 0.18))
             cur_y += 11.0
 
         cur_y += 2.0
@@ -715,11 +807,11 @@ class AcademicTwoColumnPaper:
         idx_lines = self.wrap_line(idx_full, max_w=abs_w, fontname="tiro", fontsize=8.5)
         for idx, il in enumerate(idx_lines):
             if idx == 0 and il.startswith(idx_lead):
-                lead_w = fitz.get_text_length(idx_lead, fontname="tibi", fontsize=8.5)
-                self.page.insert_text(fitz.Point(abs_l, cur_y), idx_lead, fontname="tibi", fontsize=8.5, color=(0.08, 0.10, 0.12))
-                self.page.insert_text(fitz.Point(abs_l + lead_w, cur_y), il[len(idx_lead):], fontname="tiit", fontsize=8.5, color=(0.20, 0.22, 0.25))
+                lead_w = get_text_width(idx_lead, fontname="tibi", fontsize=8.5)
+                self.page.insert_text(fitz.Point(abs_l, cur_y), idx_lead, fontname=FONT_MAP.get("tibi", "tibi"), fontsize=8.5, color=(0.08, 0.10, 0.12))
+                self.page.insert_text(fitz.Point(abs_l + lead_w, cur_y), il[len(idx_lead):], fontname=FONT_MAP.get("tiit", "tiit"), fontsize=8.5, color=(0.20, 0.22, 0.25))
             else:
-                self.page.insert_text(fitz.Point(abs_l, cur_y), il, fontname="tiit", fontsize=8.5, color=(0.20, 0.22, 0.25))
+                self.page.insert_text(fitz.Point(abs_l, cur_y), il, fontname=FONT_MAP.get("tiit", "tiit"), fontsize=8.5, color=(0.20, 0.22, 0.25))
             cur_y += 11.0
 
         cur_y += 4.0
@@ -736,6 +828,16 @@ class AcademicTwoColumnPaper:
         total_claims = len(self.claims)
         verified_ratio = (len(supported_claims) / total_claims * 100.0) if total_claims else 0.0
 
+        def _format_finding_clause(t: str) -> str:
+            s = t.strip()
+            words = s.split()
+            if not words:
+                return ""
+            first = words[0]
+            if first.isupper() and len(first) >= 2:
+                return s
+            return first[0].lower() + first[1:] + (" " + " ".join(words[1:]) if len(words) > 1 else "")
+
         if supported_claims:
             top = [strip_markdown(c.get("text", "")).rstrip(". ") for c in supported_claims[:2]]
             top = [t for t in top if t and len(t) >= 15]
@@ -743,11 +845,11 @@ class AcademicTwoColumnPaper:
             top = []
 
         if top and verified_ratio >= 60.0:
-            findings = f"Verified empirical findings demonstrate that {top[0]}."
+            findings = f"Verified empirical findings demonstrate that {_format_finding_clause(top[0])}."
             if len(top) > 1:
-                findings += f" Further cross-verified analysis confirms that {top[1]}."
+                findings += f" Further cross-verified analysis confirms that {_format_finding_clause(top[1])}."
         elif top:
-            findings = f"Partially verified analysis indicates that {top[0]}."
+            findings = f"Partially verified analysis indicates that {_format_finding_clause(top[0])}."
         else:
             findings = (
                 f"An autonomous synthesis over retrieved scientific evidence examines the foundational "
@@ -763,30 +865,50 @@ class AcademicTwoColumnPaper:
             f"({verified_ratio:.0f}% verified) with {len(partial_claims)} partially supported {part_noun}, "
             f"yielding an overall verification audit confidence of {self.conf_pct}."
         )
-        close = "All empirical assertions are deterministically checked with exact substring evidence grounding against cited peer-reviewed sources."
+
+        is_all_peer_reviewed = bool(self.cited_sources) and all(
+            s.get("review_status") == "peer_reviewed" or s.get("source_type") in ("openalex_journal", "crossref_peer_reviewed")
+            for s in self.cited_sources
+        )
+        if is_all_peer_reviewed:
+            close = "All empirical assertions are deterministically checked with exact evidence grounding against cited peer-reviewed sources."
+        else:
+            close = "All empirical assertions are deterministically checked with evidence grounding against cited primary and scholarly sources (Wikipedia, arXiv, OpenAlex)."
+
         return f"This paper presents an autonomous verification analysis of {self.academic_title.split(':')[0]}. {coverage_sentence} {findings} {close}"
 
     def build_index_terms(self) -> List[str]:
         boilerplate_stops = {
             "what", "when", "where", "which", "whose", "whom", "how", "does", "explain",
-            "describe", "there", "about", "their", "would", "these", "those",
+            "describe", "there", "about", "their", "would", "these", "those", "that", "this",
+            "from", "with", "into", "over", "under", "between", "through", "using", "based",
+            "and", "the", "for", "its", "our", "all", "any", "can", "not", "are", "has",
+            "had", "have", "been", "was", "were", "will", "shall", "each", "both", "such",
+            "wikipedia", "arxiv", "openalex", "crossref", "semanticscholar", "scholar", "okf",
+            "source", "sources", "journal", "review", "article", "author", "authors", "user",
             "comprehensive", "structural", "analysis", "synthesis", "principles", "frameworks",
             "architectural", "theoretical", "foundations", "empirical", "mechanisms", "overview",
             "properties", "quantitative", "comparative", "applications", "evaluation", "systematic",
-            "perspective", "toward", "towards", "based", "using", "between", "through", "under",
-            "paper", "study", "research", "autonomous", "verification", "preliminary", "review",
-            "investigation", "implications", "aspects", "critical", "future", "modern", "novel",
-            "department", "intelligence", "engine", "coverage", "audited", "entailment"
+            "perspective", "toward", "towards", "paper", "study", "research", "autonomous",
+            "verification", "preliminary", "investigation", "implications", "aspects", "critical",
+            "future", "modern", "novel", "department", "intelligence", "engine", "coverage",
+            "audited", "entailment"
         }
         seen: List[str] = []
 
         def add_term(t: str):
             t_clean = t.strip()
-            if len(t_clean) >= 3 and t_clean.lower() not in boilerplate_stops:
-                # Store with preserved acronym casing or lowercase
-                key = t_clean.upper() if t_clean.isupper() else t_clean.lower()
-                if key.lower() not in [x.lower() for x in seen]:
-                    seen.append(key)
+            t_lower = t_clean.lower()
+            if t_lower in boilerplate_stops:
+                return
+            if t_clean.isupper() and len(t_clean) >= 2:
+                key = t_clean
+            elif len(t_clean) >= 4 and t_lower not in boilerplate_stops:
+                key = t_lower
+            else:
+                return
+            if key.lower() not in [x.lower() for x in seen]:
+                seen.append(key)
 
         # 1. From canonical topic
         if self.canonical_topic:
@@ -809,13 +931,14 @@ class AcademicTwoColumnPaper:
         # 4. From cited source titles
         for s in self.cited_sources[:3]:
             stitle = s.get("title") or ""
-            for tok in re.findall(r'\b[A-Z]{2,}\b', stitle):
+            stitle_clean = re.sub(r'^(?:Wikipedia|arXiv|OpenAlex|Semantic Scholar):\s*', '', stitle, flags=re.I)
+            for tok in re.findall(r'\b[A-Z]{2,}\b', stitle_clean):
                 add_term(tok)
-            for w in re.findall(r'\b[A-Za-z]{4,}\b', stitle):
+            for w in re.findall(r'\b[A-Za-z]{4,}\b', stitle_clean):
                 add_term(w)
 
         # 5. Methodological fallbacks if too few terms
-        fallbacks = ["claim entailment", "evidence grounding", "automated verification", "peer-reviewed retrieval"]
+        fallbacks = ["claim entailment", "evidence grounding", "automated verification", "scholarly retrieval"]
         for fb in fallbacks:
             if len(seen) >= 6:
                 break
@@ -827,12 +950,12 @@ class AcademicTwoColumnPaper:
     # ------------------------------------------------------------ primitives
     def add_section_header(self, roman_title: str):
         lines = self.wrap_line(roman_title, max_w=self.COL_W, fontname="tibo", fontsize=9.0)
-        self.ensure_space(len(lines) * 12.0 + 14.0)
+        self.ensure_space(max(60.0, len(lines) * 12.0 + 35.0))
         x = self.COL_X[self.current_col]
         for l in lines:
-            t_len = fitz.get_text_length(l, fontname="tibo", fontsize=9.0)
+            t_len = get_text_width(l, fontname="tibo", fontsize=9.0)
             offset = max(0, (self.COL_W - t_len) / 2.0)
-            self.page.insert_text(fitz.Point(x + offset, self.y), l, fontname="tibo", fontsize=9.0, color=(0.08, 0.10, 0.12))
+            self.page.insert_text(fitz.Point(x + offset, self.y), l, fontname=FONT_MAP.get("tibo", "tibo"), fontsize=9.0, color=(0.08, 0.10, 0.12))
             self.y += 12.0
         self.page.draw_line(fitz.Point(x, self.y), fitz.Point(x + self.COL_W, self.y), color=(0.72, 0.76, 0.80), width=0.5)
         self.y += 4.0
@@ -936,9 +1059,12 @@ class AcademicTwoColumnPaper:
             return
         words: List[Tuple[str, str]] = []
         if bold_prefix.strip():
-            words = [(w, "tibo") for w in re.split(r'\s+', (bold_prefix + " ").strip()) if w]
+            pfx = bold_prefix.strip()
+            if not pfx.endswith(":"):
+                pfx = f"{pfx}:"
+            words = [(w, "tibo") for w in re.split(r'\s+', pfx) if w]
         words += _parse_rich_runs(sanitize_academic_text(body))
-        pending = [("-", "tiro")] + words
+        pending = [("•", "tiro")] + words
         lines = _wrap_rich_runs(pending, max_w=self.COL_W - 8.0, fontsize=8.5)
         self.ensure_space(len(lines) * 11.0 + 3.0)
         x = self.COL_X[self.current_col]
@@ -1062,7 +1188,7 @@ class AcademicTwoColumnPaper:
             weights = []
             for col in range(ncols):
                 natural = max(
-                    (fitz.get_text_length(strip_markdown(" ".join(r[col].split("|"))), fontname="tiro", fontsize=cell_fontsize)
+                    (get_text_width(strip_markdown(" ".join(r[col].split("|"))), fontname="tiro", fontsize=cell_fontsize)
                      for r in rows), default=min_col_w)
                 # Metric / Property column (col 0) gets sufficient width to avoid orphan closing parentheses
                 if col == 0:
@@ -1082,7 +1208,7 @@ class AcademicTwoColumnPaper:
             cap_lines = self.wrap_line(caption, max_w=avail_w, fontname="tiit", fontsize=7.5)
             self.ensure_space(len(cap_lines) * 9.0 + 4.0)
             for cl in cap_lines:
-                self.page.insert_text(fitz.Point(x0, self.y), cl, fontname="tiit", fontsize=7.5, color=(0.30, 0.33, 0.36))
+                self.page.insert_text(fitz.Point(x0, self.y), cl, fontname=FONT_MAP.get("tiit", "tiit"), fontsize=7.5, color=(0.30, 0.33, 0.36))
                 self.y += 9.0
             self.y += 2.0
 
@@ -1104,7 +1230,7 @@ class AcademicTwoColumnPaper:
                     self.page.draw_rect(rect, color=(0.35, 0.38, 0.42), fill=(0.91, 0.92, 0.94), width=0.7)
                 else:
                     self.page.draw_rect(rect, color=(0.55, 0.58, 0.62), width=0.5)
-                fontname = "tibo" if bold else "tiro"
+                fontname = FONT_MAP.get("tibo" if bold else "tiro")
                 ty = y_top + cell_pad_y + (5.8 if ncols >= 6 else 6.5)
                 for line in cell_lines[col]:
                     cell_color = (0.10, 0.13, 0.16)
@@ -1240,12 +1366,12 @@ class AcademicTwoColumnPaper:
             link_blue = (0.0, 0.34, 0.71)  # Classic IEEE blue (#0056B3)
             self.page.insert_text(
                 fitz.Point(x, self.y), l,
-                fontname="tiro",
+                fontname=FONT_MAP.get("tiro", "tiro"),
                 fontsize=7.5 if is_url else 8.0,
                 color=link_blue if is_url else (0.12, 0.15, 0.18),
             )
             if url and url_line is not None and l == url_line:
-                uw = fitz.get_text_length(l, fontname="tiro", fontsize=7.5)
+                uw = get_text_width(l, fontname="tiro", fontsize=7.5)
                 self.insert_uri_link(fitz.Rect(x, self.y - 7.0, x + uw + 2, self.y + 2.5), url)
                 self.page.draw_line(fitz.Point(x, self.y + 2.0), fitz.Point(x + uw, self.y + 2.0), color=link_blue, width=0.4)
             self.y += 9.5
@@ -1280,8 +1406,11 @@ class AcademicTwoColumnPaper:
         
         for idx, c in enumerate(ledger_claims):
             cid = f"C{idx + 1}"
-            raw_txt = strip_markdown(c.get("text", ""))
-            short_txt = (raw_txt[:75] + "...") if len(raw_txt) > 78 else raw_txt
+            raw_txt = strip_markdown(c.get("text", "")).strip()
+            if len(raw_txt) > 75:
+                short_txt = raw_txt[:75].rsplit(' ', 1)[0] + "..."
+            else:
+                short_txt = raw_txt
             
             stat = str(c.get("status", "supported")).lower()
             if stat == "uncited":
@@ -1309,7 +1438,7 @@ class AcademicTwoColumnPaper:
             
             rows.append([cid, short_txt, verdict, conf_str, src_str])
             
-        custom_widths = [45.0, 244.0, 85.0, 55.0, 70.0]  # Sum = 499.0 pt (full single-column width)
+        custom_widths = [40.0, 254.0, 75.0, 45.0, 85.0]  # Sum = 499.0 pt (full single-column width)
         self._render_table_block(rows, caption="Table II: Sentence-Level Evidence Grounding & Verification Audit Ledger", custom_col_widths=custom_widths)
 
     # ------------------------------------------------------------- generate
@@ -1515,7 +1644,11 @@ class AcademicTwoColumnPaper:
                     if not img_bytes and fig0.get("url"):
                         img_bytes = _download_img_sync(fig0["url"])
                     if img_bytes:
-                        cap = fig0.get("caption") or fig0.get("title") or f"Scientific overview of {self.academic_title.split(':')[0]}."
+                        fig_title = fig0.get("title", "").strip()
+                        cap = fig0.get("caption") or fig_title or f"Scientific overview of {self.academic_title.split(':')[0]}."
+                        if fig_title and any(d in fig_title.lower() for d in ("diagram", "structure", "schematic", "eukaryotic", "prokaryotic", "cell", "model", "pathway", "architecture")):
+                            if not any(d in cap.lower() for d in ("diagram", "structure", "schematic")):
+                                cap = f"{fig_title}. {cap}"
                         attr = fig0.get("attribution") or "Wikimedia Commons"
                         self.add_figure(img_bytes, f"Figure 1: {cap}", attribution=attr)
                         figure1_rendered = True
@@ -1555,6 +1688,10 @@ class AcademicTwoColumnPaper:
         # APPENDIX: VERIFICATION AUDIT LEDGER (Compact Bordered Table)
         # ------------------------------------------------------------------
         self._render_audit_ledger_table()
+
+        # Remove trailing blank or header-only page
+        while len(self.doc) > 1 and is_page_empty_or_header_only(self.doc[-1]):
+            self.doc.delete_page(len(self.doc) - 1)
 
         pdf_bytes = self.doc.write()
         self.doc.close()
