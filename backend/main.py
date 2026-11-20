@@ -524,8 +524,11 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 logger.info(f"Groq [synthesis_stream]: finish_reason='{synth_finish_reason}'")
                 token_tracker.record_from_response("synthesis_stream", full_resp, model_name=settings.groq_writer_model, finish_reason=synth_finish_reason)
 
-            from pipeline.nodes import sanitize_answer, strip_orphan_headings
+            from pipeline.nodes import sanitize_answer, strip_orphan_headings, trim_incomplete_sentence
             clean_answer = sanitize_answer(full_answer, len(chunks))
+            if synth_finish_reason == "length":
+                logger.warning(f"[{request_id}] Groq synthesis truncated (finish_reason='length'). Trimming incomplete sentence.")
+                clean_answer = trim_incomplete_sentence(clean_answer)
             current_state["draft_answer"] = clean_answer
             current_state["answer_final"] = clean_answer
 
@@ -1099,6 +1102,10 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
                 confidence_for_pdf = computed_conf
             except Exception as expand_err:
                 logger.warning(f"Full paper expansion failed: {expand_err}. Proceeding with original synthesis.")
+
+        # Ensure answer text is cleanly closed with no incomplete sentences
+        from pipeline.nodes import trim_incomplete_sentence
+        answer_for_pdf = trim_incomplete_sentence(answer_for_pdf)
 
         # 1. Resolve figures for PDF (use request figures or fetch)
         figures_for_pdf = req.figures if req.figures is not None else []

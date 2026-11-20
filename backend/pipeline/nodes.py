@@ -1141,7 +1141,37 @@ def sanitize_answer(text: str, num_citations: int) -> str:
     # Strip orphan / trailing empty headings that have no body content
     clean = strip_orphan_headings(clean)
 
+    # Cleanly trim trailing incomplete sentence if truncated
+    clean = trim_incomplete_sentence(clean)
+
     return clean.strip()
+
+def trim_incomplete_sentence(text: str) -> str:
+    """
+    Detects if text ends mid-sentence (lacking terminal punctuation or truncated by finish_reason == 'length')
+    and trims cleanly at the last complete sentence boundary so no section ends mid-word.
+    """
+    if not text:
+        return ""
+    s = text.strip()
+    if not s:
+        return ""
+    # Complete sentence with punctuation + optional quotes/brackets/markdown/citation
+    if re.search(r'[.!?]["\')”’]*(?:\s*\[\[c:\d+\]\])*(?:\*\*|\*|_)?$', s):
+        return s
+    # Tables or headings are preserved
+    if (s.startswith('|') and s.endswith('|')) or s.startswith('#'):
+        return s
+    matches = list(re.finditer(r'([.!?]["\')”’]*(?:\s*\[\[c:\d+\]\])*(?:\*\*|\*|_)?)(?:\s+|$)', s))
+    if matches:
+        last_match = matches[-1]
+        cut_idx = last_match.end(1)
+        trimmed = s[:cut_idx].strip()
+        if trimmed:
+            return trimmed
+    if s and s[-1].isalnum():
+        return s + "."
+    return s
 
 def synthesize_answer(state: AgentState) -> dict:
     """
@@ -1168,9 +1198,13 @@ def synthesize_answer(state: AgentState) -> dict:
     try:
         response = current_writer_llm().invoke(messages, max_tokens=1200)
         tracker = state.get("token_tracker")
+        finish_reason = getattr(response, "response_metadata", {}).get("finish_reason") or "stop"
         if tracker:
-            tracker.record_from_response("synthesize_answer", response)
+            tracker.record_from_response("synthesize_answer", response, finish_reason=finish_reason)
         clean_text = sanitize_answer(response.content, len(chunks))
+        if finish_reason == "length":
+            logger.warning("Groq [synthesize_answer] hit finish_reason='length'. Trimming trailing incomplete sentence.")
+            clean_text = trim_incomplete_sentence(clean_text)
         clean_text = normalize_markers(clean_text)
         updates["draft_answer"] = clean_text
         updates["answer_final"] = clean_text
@@ -2662,8 +2696,12 @@ async def expand_to_full_research_paper(
                 timeout=20.0
             )
             raw_content = resp.content if hasattr(resp, "content") else str(resp)
+            finish_reason = getattr(resp, "response_metadata", {}).get("finish_reason") or "stop"
             if raw_content and len(raw_content.split()) >= 600:
                 expanded_text = sanitize_answer(raw_content, len(sources))
+                if finish_reason == "length":
+                    logger.warning(f"Groq [full_paper] hit finish_reason='length'. Trimming incomplete sentence.")
+                    expanded_text = trim_incomplete_sentence(expanded_text)
                 logger.info(f"Manuscript expansion succeeded with model={model_name} ({len(expanded_text.split())} words)")
                 break
         except Exception as e:

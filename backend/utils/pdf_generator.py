@@ -76,6 +76,78 @@ _MATH_MAP = {
     "∫": "∫", "∇": "∇", "⊕": "⊕", "⊗": "⊗", "‰": "‰",
 }
 
+def is_complex_latex_block(expr: str) -> bool:
+    """
+    Detects if a LaTeX math block contains fractions, integrals, roots, or summations.
+    """
+    if not expr:
+        return False
+    patterns = [r'\\frac', r'\\int', r'\\sqrt', r'\\sum', r'\\prod', r'\\iint', r'\\oint', r'\\partial']
+    return any(re.search(p, expr) for p in patterns)
+
+def render_latex_to_png(expr: str, dpi: int = 300) -> Optional[bytes]:
+    """
+    Renders block LaTeX equations ($$ ... $$) containing fractions, integrals, roots, or summations
+    to crisp 300-DPI transparent PNG images using matplotlib.mathtext, closing figures cleanly in finally.
+    """
+    clean = expr.strip()
+    if clean.startswith('$$') and clean.endswith('$$'):
+        clean = clean[2:-2].strip()
+    elif clean.startswith(r'\[') and clean.endswith(r'\]'):
+        clean = clean[2:-2].strip()
+    elif clean.startswith('$') and clean.endswith('$'):
+        clean = clean[1:-1].strip()
+
+    if not clean:
+        return None
+
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    fig = None
+    try:
+        fig = plt.figure(facecolor='none')
+        fig.text(0.5, 0.5, f"${clean}$", fontsize=12, ha='center', va='center', color='#0F172A')
+        buf = io.BytesIO()
+        fig.savefig(buf, dpi=dpi, format='png', transparent=True, bbox_inches='tight', pad_inches=0.06)
+        buf.seek(0)
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning(f"matplotlib.mathtext failed to render LaTeX block '${clean[:50]}': {e}")
+        return None
+    finally:
+        if fig is not None:
+            plt.close(fig)
+        plt.close('all')
+
+def trim_incomplete_sentence(text: str) -> str:
+    """
+    Detects if text ends mid-sentence (lacking terminal punctuation or truncated by finish_reason == 'length')
+    and trims cleanly at the last complete sentence boundary so no PDF section ever ends mid-word.
+    """
+    if not text:
+        return ""
+    s = text.strip()
+    if not s:
+        return ""
+    # Complete sentence with punctuation + optional quotes/brackets/markdown/citation
+    if re.search(r'[.!?]["\')”’]*(?:\s*\[\[c:\d+\]\])*(?:\*\*|\*|_)?$', s):
+        return s
+    # Tables or headings are preserved
+    if (s.startswith('|') and s.endswith('|')) or s.startswith('#'):
+        return s
+    matches = list(re.finditer(r'([.!?]["\')”’]*(?:\s*\[\[c:\d+\]\])*(?:\*\*|\*|_)?)(?:\s+|$)', s))
+    if matches:
+        last_match = matches[-1]
+        cut_idx = last_match.end(1)
+        trimmed = s[:cut_idx].strip()
+        if trimmed:
+            return trimmed
+    if s and s[-1].isalnum():
+        return s + "."
+    return s
+
 def sanitize_academic_text(text: str) -> str:
     r"""
     Comprehensive LaTeX-to-Unicode and PDF-safe math sanitizer.
@@ -481,11 +553,8 @@ class AcademicTwoColumnPaper:
         formatted_answer = re.sub(r'\[+c:(\d+)\]+', replace_cite, raw_answer_text)
         formatted_answer = re.sub(r'【+c:(\d+)】+', replace_cite, formatted_answer)
         
-        # Sanitize line-by-line preserving block markdown
-        self.raw_answer = "\n".join(
-            sanitize_academic_text(ln) if ln.strip() else ""
-            for ln in formatted_answer.split("\n")
-        )
+        # Preserve formatted answer with renumbered citations for section/math routing
+        self.raw_answer = formatted_answer
 
         # Filter sources to cited-only list
         self.cited_sources = [self.full_sources[i] for i in cited_source_indices]
@@ -787,8 +856,68 @@ class AcademicTwoColumnPaper:
             self.y += 11.0
         self.y += 4.0
 
+    def add_equation_image(self, img_bytes: bytes, max_h: float = 75.0):
+        """
+        Embeds a rendered LaTeX equation image centered in the column with proper vertical breathing room.
+        """
+        if not img_bytes:
+            return
+        try:
+            pil_img = Image.open(io.BytesIO(img_bytes))
+            w_orig, h_orig = pil_img.size
+            if w_orig <= 0 or h_orig <= 0:
+                return
+
+            dpi_scale = 72.0 / 300.0
+            target_w = w_orig * dpi_scale
+            target_h = h_orig * dpi_scale
+
+            avail_w = self.COL_W - 20.0
+            if target_w > avail_w:
+                scale = avail_w / target_w
+                target_w = avail_w
+                target_h = target_h * scale
+            if target_h > max_h:
+                scale = max_h / target_h
+                target_h = max_h
+                target_w = target_w * scale
+
+            total_block_h = target_h + 12.0
+            self.ensure_space(total_block_h)
+
+            x_offset = self.COL_X[self.current_col] + max(0.0, (self.COL_W - target_w) / 2.0)
+            self.y += 3.0
+            rect = fitz.Rect(x_offset, self.y, x_offset + target_w, self.y + target_h)
+            self.page.insert_image(rect, stream=img_bytes)
+            self.y += target_h + 6.0
+        except Exception as e:
+            logger.warning(f"Failed to embed equation image: {e}")
+
     def add_paragraph(self, text: str, indent: bool = True, fontsize: float = BODY_SIZE, fontname: str = BODY_FONT, line_h: float = LINE_H):
         clean = text.strip()
+        if not clean:
+            return
+
+        # Check for block LaTeX equations ($$ ... $$ or \[ ... \]) containing fractions, integrals, roots, or summations
+        if ("$$" in clean or r"\[" in clean) and is_complex_latex_block(clean):
+            parts = re.split(r'(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\])', clean)
+            for part in parts:
+                p_strip = part.strip()
+                if not p_strip:
+                    continue
+                if (p_strip.startswith("$$") and p_strip.endswith("$$")) or (p_strip.startswith(r"\[") and p_strip.endswith(r"\]")):
+                    if is_complex_latex_block(p_strip):
+                        png_bytes = render_latex_to_png(p_strip, dpi=300)
+                        if png_bytes:
+                            self.add_equation_image(png_bytes)
+                            continue
+                self._render_text_paragraph(p_strip, indent=indent, fontsize=fontsize, fontname=fontname, line_h=line_h)
+            return
+
+        self._render_text_paragraph(clean, indent=indent, fontsize=fontsize, fontname=fontname, line_h=line_h)
+
+    def _render_text_paragraph(self, text: str, indent: bool = True, fontsize: float = BODY_SIZE, fontname: str = BODY_FONT, line_h: float = LINE_H):
+        clean = sanitize_academic_text(text).strip()
         if not clean:
             return
         words = _parse_rich_runs(clean)
@@ -808,7 +937,7 @@ class AcademicTwoColumnPaper:
         words: List[Tuple[str, str]] = []
         if bold_prefix.strip():
             words = [(w, "tibo") for w in re.split(r'\s+', (bold_prefix + " ").strip()) if w]
-        words += _parse_rich_runs(body)
+        words += _parse_rich_runs(sanitize_academic_text(body))
         pending = [("-", "tiro")] + words
         lines = _wrap_rich_runs(pending, max_w=self.COL_W - 8.0, fontsize=8.5)
         self.ensure_space(len(lines) * 11.0 + 3.0)
@@ -821,16 +950,89 @@ class AcademicTwoColumnPaper:
             first = False
         self.y += 3.0
 
+    def _render_key_value_cards(self, rows: List[List[str]], caption: str = ""):
+        """
+        Renders wide comparison tables (> 7 columns) as clean, bordered key-value stacked cards
+        so wide comparison tables never crush text vertically into illegible single-character columns on portrait pages.
+        """
+        if not rows:
+            return
+        header = rows[0] if len(rows) > 1 else [f"Field {i}" for i in range(len(rows[0]))]
+        data_rows = rows[1:] if len(rows) > 1 else rows
+
+        avail_w = self.COL_W
+        x0 = self.COL_X[self.current_col]
+
+        if caption:
+            clean_body = re.sub(r'^(?:Table\s+[0-9IVXivx]*\s*[:\.\-]\s*)', '', caption, flags=re.I).strip()
+            if not clean_body:
+                clean_body = caption.strip()
+            caption_str = f"Table {self.get_next_table_num()}: {clean_body} (Structured Metric Cards)"
+            cap_lines = self.wrap_line(caption_str, max_w=avail_w, fontname="tiit", fontsize=7.5)
+            self.ensure_space(len(cap_lines) * 9.0 + 4.0)
+            for cl in cap_lines:
+                self.page.insert_text(fitz.Point(x0, self.y), cl, fontname="tiit", fontsize=7.5, color=(0.30, 0.33, 0.36))
+                self.y += 9.0
+            self.y += 3.0
+
+        for row_idx, r in enumerate(data_rows):
+            entity_title = strip_markdown(sanitize_academic_text(r[0] if r else f"Entry {row_idx + 1}"))
+            primary_label = f"{header[0]}: {entity_title}" if header else entity_title
+
+            items: List[Tuple[str, str]] = []
+            for col in range(1, len(header)):
+                key = strip_markdown(sanitize_academic_text(header[col]))
+                val = strip_markdown(sanitize_academic_text(r[col] if col < len(r) else "N/A"))
+                items.append((key, val))
+
+            col_w_card = (avail_w - 16.0) / 2.0
+            left_lines = []
+            right_lines = []
+            for idx, (k, v) in enumerate(items):
+                target_list = left_lines if idx % 2 == 0 else right_lines
+                wrapped = self.wrap_line(f"• {k}: {v}", max_w=col_w_card, fontname="tiro", fontsize=7.5)
+                target_list.extend(wrapped)
+
+            n_body_lines = max(len(left_lines), len(right_lines), 1)
+            card_h = 16.0 + n_body_lines * 9.5 + 8.0
+
+            if self.y + card_h > self.BOTTOM_LIMIT:
+                self.advance_column()
+                x0 = self.COL_X[self.current_col]
+
+            card_rect = fitz.Rect(x0, self.y, x0 + avail_w, self.y + card_h)
+            header_rect = fitz.Rect(x0, self.y, x0 + avail_w, self.y + 16.0)
+
+            self.page.draw_rect(card_rect, color=(0.75, 0.78, 0.82), width=0.5)
+            self.page.draw_rect(header_rect, color=(0.75, 0.78, 0.82), fill=(0.92, 0.93, 0.95), width=0.5)
+
+            self.page.insert_text(fitz.Point(x0 + 6.0, self.y + 11.5), primary_label, fontname="tibo", fontsize=8.0, color=(0.08, 0.10, 0.14))
+
+            body_y = self.y + 24.0
+            for i, line in enumerate(left_lines):
+                self.page.insert_text(fitz.Point(x0 + 6.0, body_y + i * 9.5), line, fontname="tiro", fontsize=7.5, color=(0.12, 0.15, 0.18))
+            for i, line in enumerate(right_lines):
+                self.page.insert_text(fitz.Point(x0 + 10.0 + col_w_card, body_y + i * 9.5), line, fontname="tiro", fontsize=7.5, color=(0.12, 0.15, 0.18))
+
+            self.y += card_h + 6.0
+
     # ------------------------------------------------------- real MD tables
     def _render_table_block(self, rows: List[List[str]], caption: str = "", custom_col_widths: Optional[List[float]] = None):
         """
         Renders real bordered grid with wrapped cells, header shading, clean pagination,
         and header row repetition on continuation pages (repeatRows=1).
+        For tables with > 7 columns, automatically renders as clean key-value stacked cards.
+        For tables with 6-7 columns, automatically reduces cell font size to 7.0-7.5pt with tighter padding.
         """
         if not rows:
             return
         ncols = max(len(r) for r in rows)
         rows = [r + ["N/A"] * (ncols - len(r)) for r in rows]
+
+        # For wide comparison tables with > 7 columns: render as clean key-value stacked cards
+        if ncols > 7 and not custom_col_widths:
+            self._render_key_value_cards(rows, caption=caption)
+            return
 
         header = rows[0] if len(rows) > 1 else None
         data_rows = rows[1:] if len(rows) > 1 else rows
@@ -839,20 +1041,35 @@ class AcademicTwoColumnPaper:
 
         x0 = self.COL_X[self.current_col]
         avail_w = self.COL_W
+
+        # Dynamic cell font size and tighter padding for 6+ columns to prevent vertical text crushing
+        if ncols >= 6:
+            cell_fontsize = 7.0
+            cell_pad_x = 1.5
+            cell_pad_y = 1.8
+            line_h = 8.5
+            min_col_w = 22.0
+        else:
+            cell_fontsize = 7.5
+            cell_pad_x = 2.5
+            cell_pad_y = 2.5
+            line_h = 9.0
+            min_col_w = 30.0
+
         if custom_col_widths and len(custom_col_widths) == ncols:
             col_widths = custom_col_widths
         else:
             weights = []
             for col in range(ncols):
                 natural = max(
-                    (fitz.get_text_length(strip_markdown(" ".join(r[col].split("|"))), fontname="tiro", fontsize=7.5)
-                     for r in rows), default=30.0)
+                    (fitz.get_text_length(strip_markdown(" ".join(r[col].split("|"))), fontname="tiro", fontsize=cell_fontsize)
+                     for r in rows), default=min_col_w)
                 # Metric / Property column (col 0) gets sufficient width to avoid orphan closing parentheses
                 if col == 0:
-                    natural = max(natural, 55.0)
-                weights.append(max(natural, 28.0))
+                    natural = max(natural, 45.0 if ncols >= 6 else 55.0)
+                weights.append(max(natural, min_col_w))
             total_w = sum(weights)
-            col_widths = [max(30.0, avail_w * w / total_w) for w in weights]
+            col_widths = [max(min_col_w, avail_w * w / total_w) for w in weights]
             scale = avail_w / sum(col_widths)
             col_widths = [w * scale for w in col_widths]
 
@@ -869,16 +1086,12 @@ class AcademicTwoColumnPaper:
                 self.y += 9.0
             self.y += 2.0
 
-        cell_pad_x = 2.5
-        cell_pad_y = 2.5
-        line_h = 9.0
-
         def draw_row(row_cells: List[str], bold: bool) -> Tuple[float, List[List[str]]]:
             fontname = "tibo" if bold else "tiro"
             cell_lines = []
             for col, (_, cw) in enumerate(zip(row_cells, col_widths)):
                 txt = strip_markdown(sanitize_academic_text(row_cells[col]))
-                cell_lines.append(self.wrap_line(txt, max_w=cw - 2 * cell_pad_x, fontname=fontname, fontsize=7.5))
+                cell_lines.append(self.wrap_line(txt, max_w=cw - 2 * cell_pad_x, fontname=fontname, fontsize=cell_fontsize))
             n_lines = max((len(cl) for cl in cell_lines), default=1)
             row_h = n_lines * line_h + 2 * cell_pad_y
             return row_h, cell_lines
@@ -892,7 +1105,7 @@ class AcademicTwoColumnPaper:
                 else:
                     self.page.draw_rect(rect, color=(0.55, 0.58, 0.62), width=0.5)
                 fontname = "tibo" if bold else "tiro"
-                ty = y_top + cell_pad_y + 6.5
+                ty = y_top + cell_pad_y + (5.8 if ncols >= 6 else 6.5)
                 for line in cell_lines[col]:
                     cell_color = (0.10, 0.13, 0.16)
                     if not bold and line == "SUPPORTED":
@@ -903,7 +1116,7 @@ class AcademicTwoColumnPaper:
                         cell_color = (0.65, 0.16, 0.16)
                     elif not bold and line == "UNCITED":
                         cell_color = (0.45, 0.47, 0.50)
-                    self.page.insert_text(fitz.Point(xs_coords[col] + cell_pad_x, ty), line, fontname=fontname, fontsize=7.5, color=cell_color)
+                    self.page.insert_text(fitz.Point(xs_coords[col] + cell_pad_x, ty), line, fontname=fontname, fontsize=cell_fontsize, color=cell_color)
                     ty += line_h
             self.y += row_h
 
@@ -1127,7 +1340,14 @@ class AcademicTwoColumnPaper:
         return -1
 
     def generate(self) -> bytes:
-        raw_lines = [l.rstrip() for l in self.raw_answer.split('\n')]
+        # Cleanly trim any incomplete trailing sentence lacking terminal punctuation
+        self.raw_answer = trim_incomplete_sentence(self.raw_answer)
+
+        # Normalize multi-line math blocks ($$\n...\n$$ and \[\n...\n\]) into single lines
+        normalized_answer = re.sub(r'\$\$\s*\n([\s\S]+?)\n\s*\$\$', lambda m: f"$${' '.join(m.group(1).split())}$$", self.raw_answer)
+        normalized_answer = re.sub(r'\\\[\s*\n([\s\S]+?)\n\s*\\\]', lambda m: f"\\[{' '.join(m.group(1).split())}\\]", normalized_answer)
+
+        raw_lines = [l.rstrip() for l in normalized_answer.split('\n')]
 
         # 5 Sections containers: list of (kind, text)
         sections_content: List[List[Tuple[str, str]]] = [[] for _ in range(5)]
@@ -1161,6 +1381,13 @@ class AcademicTwoColumnPaper:
             sections_content[cur_sec].append((kind, s))
 
         flush_table_buffer()
+
+        # Trim incomplete trailing sentences from each section so no section ends mid-word
+        for s_idx in range(5):
+            if sections_content[s_idx]:
+                last_kind, last_text = sections_content[s_idx][-1]
+                if last_kind == "paragraph":
+                    sections_content[s_idx][-1] = (last_kind, trim_incomplete_sentence(last_text))
 
         # Canonical section definitions matching research prompts
         canonical_sections = [
