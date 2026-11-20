@@ -71,14 +71,86 @@ export function getTierGlyph(tier?: string | TierType): string {
 export function getTierColorClass(tier?: string | TierType): string {
   switch (tier) {
     case 'OKF':
-      return 'text-tier-okf bg-tier-okf/15 border-tier-okf/50 hover:bg-tier-okf/25';
+      return 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30 dark:hover:bg-blue-500/25';
     case 'RAG':
-      return 'text-tier-rag bg-tier-rag/15 border-tier-rag/50 hover:bg-tier-rag/25';
+      return 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 dark:bg-purple-500/15 dark:text-purple-300 dark:border-purple-500/30 dark:hover:bg-purple-500/25';
     case 'LIVE':
-      return 'text-tier-live bg-tier-live/15 border-tier-live/50 hover:bg-tier-live/25';
+      return 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30 dark:hover:bg-amber-500/25';
     default:
-      return 'text-gray-300 bg-gray-700/20 border-gray-600 hover:bg-gray-700/40';
+      return 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200 dark:bg-gray-700/20 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700/40';
   }
+}
+
+export function normalizeMathDelimiters(text: string): string {
+  if (!text) return '';
+  // Convert \[ ... \] -> $$ ... $$ and \( ... \) -> $ ... $
+  // while safely skipping fenced code blocks (```...```) and inline code (`...`)
+  return text.replace(
+    /(```[\s\S]*?```|`[^`\n]*`)|\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)/g,
+    (match, code, displayMath, inlineMath) => {
+      if (code) return code;
+      if (displayMath !== undefined) {
+        const trimmed = displayMath.trim();
+        return trimmed ? `$$${trimmed}$$` : '';
+      }
+      if (inlineMath !== undefined) {
+        const trimmed = inlineMath.trim();
+        return trimmed ? `$${trimmed}$` : '';
+      }
+      return match;
+    }
+  );
+}
+
+export function stripOrphanHeadings(text: string): string {
+  if (!text) return '';
+  const lines = text.split('\n');
+  while (lines.length > 0 && (!lines[lines.length - 1].trim() || lines[lines.length - 1].trim().startsWith('#'))) {
+    lines.pop();
+  }
+
+  const cleanedLines: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const stripped = line.trim();
+    const m = stripped.match(/^(#{1,6})\s+(.*)/);
+    if (m) {
+      const level = m[1].length;
+      let j = i + 1;
+      let hasContent = false;
+      while (j < lines.length) {
+        const nextStripped = lines[j].trim();
+        if (!nextStripped) {
+          j++;
+          continue;
+        }
+        const nextM = nextStripped.match(/^(#{1,6})\s+/);
+        if (nextM) {
+          const nextLevel = nextM[1].length;
+          if (nextLevel <= level) {
+            break;
+          } else {
+            hasContent = true;
+            break;
+          }
+        } else {
+          hasContent = true;
+          break;
+        }
+      }
+      if (!hasContent) {
+        i++;
+        continue;
+      }
+    }
+    cleanedLines.push(line);
+    i++;
+  }
+
+  let result = cleanedLines.join('\n');
+  result = result.replace(/(?:^|\n)\s*#{1,6}[^\n]*\s*$/, '').trim();
+  return result;
 }
 
 interface LineSpan {
@@ -144,11 +216,16 @@ function MarkdownRendererInner({
     // Strip any literal [VERIFIED] or \[VERIFIED\] text tags
     text = text.replace(/\\?\[\s*VERIFIED\s*\\?\]/gi, '');
 
-    // Convert \[ ... \] to $$ ... $$ and strip empty \[ \] blocks so raw empty brackets never render
-    text = text.replace(/\\\[\s*\\\]/g, '');
+    // Convert \[ ... \] to $$ ... $$ and \( ... \) to $ ... $ (skipping code blocks)
+    text = normalizeMathDelimiters(text);
+
+    // Strip empty math blocks
     text = text.replace(/\$\$\s*\$\$/g, '');
-    text = text.replace(/\\\[([\s\S]+?)\\\]/g, '$$$$$1$$$$');
-    text = text.replace(/\\\(\s*\\\)/g, '');
+
+    // Strip orphan / empty headings (especially trailing ones when stream completes)
+    if (!isStreaming) {
+      text = stripOrphanHeadings(text);
+    }
 
     // Clean compound word hyphens inside technical terms and table rows (e.g. fixed_bit -> fixed-bit, 8_bit -> 8-bit, Graph_Based -> Graph-Based)
     text = cleanCompoundHyphens(text);
@@ -186,12 +263,12 @@ function MarkdownRendererInner({
     // Token regex supporting:
     // 1. [[c:ID]] citations
     // 2. $$math$$ or \[math\] display math
-    // 3. $math$ or \(math\) inline math
+    // 3. $math$ or \(math\) inline math (with parentheses inside math supported)
     // 4. `code`
     // 5. **bold**
     // 6. *italic*
     // 7. [text](url)
-    const tokenRegex = /(\[\[c:(\d+)\]\])|(?:\$\$([\s\S]{1,2000}?)\$\$|\\\[([^\\\]]{1,2000}?)\\\])|(?:\$([^\$\n]{1,500}?)\$|\\\(([^\)\n]{1,500}?)\\\))|(`([^`\n]+)`)|(?:\*\*([^*\n]+)\*\*)|(?:\*([^*\n]+)\*)|(\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\))/g;
+    const tokenRegex = /(\[\[c:(\d+)\]\])|(?:\$\$([\s\S]{1,2000}?)\$\$|\\\[([^\\\]]{1,2000}?)\\\])|(?:\$([^\$\n]{1,1000}?)\$|\\\(([\s\S]{1,1000}?)\\\))|(`([^`\n]+)`)|(?:\*\*([^*\n]+)\*\*)|(?:\*([^*\n]+)\*)|(\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\))/g;
     let lastIndex = 0;
     let match: RegExpExecArray | null;
     let i = 0;
@@ -224,7 +301,7 @@ function MarkdownRendererInner({
           nodes.push(
             <div
               key={matchKey}
-              className="my-2.5 overflow-x-auto text-center font-mono text-sm py-1 px-2 bg-ink-surface/30 rounded border border-white/[0.05]"
+              className="my-2.5 overflow-x-auto text-center font-mono text-sm py-1.5 px-2 bg-[#F8FAFC] dark:bg-ink-surface/30 rounded border border-slate-200 dark:border-white/[0.05] text-slate-900 dark:text-zinc-100"
               dangerouslySetInnerHTML={{ __html: html }}
             />
           );
@@ -239,7 +316,7 @@ function MarkdownRendererInner({
           nodes.push(
             <span
               key={matchKey}
-              className="inline-math px-0.5"
+              className="inline-math px-0.5 text-slate-900 dark:text-zinc-100"
               dangerouslySetInnerHTML={{ __html: html }}
             />
           );
@@ -249,16 +326,16 @@ function MarkdownRendererInner({
       } else if (match[7]) {
         // `code`
         nodes.push(
-          <code key={matchKey} className="font-mono text-xs bg-ink-surface px-1 py-0.5 rounded-none text-tier-okf border border-ink-surface/80">
+          <code key={matchKey} className="font-mono text-xs bg-slate-100 dark:bg-ink-surface px-1 py-0.5 rounded text-blue-700 dark:text-tier-okf border border-slate-200 dark:border-ink-surface/80">
             {match[8]}
           </code>
         );
       } else if (match[9]) {
         // **bold**
-        nodes.push(<strong key={matchKey} className="font-semibold text-gray-100">{match[9]}</strong>);
+        nodes.push(<strong key={matchKey} className="font-semibold text-slate-900 dark:text-zinc-100">{match[9]}</strong>);
       } else if (match[10]) {
         // *italic*
-        nodes.push(<em key={matchKey} className="italic text-gray-300">{match[10]}</em>);
+        nodes.push(<em key={matchKey} className="italic text-slate-700 dark:text-zinc-300">{match[10]}</em>);
       } else if (match[11]) {
         // [text](url)
         const linkText = match[12];
@@ -269,7 +346,7 @@ function MarkdownRendererInner({
             href={linkUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-tier-okf hover:underline underline-offset-2 break-all"
+            className="text-blue-600 dark:text-tier-okf hover:underline underline-offset-2 break-all"
           >
             {linkText}
           </a>
@@ -448,6 +525,7 @@ function MarkdownRendererInner({
     const result: React.ReactNode[] = [];
     let lIdx = 0;
     let blockId = 0;
+    let orderedSeq = 1;
 
     while (lIdx < lineSpans.length) {
       const line = lineSpans[lIdx];
@@ -461,6 +539,7 @@ function MarkdownRendererInner({
 
       // Fenced Code Block
       if (trimmed.startsWith('```')) {
+        orderedSeq = 1;
         const codeLines: string[] = [];
         lIdx++;
         while (lIdx < lineSpans.length && !lineSpans[lIdx].text.trim().startsWith('```')) {
@@ -473,7 +552,7 @@ function MarkdownRendererInner({
         result.push(
           <pre
             key={`blk-${blockId++}`}
-            className="bg-ink-surface p-3 my-3 overflow-x-auto rounded-none border border-ink-surface text-xs font-mono text-gray-200"
+            className="bg-[#F8FAFC] dark:bg-[#0B0F1A] p-3 my-3 overflow-x-auto rounded-none border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-800 dark:text-gray-200"
           >
             <code>{codeLines.join('\n')}</code>
           </pre>
@@ -483,6 +562,7 @@ function MarkdownRendererInner({
 
       // GFM Table: lines starting with '|'
       if (trimmed.startsWith('|')) {
+        orderedSeq = 1;
         const tableLines: LineSpan[] = [];
         while (lIdx < lineSpans.length && lineSpans[lIdx].text.trim().startsWith('|')) {
           tableLines.push(lineSpans[lIdx]);
@@ -520,18 +600,21 @@ function MarkdownRendererInner({
           const dataRows = tableLines.slice(2).map(parseRowCells);
 
           result.push(
-            <div key={`blk-${blockId++}`} className="relative my-4 group">
+            <div key={`blk-${blockId++}`} className="my-4">
+              <div className="sm:hidden flex justify-end text-[10px] font-mono text-slate-500 dark:text-zinc-500 mb-1 select-none">
+                Scroll →
+              </div>
               <div
-                className="rounded-xl border border-white/[0.08] bg-[#0B0F1A] overflow-x-auto shadow-sm"
+                className="rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0B0F1A] overflow-x-auto shadow-sm"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
                 <table className="w-max min-w-full text-[12px] leading-[1.45] font-sans border-collapse" style={{ tableLayout: 'auto' }}>
-                  <thead className="bg-white/[0.04] border-b border-white/[0.08]">
+                  <thead className="bg-slate-50 dark:bg-white/[0.04] border-b border-slate-200 dark:border-white/[0.08]">
                     <tr>
                       {headerCells.map((cell, cIdx) => (
                         <th
                           key={`th-${cIdx}`}
-                          className={`px-3 py-2 text-left font-medium text-zinc-300 whitespace-nowrap text-[11px] uppercase tracking-wider border-r border-white/[0.05] last:border-r-0 ${
+                          className={`px-3 py-2 text-left font-medium text-slate-700 dark:text-zinc-300 whitespace-nowrap text-[11px] uppercase tracking-wider border-r border-slate-200 dark:border-white/[0.05] last:border-r-0 ${
                             cIdx === 0 ? 'min-w-[110px]' : 'min-w-[180px]'
                           }`}
                         >
@@ -540,14 +623,14 @@ function MarkdownRendererInner({
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/[0.05]">
+                  <tbody className="divide-y divide-slate-100 dark:divide-white/[0.05]">
                     {dataRows.map((row, rIdx) => (
-                      <tr key={`tr-${rIdx}`} className="hover:bg-white/[0.02] transition-colors">
+                      <tr key={`tr-${rIdx}`} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02] transition-colors">
                         {row.map((cell, cIdx) => (
                           <td
                             key={`td-${rIdx}-${cIdx}`}
-                            className={`px-3 py-2.5 align-top text-zinc-200 border-r border-white/[0.04] last:border-r-0 ${
-                              cIdx === 0 ? 'min-w-[110px] font-medium text-zinc-300' : 'min-w-[180px]'
+                            className={`px-3 py-2.5 align-top text-slate-800 dark:text-zinc-200 border-r border-slate-200 dark:border-white/[0.04] last:border-r-0 ${
+                              cIdx === 0 ? 'min-w-[110px] font-medium text-slate-900 dark:text-zinc-300' : 'min-w-[180px]'
                             }`}
                           >
                             {renderAuditedText(cleanCompoundHyphens(cell.text), cell.start, cell.end, `td-${rIdx}-${cIdx}`)}
@@ -558,23 +641,20 @@ function MarkdownRendererInner({
                   </tbody>
                 </table>
               </div>
-              <div className="sm:hidden absolute top-2 right-2 pointer-events-none opacity-70 group-hover:opacity-0 transition-opacity text-[10px] font-mono text-zinc-400 bg-[#09090B]/85 px-1.5 py-0.5 rounded border border-white/[0.08]">
-                Scroll →
-              </div>
             </div>
           );
           continue;
         }
       }
 
-      // Headings
       // Headings (refined scale & tracking)
       if (trimmed.startsWith('# ')) {
+        orderedSeq = 1;
         const leadWs = line.text.length - line.text.trimStart().length;
         const headingStart = line.start + leadWs + 2;
         const headingEnd = line.end;
         result.push(
-          <h1 key={`blk-${blockId++}`} className="text-[17px] font-sans font-semibold text-[#EDEDED] tracking-[-0.015em] mt-5 mb-2 leading-snug">
+          <h1 key={`blk-${blockId++}`} className="text-[17px] font-sans font-semibold text-slate-900 dark:text-zinc-100 tracking-[-0.015em] mt-5 mb-2 leading-snug">
             {renderAuditedText(trimmed.slice(2), headingStart, headingEnd, `h1-${blockId}`)}
           </h1>
         );
@@ -582,11 +662,12 @@ function MarkdownRendererInner({
         continue;
       }
       if (trimmed.startsWith('## ')) {
+        orderedSeq = 1;
         const leadWs = line.text.length - line.text.trimStart().length;
         const headingStart = line.start + leadWs + 3;
         const headingEnd = line.end;
         result.push(
-          <h2 key={`blk-${blockId++}`} className="text-[15px] font-sans font-semibold text-[#EDEDED] tracking-[-0.015em] mt-4 mb-2 leading-snug">
+          <h2 key={`blk-${blockId++}`} className="text-[15px] font-sans font-semibold text-slate-900 dark:text-zinc-100 tracking-[-0.015em] mt-4 mb-2 leading-snug">
             {renderAuditedText(trimmed.slice(3), headingStart, headingEnd, `h2-${blockId}`)}
           </h2>
         );
@@ -594,11 +675,12 @@ function MarkdownRendererInner({
         continue;
       }
       if (trimmed.startsWith('### ')) {
+        orderedSeq = 1;
         const leadWs = line.text.length - line.text.trimStart().length;
         const headingStart = line.start + leadWs + 4;
         const headingEnd = line.end;
         result.push(
-          <h3 key={`blk-${blockId++}`} className="text-[14px] font-sans font-semibold text-[#D4D4D8] tracking-[-0.015em] mt-3 mb-1.5 leading-snug">
+          <h3 key={`blk-${blockId++}`} className="text-[14px] font-sans font-semibold text-slate-900 dark:text-zinc-200 tracking-[-0.015em] mt-3 mb-1.5 leading-snug">
             {renderAuditedText(trimmed.slice(4), headingStart, headingEnd, `h3-${blockId}`)}
           </h3>
         );
@@ -608,7 +690,8 @@ function MarkdownRendererInner({
 
       // Horizontal Rules
       if (trimmed === '---' || trimmed === '***') {
-        result.push(<hr key={`blk-${blockId++}`} className="border-ink-surface my-4" />);
+        orderedSeq = 1;
+        result.push(<hr key={`blk-${blockId++}`} className="border-slate-200 dark:border-ink-surface my-4" />);
         lIdx++;
         continue;
       }
@@ -621,7 +704,11 @@ function MarkdownRendererInner({
         const itemStart = line.start + leadWs + markerLen;
         const itemEnd = line.end;
         result.push(
-          <li key={`blk-${blockId++}`} className="text-[15px] text-gray-200 ml-4 list-disc my-1 leading-[1.65]">
+          <li
+            key={`blk-${blockId++}`}
+            className={`text-[15px] text-slate-800 dark:text-zinc-200 list-disc my-1 leading-[1.65] ${leadWs >= 2 ? 'ml-9' : 'ml-5'}`}
+            style={{ counterIncrement: 'none' }}
+          >
             {renderAuditedText(bulletMatch[2], itemStart, itemEnd, `li-${blockId}`)}
           </li>
         );
@@ -629,15 +716,24 @@ function MarkdownRendererInner({
         continue;
       }
 
-      // List Items (Ordered)
-      const numMatch = trimmed.match(/^(\d+\.)\s+(.*)/);
+      // List Items (Ordered: guaranteed sequential numbering 1., 2., 3., 4.)
+      const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
       if (numMatch) {
         const leadWs = line.text.length - line.text.trimStart().length;
-        const markerLen = numMatch[1].length + 1; // e.g. "1. "
+        const markerLen = numMatch[1].length + 2; // e.g. "1. "
         const itemStart = line.start + leadWs + markerLen;
         const itemEnd = line.end;
+        const rawNum = parseInt(numMatch[1], 10);
+        if (rawNum === 1) {
+          orderedSeq = 1;
+        }
+        const itemNum = orderedSeq++;
         result.push(
-          <li key={`blk-${blockId++}`} className="text-[15px] text-gray-200 ml-4 list-decimal my-1 leading-[1.65]">
+          <li
+            key={`blk-${blockId++}`}
+            value={itemNum}
+            className={`text-[15px] text-slate-800 dark:text-zinc-200 list-decimal my-1 leading-[1.65] ${leadWs >= 2 ? 'ml-9' : 'ml-5'}`}
+          >
             {renderAuditedText(numMatch[2], itemStart, itemEnd, `oli-${blockId}`)}
           </li>
         );
@@ -671,7 +767,7 @@ function MarkdownRendererInner({
         const paraText = displayContent.slice(paraStart, paraEnd);
 
         result.push(
-          <p key={`blk-${blockId++}`} className="text-[15px] text-gray-200 my-2 leading-[1.65]">
+          <p key={`blk-${blockId++}`} className="text-[15px] text-slate-800 dark:text-zinc-200 my-2 leading-[1.65]">
             {renderAuditedText(paraText, paraStart, paraEnd, `p-${blockId}`)}
           </p>
         );
@@ -741,15 +837,15 @@ function InlineCitationPill({
       {/* Popover preview on hover */}
       {showPreview && (
         <span
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-[#111115] border border-white/[0.15] shadow-xl z-50 rounded-[6px] pointer-events-auto text-left block animate-fade-slide"
-          style={{ filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.85))' }}
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.15] shadow-xl z-50 rounded-[6px] pointer-events-auto text-left block animate-fade-slide"
+          style={{ filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.25))' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <span className="flex items-center justify-between text-[10px] font-mono mb-1.5 border-b border-white/[0.07] pb-1 text-[#8B8B8E]">
+          <span className="flex items-center justify-between text-[10px] font-mono mb-1.5 border-b border-slate-200 dark:border-white/[0.07] pb-1 text-slate-500 dark:text-[#8B8B8E]">
             <span
               className="flex items-center gap-1 font-semibold"
               style={{
-                color: cit.tier === 'OKF' ? '#60A5FA' : cit.tier === 'RAG' ? '#A78BFA' : '#F59E0B',
+                color: cit.tier === 'OKF' ? '#2563EB' : cit.tier === 'RAG' ? '#7C3AED' : '#D97706',
               }}
             >
               <span>§ {citId + 1}</span>
@@ -757,16 +853,16 @@ function InlineCitationPill({
             </span>
             {cit.year && <span className="tabular-nums">{cit.year}</span>}
           </span>
-          <span className="block font-sans font-medium text-xs text-[#EDEDED] leading-snug line-clamp-2 mb-1">
+          <span className="block font-sans font-medium text-xs text-slate-900 dark:text-[#EDEDED] leading-snug line-clamp-2 mb-1">
             {cit.title || cit.path || 'Academic Citation'}
           </span>
           {authorsStr && (
-            <span className="block font-sans text-[11px] text-[#8B8B8E] line-clamp-1 mb-1.5">
+            <span className="block font-sans text-[11px] text-slate-600 dark:text-[#8B8B8E] line-clamp-1 mb-1.5">
               {authorsStr}
             </span>
           )}
           {cit.venue && (
-            <span className="block font-mono text-[10px] text-[#71717A] line-clamp-1 mb-1">
+            <span className="block font-mono text-[10px] text-slate-500 dark:text-[#71717A] line-clamp-1 mb-1">
               Venue: {cit.venue}
             </span>
           )}
@@ -775,7 +871,7 @@ function InlineCitationPill({
               href={targetUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[10px] font-mono text-[#60A5FA] hover:underline mt-1"
+              className="inline-flex items-center gap-1 text-[10px] font-mono text-blue-600 dark:text-[#60A5FA] hover:underline mt-1"
             >
               <span>View Source / DOI</span>
               <ExternalLink size={10} />

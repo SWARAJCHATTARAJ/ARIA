@@ -184,7 +184,7 @@ function ResearchTraceBar({
           className={`w-full sm:w-auto inline-flex items-center justify-between gap-2 px-3 py-1.5 sm:py-1 rounded-[6px] border transition-all cursor-pointer active:scale-[0.98] ${
             hasError
               ? 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/15'
-              : 'border-white/[0.07] bg-[#09090B] hover:bg-[#18181E] text-[#8B8B8E] hover:text-[#EDEDED]'
+              : 'border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-[#09090B] hover:bg-slate-100 dark:hover:bg-[#18181E] text-slate-600 dark:text-[#8B8B8E] hover:text-slate-900 dark:hover:text-[#EDEDED]'
           }`}
         >
           {/* Left: Verified / Status badge */}
@@ -207,31 +207,31 @@ function ResearchTraceBar({
                   ? 'text-[#60A5FA]'
                   : verificationStatus === 'verified'
                   ? 'text-emerald-400'
-                  : 'text-[#EDEDED]'
+                  : 'text-slate-900 dark:text-[#EDEDED]'
               }`}
             >
               {statusLabel}
             </span>
 
             {citationsCount > 0 && (
-              <span className="text-[#71717A] text-[10.5px]">
+              <span className="text-slate-500 dark:text-[#71717A] text-[10.5px]">
                 · {citationsCount} {citationsCount === 1 ? 'source' : 'sources'}
               </span>
             )}
 
             {scorePct && !isStreaming && !hasError && (
-              <span className="hidden xs:inline-block ml-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-[10px] text-zinc-300 font-mono tabular-nums">
+              <span className="hidden xs:inline-block ml-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-[10px] text-slate-700 dark:text-zinc-300 font-mono tabular-nums">
                 {scorePct}
               </span>
             )}
           </div>
 
           {/* Desktop: Stage transition arrows */}
-          <div className="hidden sm:flex items-center gap-1 text-[10px] text-[#71717A] font-mono ml-2">
-            <span className="text-[#71717A] text-[10px] mr-1">·</span>
-            <span className={isPlanning ? 'text-[#EDEDED] font-semibold' : ''}>PLAN</span>
+          <div className="hidden sm:flex items-center gap-1 text-[10px] text-slate-500 dark:text-[#71717A] font-mono ml-2">
+            <span className="text-slate-400 dark:text-[#71717A] text-[10px] mr-1">·</span>
+            <span className={isPlanning ? 'text-slate-900 dark:text-[#EDEDED] font-semibold' : ''}>PLAN</span>
             <span>→</span>
-            <span className={isRetrieving ? 'text-[#EDEDED] font-semibold' : ''}>
+            <span className={isRetrieving ? 'text-slate-900 dark:text-[#EDEDED] font-semibold' : ''}>
               RETRIEVE
               {tiers.length > 0 && (
                 <span className="ml-1 inline-flex gap-1">
@@ -242,7 +242,7 @@ function ResearchTraceBar({
               )}
             </span>
             <span>→</span>
-            <span className={isSynthesizing ? 'text-[#EDEDED] font-semibold' : ''}>SYNTHESIZE</span>
+            <span className={isSynthesizing ? 'text-slate-900 dark:text-[#EDEDED] font-semibold' : ''}>SYNTHESIZE</span>
             <span>→</span>
             <span
               className={
@@ -258,7 +258,7 @@ function ResearchTraceBar({
           </div>
 
           {/* Mobile Right: Compact Expandable Pipeline toggle */}
-          <div className="flex items-center gap-1 shrink-0 text-[10.5px] text-[#71717A]">
+          <div className="flex items-center gap-1 shrink-0 text-[10.5px] text-slate-500 dark:text-[#71717A]">
             <span className="sm:hidden font-sans">Pipeline</span>
             <ChevronDown
               size={12}
@@ -271,33 +271,33 @@ function ResearchTraceBar({
       {/* Accordion Smooth Height Expansion */}
       <div className={`accordion-grid ${isExpanded ? 'open' : ''}`}>
         <div className="accordion-inner">
-          <div className="p-3 bg-[#09090B] border border-white/[0.07] rounded-[6px] space-y-2 text-[11px] font-mono mt-1">
-            <div className="flex items-center justify-between text-[#8B8B8E] pb-1.5 border-b border-white/[0.05]">
+          <div className="p-3 bg-slate-50 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.07] rounded-[6px] space-y-2 text-[11px] font-mono mt-1">
+            <div className="flex items-center justify-between text-slate-600 dark:text-[#8B8B8E] pb-1.5 border-b border-slate-200 dark:border-white/[0.05]">
               <span>Active Retrieval Route</span>
               <span className="text-[#60A5FA] font-semibold">Cascade (Tri-Tier Concurrent)</span>
             </div>
             <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-              <div className="p-1.5 rounded-[4px] bg-[#111115] border border-white/[0.05]">
-                <div className="text-[10px] text-[#71717A]">OKF TIER</div>
+              <div className="p-1.5 rounded-[4px] bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05]">
+                <div className="text-[10px] text-slate-500 dark:text-[#71717A]">OKF TIER</div>
                 <div className="text-[#60A5FA] font-semibold mt-0.5">
                   {tiers.includes('OKF') ? 'Active' : 'Standby'}
                 </div>
               </div>
-              <div className="p-1.5 rounded-[4px] bg-[#111115] border border-white/[0.05]">
-                <div className="text-[10px] text-[#71717A]">RAG TIER</div>
+              <div className="p-1.5 rounded-[4px] bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05]">
+                <div className="text-[10px] text-slate-500 dark:text-[#71717A]">RAG TIER</div>
                 <div className="text-[#A78BFA] font-semibold mt-0.5">
                   {tiers.includes('RAG') ? 'Active' : 'Standby'}
                 </div>
               </div>
-              <div className="p-1.5 rounded-[4px] bg-[#111115] border border-white/[0.05]">
-                <div className="text-[10px] text-[#71717A]">LIVE TIER</div>
+              <div className="p-1.5 rounded-[4px] bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05]">
+                <div className="text-[10px] text-slate-500 dark:text-[#71717A]">LIVE TIER</div>
                 <div className="text-[#F59E0B] font-semibold mt-0.5">
                   {tiers.includes('LIVE') ? 'Active' : 'Standby'}
                 </div>
               </div>
             </div>
             {(telemetry?.audit?.confidence !== undefined || (telemetry as any)?.audit_confidence !== undefined) && (
-              <div className="flex items-center justify-between text-[#8B8B8E] pt-1">
+              <div className="flex items-center justify-between text-slate-600 dark:text-[#8B8B8E] pt-1">
                 <span>Deterministic Claim Entailment Score</span>
                 <span className={`${(telemetry?.audit?.confidence ?? (telemetry as any)?.audit_confidence ?? 0) >= 0.75 ? 'text-emerald-400' : 'text-amber-400'} tabular-nums font-semibold`}>
                   {Math.round((telemetry?.audit?.confidence ?? (telemetry as any)?.audit_confidence ?? 0) * 100)}%
@@ -625,7 +625,7 @@ const MessageItem = React.memo(
       return (
         <div className="space-y-4">
           <div className="flex justify-end">
-            <div className="p-3 px-3.5 bg-[#18181E] border border-white/[0.07] rounded-[8px] text-[13.5px] text-[#EDEDED] max-w-2xl leading-[1.6]">
+            <div className="p-3 px-3.5 bg-slate-100 dark:bg-[#18181E] border border-slate-200 dark:border-white/[0.07] rounded-[8px] text-[13.5px] text-slate-900 dark:text-[#EDEDED] max-w-2xl leading-[1.6]">
               {msg.content}
             </div>
           </div>
@@ -635,9 +635,9 @@ const MessageItem = React.memo(
 
     return (
       <div className="space-y-4">
-        <div className="p-3.5 sm:p-6 bg-[#111115] border border-white/[0.07] rounded-[8px] space-y-4 w-full">
+        <div className="p-3.5 sm:p-6 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.07] rounded-[8px] space-y-4 w-full shadow-sm dark:shadow-none">
           {/* Header Verification Strip with Inline Collapsible Research Trace */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/[0.07]">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-white/[0.07]">
             <ResearchTraceBar
               telemetry={msg.telemetry}
               isStreaming={msg.isStreaming}
@@ -648,7 +648,7 @@ const MessageItem = React.memo(
 
           {/* Error Banner with Retry */}
           {msg.error && (
-            <div className="p-3 bg-[#09090B] border border-red-500/30 text-red-400 text-[12px] font-mono rounded-[8px] flex items-center justify-between gap-3">
+            <div className="p-3 bg-red-50 dark:bg-[#09090B] border border-red-500/30 text-red-500 dark:text-red-400 text-[12px] font-mono rounded-[8px] flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <AlertCircle size={14} className="shrink-0 text-red-400" />
                 <span className="truncate">{msg.error}</span>
@@ -657,7 +657,7 @@ const MessageItem = React.memo(
                 <button
                   type="button"
                   onClick={() => onExecuteQuery(msg.query!)}
-                  className="shrink-0 px-2.5 py-1 bg-white/[0.05] hover:bg-white/[0.10] border border-white/[0.10] text-[#EDEDED] text-[11px] rounded transition-colors flex items-center gap-1 cursor-pointer"
+                  className="shrink-0 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.05] dark:hover:bg-white/[0.10] border border-slate-200 dark:border-white/[0.10] text-slate-800 dark:text-[#EDEDED] text-[11px] rounded transition-colors flex items-center gap-1 cursor-pointer"
                   title="Retry query"
                 >
                   <RotateCcw size={11} />
@@ -668,7 +668,7 @@ const MessageItem = React.memo(
           )}
 
           {/* Markdown Content */}
-          <div className="text-[13.5px] text-[#EDEDED] leading-[1.6]">
+          <div className="text-[13.5px] text-slate-800 dark:text-[#EDEDED] leading-[1.6]">
             {msg.content ? (
               <MarkdownRenderer
                 content={msg.content}
@@ -679,7 +679,7 @@ const MessageItem = React.memo(
                 answerFinal={msg.telemetry?.audit?.answer_final}
               />
             ) : msg.isStreaming ? (
-              <div className="flex items-center gap-2 py-4 text-[#8B8B8E] text-[13px] font-mono">
+              <div className="flex items-center gap-2 py-4 text-slate-500 dark:text-[#8B8B8E] text-[13px] font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA] animate-pulse" />
                 <span>Retrieving and synthesizing primary evidence...</span>
               </div>
@@ -698,8 +698,8 @@ const MessageItem = React.memo(
 
           {/* Contextual Follow-Up Questions */}
           {!msg.isStreaming && msg.content && (
-            <div className="pt-3 border-t border-white/[0.05] space-y-2">
-              <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#71717A]">
+            <div className="pt-3 border-t border-slate-200 dark:border-white/[0.05] space-y-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-600 dark:text-[#71717A]">
                 <Sparkles size={11} className="text-[#60A5FA]" />
                 <span>Follow-up Research Questions</span>
               </div>
@@ -709,10 +709,10 @@ const MessageItem = React.memo(
                     key={idx}
                     type="button"
                     onClick={() => onExecuteQuery(fq)}
-                    className="text-left px-3 py-1.5 bg-[#09090B] hover:bg-[#18181E] border border-white/[0.07] hover:border-white/[0.14] rounded-[6px] text-[12px] text-[#EDEDED] flex items-center gap-1.5 active:scale-[0.98] transition-all cursor-pointer group"
+                    className="text-left px-3 py-1.5 bg-slate-50 dark:bg-[#09090B] hover:bg-slate-100 dark:hover:bg-[#18181E] border border-slate-200 dark:border-white/[0.07] hover:border-slate-300 dark:hover:border-white/[0.14] rounded-[6px] text-[12px] text-slate-800 dark:text-[#EDEDED] flex items-center gap-1.5 active:scale-[0.98] transition-all cursor-pointer group"
                   >
                     <span className="line-clamp-1">{fq}</span>
-                    <ArrowUpRight size={11} className="text-[#71717A] group-hover:text-[#60A5FA] shrink-0 transition-colors" />
+                    <ArrowUpRight size={11} className="text-slate-400 dark:text-[#71717A] group-hover:text-blue-600 dark:group-hover:text-[#60A5FA] shrink-0 transition-colors" />
                   </button>
                 ))}
               </div>
@@ -721,11 +721,11 @@ const MessageItem = React.memo(
 
           {/* Action Bar */}
           {!msg.isStreaming && msg.content && (
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/[0.07]">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-white/[0.07]">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => onCopy(msg.id, msg.content)}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
                 >
                   {isCopied ? <Check size={13} className="text-[#60A5FA]" /> : <Copy size={13} />}
                   <span>{isCopied ? 'Copied' : 'Copy'}</span>
@@ -734,7 +734,7 @@ const MessageItem = React.memo(
                 <button
                   onClick={() => onDownloadBibtex(msg.citations)}
                   disabled={!msg.citations || msg.citations.length === 0}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
                   title="Export BibTeX"
                 >
                   <Download size={13} />
@@ -743,7 +743,7 @@ const MessageItem = React.memo(
 
                 <button
                   onClick={() => onDownloadMarkdown(msg)}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
                   title="Export Markdown (.md)"
                 >
                   <FileText size={13} />
@@ -753,7 +753,7 @@ const MessageItem = React.memo(
                 <button
                   onClick={() => onDownloadPdf(msg)}
                   disabled={isExportingPdf}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
                   title="Export PDF Report"
                 >
                   {isExportingPdf ? (
@@ -771,7 +771,7 @@ const MessageItem = React.memo(
 
                 <button
                   onClick={() => onSaveToCollection(msg)}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
                   title="Save to Collection"
                 >
                   <Bookmark
@@ -1678,16 +1678,16 @@ export default function ThreadView({
       {/* Messages Area */}
       <div
         ref={messagesScrollRef}
-        className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 select-text hud-scroll"
+        className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28 sm:pb-24 space-y-6 select-text hud-scroll"
       >
-        {/* Open Editorial Workspace (Empty State): pristine typography on #09090B canvas */}
+        {/* Open Editorial Workspace (Empty State): pristine typography on canvas */}
         {messages.length === 0 && (
           <div className="flex-1 min-h-[70vh] flex flex-col items-center justify-center py-8 animate-fade-slide">
             <div className="w-full max-w-2xl text-center space-y-2 mb-6">
-              <h1 className="text-[19px] sm:text-[24px] font-medium tracking-[-0.02em] text-zinc-100 font-sans">
+              <h1 className="text-[19px] sm:text-[24px] font-medium tracking-[-0.02em] text-slate-900 dark:text-zinc-100 font-sans">
                 What would you like to research?
               </h1>
-              <p className="text-[12px] text-zinc-400 leading-relaxed max-w-[300px] mx-auto font-sans">
+              <p className="text-[12px] text-slate-600 dark:text-zinc-400 leading-relaxed max-w-[300px] mx-auto font-sans">
                 Grounded scientific synthesis across verified knowledge graphs, dense vector indexes, and primary literature.
               </p>
             </div>
@@ -1695,7 +1695,7 @@ export default function ThreadView({
             {/* Sleek Input Card */}
             <form
               onSubmit={handleEmptySubmit}
-              className="w-full max-w-2xl bg-[#0B0F1A] border border-white/[0.08] focus-within:border-white/[0.18] rounded-2xl p-3 shadow-xl transition-all duration-150"
+              className="w-full max-w-2xl bg-white dark:bg-[#0B0F1A] border border-slate-200 dark:border-white/[0.08] focus-within:border-slate-400 dark:focus-within:border-white/[0.18] rounded-2xl p-3 shadow-sm dark:shadow-xl transition-all duration-150"
             >
               <textarea
                 ref={emptyTextareaRef}
@@ -1714,11 +1714,11 @@ export default function ThreadView({
                 }}
                 placeholder="Ask a research question or enter a scientific concept..."
                 rows={2}
-                className="w-full bg-transparent px-3 py-2.5 text-[13.5px] font-normal text-[#EDEDED] placeholder:text-zinc-500 focus:outline-none resize-none leading-snug font-sans"
+                className="w-full bg-transparent px-3 py-2.5 text-[13.5px] font-normal text-slate-900 dark:text-[#EDEDED] placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none resize-none leading-snug font-sans"
                 aria-label="Research query"
               />
 
-              <div className="flex items-center justify-between pt-2 border-t border-white/[0.05] mt-1">
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-white/[0.05] mt-1">
                 {/* Sleek custom Obsidian DomainPicker */}
                 <DomainPicker
                   value={selectedTopic}
@@ -1727,7 +1727,7 @@ export default function ThreadView({
                 />
 
                 <div className="flex items-center gap-2 ml-auto">
-                  <span className="hidden sm:inline text-[11px] text-zinc-500 font-sans">Enter ↵</span>
+                  <span className="hidden sm:inline text-[11px] text-slate-500 dark:text-zinc-500 font-sans">Enter ↵</span>
                   <SearchSubmitButton
                     disabled={!emptyInput.trim() || isLoading}
                     isLoading={isLoading}
@@ -1745,7 +1745,7 @@ export default function ThreadView({
                     key={pill.id}
                     type="button"
                     onClick={() => executeQuery(pill.query)}
-                    className="text-[11.5px] font-sans text-zinc-400 hover:text-zinc-200 border border-white/[0.06] hover:border-white/[0.14] bg-white/[0.02] hover:bg-white/[0.05] rounded-full px-2.5 py-1 transition-all active:scale-[0.98] cursor-pointer"
+                    className="text-[11.5px] font-sans text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200 border border-slate-200 dark:border-white/[0.06] hover:border-slate-300 dark:hover:border-white/[0.14] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.05] rounded-full px-2.5 py-1 transition-all active:scale-[0.98] cursor-pointer"
                   >
                     {pill.label}
                   </button>
@@ -1755,8 +1755,8 @@ export default function ThreadView({
 
             {/* Continue Recent Research (from History) */}
             {recentHistory.length > 0 && (
-              <div className="w-full max-w-2xl mt-8 pt-6 border-t border-white/[0.07]">
-                <div className="flex items-center gap-2 mb-3 text-[11px] font-sans font-medium uppercase tracking-wider text-zinc-500">
+              <div className="w-full max-w-2xl mt-8 pt-6 border-t border-slate-200 dark:border-white/[0.07]">
+                <div className="flex items-center gap-2 mb-3 text-[11px] font-sans font-medium uppercase tracking-wider text-slate-500 dark:text-zinc-500">
                   <Clock size={12} />
                   <span>Continue Recent Research</span>
                 </div>
@@ -1766,12 +1766,12 @@ export default function ThreadView({
                       key={h.id}
                       type="button"
                       onClick={() => executeQuery(h.query)}
-                      className="w-full text-left px-3.5 py-2.5 bg-[#111115] hover:bg-[#18181E] border border-white/[0.07] hover:border-white/[0.14] rounded-[6px] text-[13px] font-sans text-[#EDEDED] hover:text-white flex items-center justify-between group active:scale-[0.98] transition-all"
+                      className="w-full text-left px-3.5 py-2.5 bg-white hover:bg-slate-50 dark:bg-[#111115] dark:hover:bg-[#18181E] border border-slate-200 hover:border-slate-300 dark:border-white/[0.07] dark:hover:border-white/[0.14] rounded-[6px] text-[13px] font-sans text-slate-800 hover:text-slate-900 dark:text-[#EDEDED] dark:hover:text-white flex items-center justify-between group active:scale-[0.98] transition-all"
                     >
                       <span className="truncate pr-4">{h.query}</span>
-                      <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-[#71717A]">
+                      <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-500 dark:text-[#71717A]">
                         {typeof h.confidence === 'number' && (
-                          <span className="text-[#60A5FA] tabular-nums">
+                          <span className="text-blue-600 dark:text-[#60A5FA] tabular-nums">
                             {Math.round(h.confidence * 100)}%
                           </span>
                         )}
@@ -1810,10 +1810,10 @@ export default function ThreadView({
 
       {/* Docked Composer (Visible once a query exists) */}
       {messages.length > 0 && (
-        <div className="p-3 bg-[#050811] border-t border-white/[0.06] shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
+        <div className="p-3 bg-slate-50/95 dark:bg-[#050811] border-t border-slate-200 dark:border-white/[0.06] shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
           <form
             onSubmit={handleSubmit}
-            className="flex items-center gap-2 max-w-4xl mx-auto bg-[#0B0F1A] border border-white/[0.08] focus-within:border-white/[0.18] rounded-2xl p-2 transition-all duration-150"
+            className="flex items-center gap-2 max-w-4xl mx-auto bg-white dark:bg-[#0B0F1A] border border-slate-200 dark:border-white/[0.08] focus-within:border-slate-400 dark:focus-within:border-white/[0.18] rounded-2xl p-2 transition-all duration-150 shadow-sm dark:shadow-none"
           >
             {/* Sleek custom Obsidian DomainPicker */}
             <DomainPicker
@@ -1840,7 +1840,7 @@ export default function ThreadView({
               }}
               placeholder="Ask a follow-up..."
               rows={1}
-              className="flex-1 min-h-[36px] max-h-[110px] bg-transparent px-3 py-2 text-[13px] font-normal text-[#EDEDED] placeholder:text-zinc-500 focus:outline-none resize-none leading-[1.35] font-sans"
+              className="flex-1 min-h-[36px] max-h-[110px] bg-transparent px-3 py-2 text-[13px] font-normal text-slate-900 dark:text-[#EDEDED] placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none resize-none leading-[1.35] font-sans"
             />
 
             <SearchSubmitButton

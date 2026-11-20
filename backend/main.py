@@ -524,7 +524,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 logger.info(f"Groq [synthesis_stream]: finish_reason='{synth_finish_reason}'")
                 token_tracker.record_from_response("synthesis_stream", full_resp, model_name=settings.groq_writer_model, finish_reason=synth_finish_reason)
 
-            from pipeline.nodes import sanitize_answer
+            from pipeline.nodes import sanitize_answer, strip_orphan_headings
             clean_answer = sanitize_answer(full_answer, len(chunks))
             current_state["draft_answer"] = clean_answer
             current_state["answer_final"] = clean_answer
@@ -567,7 +567,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
             # 6. Audit Phase
             audit_res = await audit_answer(current_state)
             current_state.update(audit_res)
-            final_answer = audit_res.get("answer_final", clean_answer)
+            final_answer = strip_orphan_headings(audit_res.get("answer_final", clean_answer))
             cited_ids = set(int(m) for m in re.findall(r'\[+c:(\d+)\]+', final_answer))
             sources_with_cited = [
                 {**s, "cited": (idx in cited_ids)}

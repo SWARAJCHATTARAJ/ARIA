@@ -979,6 +979,103 @@ def normalize_markers(text: str) -> str:
     text = re.sub(r'【+c:(\d+)】+', r'[[c:\1]]', text)
     return text
 
+def strip_orphan_headings(text: str) -> str:
+    """
+    Strips orphan and trailing Markdown headings (h1-h6) that have no body content beneath them.
+    E.g. dangling trailing headings before follow-up questions, or empty sections where content was removed.
+    """
+    if not text:
+        return ""
+    lines = text.split('\n')
+    while lines and (not lines[-1].strip() or lines[-1].strip().startswith('#')):
+        lines.pop()
+
+    cleaned_lines = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        m = re.match(r'^(#{1,6})\s+(.*)', stripped)
+        if m:
+            level = len(m.group(1))
+            j = i + 1
+            has_content = False
+            while j < len(lines):
+                next_stripped = lines[j].strip()
+                if not next_stripped:
+                    j += 1
+                    continue
+                next_m = re.match(r'^(#{1,6})\s+', next_stripped)
+                if next_m:
+                    next_level = len(next_m.group(1))
+                    if next_level <= level:
+                        break
+                    else:
+                        has_content = True
+                        break
+                else:
+                    has_content = True
+                    break
+            if not has_content:
+                i += 1
+                continue
+        cleaned_lines.append(line)
+        i += 1
+
+    result = '\n'.join(cleaned_lines)
+    result = re.sub(r'(?:^|\n)\s*#{1,6}[^\n]*\s*$', '', result).strip()
+    return result
+
+
+def normalize_ordered_lists(text: str) -> str:
+    """
+    Normalizes top-level ordered list numbering in generated Markdown
+    so that numbered sections/items count sequentially (1., 2., 3., 4.)
+    even if sub-bullets or intermediate paragraphs caused LLM index jumps.
+    """
+    if not text:
+        return ""
+    lines = text.split('\n')
+    output_lines = []
+    current_seq = 0
+    in_code_block = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_code_block = not in_code_block
+            output_lines.append(line)
+            continue
+
+        if in_code_block:
+            output_lines.append(line)
+            continue
+
+        # Reset numbering on headings, horizontal rules, or tables
+        if stripped.startswith('#') or stripped.startswith('|') or stripped in ('---', '***'):
+            current_seq = 0
+            output_lines.append(line)
+            continue
+
+        # Check for top-level ordered list item: e.g. "1. " or "5. " at indentation 0-2 spaces
+        match = re.match(r'^(\s{0,2})(\d+)\.\s+(.*)', line)
+        if match:
+            indent = match.group(1)
+            raw_num = int(match.group(2))
+            rest = match.group(3)
+
+            if raw_num == 1 or current_seq == 0:
+                current_seq = 1
+            else:
+                current_seq += 1
+
+            output_lines.append(f"{indent}{current_seq}. {rest}")
+        else:
+            output_lines.append(line)
+
+    return '\n'.join(output_lines)
+
+
 def sanitize_answer(text: str, num_citations: int) -> str:
     """
     Ensures markdown-only output and valid [[c:ID]] inline markers.
@@ -989,6 +1086,8 @@ def sanitize_answer(text: str, num_citations: int) -> str:
     5. Validates [[c:ID]]: removes any marker whose ID is not in 0..num_citations-1.
     6. Enforces synthesis rules: replaces 'snippet' / 'provided context' with 'the sources'.
     7. Strips Summary section unless answer has 4+ paragraphs.
+    8. Normalizes ordered list sequence numbers (1., 2., 3., 4.).
+    9. Strips orphan / trailing headings that lack body content.
     """
     if not text:
         return ""
@@ -1036,6 +1135,12 @@ def sanitize_answer(text: str, num_citations: int) -> str:
     # Remove padding sentences like "a source mentions X but says nothing"
     clean = re.sub(r'(?:[A-Z][^\n.]*?\ba source mentions\b[^\n.]*?\bsays nothing\b[^\n.]*\.?)', '', clean, flags=re.IGNORECASE)
     
+    # Re-number ordered lists sequentially so sub-bullets never cause index jumps
+    clean = normalize_ordered_lists(clean)
+
+    # Strip orphan / trailing empty headings that have no body content
+    clean = strip_orphan_headings(clean)
+
     return clean.strip()
 
 def synthesize_answer(state: AgentState) -> dict:
@@ -2327,6 +2432,7 @@ async def audit_answer(state: AgentState) -> dict:
     # Post-repair Sentence Deletion: Remove failing sentences (status uncited, unsupported, or quote coverage < 0.30)
     answer_final, verified_claims, removed_claims = delete_claim_spans(answer_final, verified_claims)
     updates["removed_claims"] = removed_claims
+    answer_final = strip_orphan_headings(answer_final)
 
     # Mark cited: bool on each chunk based on final citations in answer_final
     cited_ids = set(int(m) for m in re.findall(r'\[+c:(\d+)\]+', answer_final))

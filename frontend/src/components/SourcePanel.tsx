@@ -270,15 +270,15 @@ export default function SourcePanel({
   }, [citations, tierFilter]);
 
   return (
-    <aside className="h-full flex flex-col bg-[#111115] border-l border-white/[0.07] text-[#EDEDED] select-text overflow-hidden right-sidebar-smooth">
+    <aside className="h-full flex flex-col bg-white dark:bg-[#111115] border-l border-slate-200 dark:border-white/[0.07] text-slate-900 dark:text-[#EDEDED] select-text overflow-hidden right-sidebar-smooth">
       {/* Top Header */}
-      <div className="px-5 py-3 border-b border-white/[0.07] flex items-center justify-between shrink-0 bg-[#0C0C0F]">
+      <div className="px-5 py-3 border-b border-slate-200 dark:border-white/[0.07] flex items-center justify-between shrink-0 bg-slate-50 dark:bg-[#0C0C0F]">
         <div className="flex items-center gap-2">
           <BookOpen size={15} className="text-[#60A5FA]" />
-          <h2 className="text-[13px] font-semibold text-[#EDEDED] tracking-[-0.02em] font-mono">
+          <h2 className="text-[13px] font-semibold text-slate-900 dark:text-[#EDEDED] tracking-[-0.02em] font-mono">
             Research Inspector
           </h2>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#18181E] border border-white/[0.07] text-[#8B8B8E] tabular-nums">
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-[#18181E] border border-slate-200 dark:border-white/[0.07] text-slate-600 dark:text-[#8B8B8E] tabular-nums">
             {citations.length} Sources
           </span>
         </div>
@@ -288,7 +288,7 @@ export default function SourcePanel({
             <button
               type="button"
               onClick={handleDownloadAllBibtex}
-              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[5px] hover:bg-[#18181E] active:scale-[0.98] transition-all text-[11px] font-mono flex items-center gap-1 cursor-pointer"
+              className="p-1.5 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.98] transition-all text-[11px] font-mono flex items-center gap-1 cursor-pointer"
               title="Download all citations (.bib)"
             >
               {copiedAllBib ? <Check size={13} className="text-[#60A5FA]" /> : <Download size={13} />}
@@ -301,7 +301,7 @@ export default function SourcePanel({
               type="button"
               onClick={handleExportPdf}
               disabled={isExportingPdf}
-              className="p-1.5 text-[#8B8B8E] hover:text-[#60A5FA] rounded-[5px] hover:bg-[#18181E] active:scale-[0.98] transition-all text-[11px] font-mono flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              className="p-1.5 text-slate-600 hover:text-[#60A5FA] dark:text-[#8B8B8E] dark:hover:text-[#60A5FA] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.98] transition-all text-[11px] font-mono flex items-center gap-1 cursor-pointer disabled:opacity-50"
               title="Generate publication PDF"
             >
               {isExportingPdf ? (
@@ -315,7 +315,7 @@ export default function SourcePanel({
 
           <button
             onClick={onClose}
-            className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[5px] hover:bg-[#18181E] active:scale-[0.98] transition-all cursor-pointer ml-1"
+            className="p-1.5 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.98] transition-all cursor-pointer ml-1"
             title="Close Inspector (Ctrl+] / ⌘])"
             aria-label="Close Inspector"
           >
@@ -326,10 +326,10 @@ export default function SourcePanel({
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 hud-scroll">
         {!activeQuery && citations.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center py-20 px-4 text-[#8B8B8E] space-y-2">
-            <ShieldCheck size={28} className="text-[#71717A] stroke-[1.5]" />
-            <p className="text-[13px] font-medium text-[#EDEDED]">Inspector Standby</p>
-            <p className="text-[11px] text-[#71717A] max-w-xs font-mono leading-relaxed">
+          <div className="h-full flex flex-col items-center justify-center text-center py-20 px-4 text-slate-500 dark:text-[#8B8B8E] space-y-2">
+            <ShieldCheck size={28} className="text-slate-400 dark:text-[#71717A] stroke-[1.5]" />
+            <p className="text-[13px] font-medium text-slate-900 dark:text-[#EDEDED]">Inspector Standby</p>
+            <p className="text-[11px] text-slate-500 dark:text-[#71717A] max-w-xs font-mono leading-relaxed">
               Submit any research inquiry to inspect retrieved primary citations, claim entailment audits, and export publication artifacts.
             </p>
           </div>
@@ -337,33 +337,33 @@ export default function SourcePanel({
           <>
             {/* Selected Citation Focus Excerpt */}
             {selectedCitation && (
-              <div className="p-3.5 bg-[#09090B] border border-[#60A5FA]/40 rounded-[8px] space-y-2 ring-1 ring-[#60A5FA]/15 animate-fade-slide">
-                <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.05]">
+              <div className="p-3.5 bg-slate-50 dark:bg-[#09090B] border border-blue-400/50 dark:border-[#60A5FA]/40 rounded-[8px] space-y-2 ring-1 ring-blue-400/20 dark:ring-[#60A5FA]/15 animate-fade-slide">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-white/[0.05]">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-mono uppercase tracking-wider text-[#60A5FA] font-semibold">
                       Selected Evidence Excerpt
                     </span>
-                    <span className="text-[11px] font-mono font-bold text-[#EDEDED] tabular-nums">
+                    <span className="text-[11px] font-mono font-bold text-slate-900 dark:text-[#EDEDED] tabular-nums">
                       § {selectedCitation.id + 1}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => onSelectCitation && onSelectCitation(null)}
-                    className="text-[10px] font-mono text-[#71717A] hover:text-[#EDEDED] cursor-pointer"
+                    className="text-[10px] font-mono text-slate-500 hover:text-slate-900 dark:text-[#71717A] dark:hover:text-[#EDEDED] cursor-pointer"
                   >
                     Clear Focus
                   </button>
                 </div>
-                <p className="text-[12px] font-medium text-[#EDEDED] leading-snug">
+                <p className="text-[12px] font-medium text-slate-900 dark:text-[#EDEDED] leading-snug">
                   {selectedCitation.title}
                 </p>
                 {selectedCitation.snippet && (
-                  <div className="p-2.5 bg-[#111115] border border-white/[0.05] rounded-[5px] text-[11px] font-mono text-[#EDEDED] leading-relaxed border-l-2 border-l-[#60A5FA]">
+                  <div className="p-2.5 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05] rounded-[5px] text-[11px] font-mono text-slate-800 dark:text-[#EDEDED] leading-relaxed border-l-2 border-l-[#60A5FA]">
                     {selectedCitation.snippet}
                   </div>
                 )}
-                <div className="flex items-center justify-between pt-1 text-[10px] font-mono text-[#8B8B8E]">
+                <div className="flex items-center justify-between pt-1 text-[10px] font-mono text-slate-500 dark:text-[#8B8B8E]">
                   <span>{Array.isArray(selectedCitation.authors) ? selectedCitation.authors.slice(0, 2).join(', ') : selectedCitation.authors || 'Unknown'}</span>
                   <button
                     type="button"
@@ -378,22 +378,22 @@ export default function SourcePanel({
             )}
 
             {/* Verification Summary Card */}
-            <div className="p-3.5 bg-[#09090B] border border-white/[0.07] rounded-[8px] space-y-2">
-              <div className="flex items-center justify-between pb-2 border-b border-white/[0.05] text-[11.5px] font-mono">
-                <span className="text-[#8B8B8E]">Retrieval Architecture</span>
+            <div className="p-3.5 bg-slate-50 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.07] rounded-[8px] space-y-2">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/[0.05] text-[11.5px] font-mono">
+                <span className="text-slate-600 dark:text-[#8B8B8E]">Retrieval Architecture</span>
                 <span className="text-[#60A5FA] font-semibold text-[11.5px] whitespace-nowrap">Tri-Tier Cascade</span>
               </div>
-              <div className="flex items-center justify-between pb-2 border-b border-white/[0.05] text-[11.5px] font-mono">
-                <span className="text-[#8B8B8E]">Claim Verification</span>
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/[0.05] text-[11.5px] font-mono">
+                <span className="text-slate-600 dark:text-[#8B8B8E]">Claim Verification</span>
                 <span className={`tabular-nums ${claimVerificationClass}`}>
                   {claimVerificationText}
                 </span>
               </div>
               <div className="flex items-center justify-between text-[11.5px] font-mono">
-                <span className="text-[#8B8B8E]">Deterministic Entailment</span>
+                <span className="text-slate-600 dark:text-[#8B8B8E]">Deterministic Entailment</span>
                 <div className="flex items-center gap-2">
                   {entailmentPctNumber !== null && (
-                    <div className="w-16 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+                    <div className="w-16 h-1.5 bg-slate-200 dark:bg-white/[0.06] rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-300 ${
                           entailmentPctNumber >= 75 ? 'bg-emerald-400' : 'bg-amber-400'
@@ -412,7 +412,7 @@ export default function SourcePanel({
             {/* Citations Filter & List */}
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <h3 className="text-[11px] font-mono font-semibold text-[#8B8B8E] uppercase tracking-wider">
+                <h3 className="text-[11px] font-mono font-semibold text-slate-600 dark:text-[#8B8B8E] uppercase tracking-wider">
                   Verified Primary Sources
                 </h3>
 
@@ -426,7 +426,7 @@ export default function SourcePanel({
                       className={`px-1.5 py-0.5 rounded-[3px] border transition-all cursor-pointer ${
                         tierFilter === t
                           ? 'border-[#60A5FA] text-[#60A5FA] bg-[#60A5FA]/10 font-semibold'
-                          : 'border-white/[0.07] text-[#71717A] hover:text-[#EDEDED]'
+                          : 'border-slate-200 dark:border-white/[0.07] text-slate-600 dark:text-[#71717A] hover:text-slate-900 dark:hover:text-[#EDEDED]'
                       }`}
                     >
                       {t}
@@ -452,15 +452,15 @@ export default function SourcePanel({
                       id={`citation-card-${cit.id}`}
                       ref={(el) => (cardRefs.current[cit.id] = el)}
                       onClick={() => onSelectCitation && onSelectCitation(cit.id)}
-                      className={`p-3 bg-[#09090B] border rounded-[6px] space-y-1.5 cursor-pointer transition-all active:scale-[0.99] ${
+                      className={`p-3 bg-slate-50/70 dark:bg-[#09090B] border rounded-[6px] space-y-1.5 cursor-pointer transition-all active:scale-[0.99] ${
                         isSelected
                           ? 'border-[#60A5FA] ring-1 ring-[#60A5FA]/20'
-                          : 'border-white/[0.07] hover:border-white/[0.15]'
+                          : 'border-slate-200 dark:border-white/[0.07] hover:border-slate-300 dark:hover:border-white/[0.15]'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-mono font-semibold text-[#EDEDED] tabular-nums">
+                          <span className="text-[11px] font-mono font-semibold text-slate-900 dark:text-[#EDEDED] tabular-nums">
                             § {cit.id + 1}
                           </span>
                           <span
@@ -479,7 +479,7 @@ export default function SourcePanel({
                           <button
                             type="button"
                             onClick={(e) => handleCopyBibtex(cit, e)}
-                            className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] rounded hover:bg-[#18181E] active:scale-[0.98] transition-all"
+                            className="p-1 text-slate-500 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded hover:bg-slate-200 dark:hover:bg-[#18181E] active:scale-[0.98] transition-all"
                             title="Copy BibTeX citation"
                           >
                             {copiedId === cit.id ? <Check size={11} className="text-[#60A5FA]" /> : <Copy size={11} />}
@@ -490,7 +490,7 @@ export default function SourcePanel({
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="p-1 text-[#8B8B8E] hover:text-[#60A5FA] rounded hover:bg-[#18181E] active:scale-[0.98] transition-all"
+                              className="p-1 text-slate-500 hover:text-[#60A5FA] dark:text-[#8B8B8E] dark:hover:text-[#60A5FA] rounded hover:bg-slate-200 dark:hover:bg-[#18181E] active:scale-[0.98] transition-all"
                               title="Open source URL"
                             >
                               <ExternalLink size={11} />
@@ -499,18 +499,18 @@ export default function SourcePanel({
                         </div>
                       </div>
 
-                      <p className="text-[12px] font-medium text-[#EDEDED] leading-snug">
+                      <p className="text-[12px] font-medium text-slate-900 dark:text-[#EDEDED] leading-snug">
                         {cit.title || 'Untitled Reference'}
                       </p>
 
-                      <div className="text-[10px] font-mono text-[#71717A] leading-relaxed truncate">
+                      <div className="text-[10px] font-mono text-slate-500 dark:text-[#71717A] leading-relaxed truncate">
                         {Array.isArray(cit.authors) ? cit.authors.slice(0, 3).join(', ') : cit.authors || 'Unknown'}
                         {cit.year ? ` · ${cit.year}` : ''}
                         {cit.venue ? ` · ${cit.venue}` : ''}
                       </div>
 
                       {cit.snippet && !isSelected && (
-                        <div className="p-2.5 bg-[#111115] border border-white/[0.05] rounded-[6px] text-[11.5px] font-sans text-[#A1A1AA] line-clamp-3 leading-[1.45] border-l-2 border-l-[#60A5FA]/40">
+                        <div className="p-2.5 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05] rounded-[6px] text-[11.5px] font-sans text-slate-700 dark:text-[#A1A1AA] line-clamp-3 leading-[1.45] border-l-2 border-l-[#60A5FA]/40">
                           {cit.snippet}
                         </div>
                       )}
@@ -522,12 +522,12 @@ export default function SourcePanel({
 
             {/* Claims Verification Audit Section */}
             {normalizedClaims.length > 0 && (
-              <div className="space-y-2.5 pt-3 border-t border-white/[0.07]">
+              <div className="space-y-2.5 pt-3 border-t border-slate-200 dark:border-white/[0.07]">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-[11px] font-mono font-semibold text-[#8B8B8E] uppercase tracking-wider">
+                  <h3 className="text-[11px] font-mono font-semibold text-slate-600 dark:text-[#8B8B8E] uppercase tracking-wider">
                     Claim Entailment Audit
                   </h3>
-                  <span className="text-[10px] font-mono text-[#71717A] tabular-nums">
+                  <span className="text-[10px] font-mono text-slate-500 dark:text-[#71717A] tabular-nums">
                     {claimsSupportedCount}/{claimsTotalCount} Passed
                   </span>
                 </div>
@@ -536,10 +536,10 @@ export default function SourcePanel({
                   {normalizedClaims.map((claim) => (
                     <div
                       key={claim.claim_id}
-                      className="p-2.5 bg-[#09090B] border border-white/[0.07] rounded-[6px] space-y-1.5"
+                      className="p-2.5 bg-slate-50/70 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.07] rounded-[6px] space-y-1.5"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <p className="text-[11px] text-[#EDEDED] leading-relaxed">
+                        <p className="text-[11px] text-slate-800 dark:text-[#EDEDED] leading-relaxed">
                           {claim.text}
                         </p>
                         <span
@@ -557,7 +557,7 @@ export default function SourcePanel({
 
                       {claim.citation_ids && claim.citation_ids.length > 0 && (
                         <div className="flex items-center gap-1 pt-1">
-                          <span className="text-[9px] font-mono text-[#71717A]">Cited:</span>
+                          <span className="text-[9px] font-mono text-slate-500 dark:text-[#71717A]">Cited:</span>
                           {claim.citation_ids.map((cid) => {
                             const cit = citationMap.get(cid);
                             const tierColor = cit?.tier === 'OKF' ? '#60A5FA' : cit?.tier === 'RAG' ? '#A78BFA' : '#F59E0B';
@@ -566,7 +566,7 @@ export default function SourcePanel({
                                 key={cid}
                                 type="button"
                                 onClick={() => onSelectCitation && onSelectCitation(cid)}
-                                className="px-1.5 py-0.2 bg-[#111115] border border-white/[0.07] text-[9px] font-mono rounded hover:border-white/[0.2] tabular-nums active:scale-[0.98] transition-all cursor-pointer"
+                                className="px-1.5 py-0.2 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.07] text-[9px] font-mono rounded hover:border-slate-300 dark:hover:border-white/[0.2] tabular-nums active:scale-[0.98] transition-all cursor-pointer"
                                 style={{ color: tierColor }}
                               >
                                 § {cid + 1}

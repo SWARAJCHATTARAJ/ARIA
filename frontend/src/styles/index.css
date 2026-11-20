@@ -18,7 +18,8 @@
    ====================================================================== */
 
 :root,
-[data-theme="dark"] {
+[data-theme="dark"],
+.dark {
   color-scheme: dark;
 
   --aria-canvas: #09090b;
@@ -52,7 +53,8 @@
   --motion-scale: 1;
 }
 
-[data-theme="light"] {
+[data-theme="light"],
+.light {
   color-scheme: light;
 
   --aria-canvas: #faf9f6;
@@ -62,9 +64,9 @@
   --aria-elevated: #eae8e2;
   --aria-border: rgba(0, 0, 0, 0.08);
   --aria-border-hover: rgba(0, 0, 0, 0.16);
-  --aria-text-primary: #141413;
-  --aria-text-secondary: #575653;
-  --aria-text-muted: #82817a;
+  --aria-text-primary: #0f172a;
+  --aria-text-secondary: #475569;
+  --aria-text-muted: #64748b;
   --aria-accent: #2563eb;
   --aria-accent-hover: #1d4ed8;
 
@@ -118,78 +120,124 @@ button, input, optgroup, select, textarea {
 
 /* Light Theme Remappings for seamless theme switching */
 [data-theme="light"] body,
-[data-theme="light"] #root {
+.light body,
+[data-theme="light"] #root,
+.light #root {
   background-color: #faf9f6 !important;
-  color: #141413 !important;
+  color: #0f172a !important;
 }
 
-[data-theme="light"] .bg-\[\#050811\] {
+[data-theme="light"] .bg-\[\#050811\],
+.light .bg-\[\#050811\] {
   background-color: #faf9f6 !important;
 }
 
-[data-theme="light"] .bg-\[\#09090B\] {
+[data-theme="light"] .bg-\[\#09090B\],
+.light .bg-\[\#09090B\] {
   background-color: #faf9f6 !important;
 }
 
-[data-theme="light"] .bg-\[\#0B0F1A\] {
+[data-theme="light"] .bg-\[\#0B0F1A\],
+.light .bg-\[\#0B0F1A\] {
   background-color: #ffffff !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
-[data-theme="light"] .bg-\[\#0C0C0F\] {
+[data-theme="light"] .bg-\[\#0C0C0F\],
+.light .bg-\[\#0C0C0F\] {
   background-color: #f3f2ee !important;
 }
 
-[data-theme="light"] .bg-\[\#111115\] {
+[data-theme="light"] .bg-\[\#111115\],
+.light .bg-\[\#111115\] {
   background-color: #ffffff !important;
 }
 
-[data-theme="light"] .bg-\[\#18181E\] {
+[data-theme="light"] .bg-\[\#18181E\],
+.light .bg-\[\#18181E\] {
   background-color: #eae8e2 !important;
 }
 
 [data-theme="light"] .border-white\/\[0\.08\],
+.light .border-white\/\[0\.08\],
 [data-theme="light"] .border-white\/\[0\.07\],
+.light .border-white\/\[0\.07\],
 [data-theme="light"] .border-white\/\[0\.06\],
+.light .border-white\/\[0\.06\],
 [data-theme="light"] .border-white\/\[0\.05\],
-[data-theme="light"] .border-white\/\[0\.04\] {
+.light .border-white\/\[0\.05\],
+[data-theme="light"] .border-white\/\[0\.04\],
+.light .border-white\/\[0\.04\] {
   border-color: rgba(0, 0, 0, 0.08) !important;
 }
 
 [data-theme="light"] .border-white\/\[0\.14\],
+.light .border-white\/\[0\.14\],
 [data-theme="light"] .border-white\/\[0\.15\],
-[data-theme="light"] .border-white\/\[0\.18\] {
+.light .border-white\/\[0\.15\],
+[data-theme="light"] .border-white\/\[0\.18\],
+.light .border-white\/\[0\.18\] {
   border-color: rgba(0, 0, 0, 0.18) !important;
 }
 
-[data-theme="light"] .text-\[\#EDEDED\] {
-  color: #141413 !important;
+/* Headings (h1-h4) & Bold (strong): deep charcoal #0F172A */
+[data-theme="light"] h1,
+.light h1,
+[data-theme="light"] h2,
+.light h2,
+[data-theme="light"] h3,
+.light h3,
+[data-theme="light"] h4,
+.light h4,
+[data-theme="light"] strong,
+.light strong,
+[data-theme="light"] .text-gray-100,
+.light .text-gray-100,
+[data-theme="light"] .text-zinc-100,
+.light .text-zinc-100,
+[data-theme="light"] .text-\[\#EDEDED\],
+.light .text-\[\#EDEDED\] {
+  color: #0f172a !important;
 }
 
-[data-theme="light"] .text-zinc-100 {
-  color: #141413 !important;
+/* Body prose & list items: #1E293B */
+[data-theme="light"] p,
+.light p,
+[data-theme="light"] li,
+.light li,
+[data-theme="light"] .text-gray-200,
+.light .text-gray-200,
+[data-theme="light"] .text-zinc-200,
+.light .text-zinc-200,
+[data-theme="light"] .text-zinc-300,
+.light .text-zinc-300,
+[data-theme="light"] .text-\[\#D4D4D8\],
+.light .text-\[\#D4D4D8\] {
+  color: #1e293b !important;
 }
 
-[data-theme="light"] .text-zinc-200 {
-  color: #1f1f1e !important;
-}
-
-[data-theme="light"] .text-zinc-400 {
-  color: #575653 !important;
-}
-
-[data-theme="light"] .text-zinc-500 {
-  color: #82817a !important;
-}
-
+/* Muted metadata / subtitles: #475569 */
+[data-theme="light"] .text-gray-300,
+.light .text-gray-300,
+[data-theme="light"] .text-zinc-400,
+.light .text-zinc-400,
+[data-theme="light"] .text-zinc-500,
+.light .text-zinc-500,
 [data-theme="light"] .text-\[\#8B8B8E\],
-[data-theme="light"] .text-\[\#A1A1AA\] {
-  color: #575653 !important;
+.light .text-\[\#8B8B8E\],
+[data-theme="light"] .text-\[\#A1A1AA\],
+.light .text-\[\#A1A1AA\],
+[data-theme="light"] .text-\[\#71717A\],
+.light .text-\[\#71717A\],
+[data-theme="light"] .text-\[\#52525B\],
+.light .text-\[\#52525B\] {
+  color: #475569 !important;
 }
 
-[data-theme="light"] .text-\[\#71717A\],
-[data-theme="light"] .text-\[\#52525B\] {
-  color: #82817a !important;
+/* Ensure unordered bullet list items do NOT increment CSS list-item counters */
+li.list-disc,
+ul > li {
+  counter-increment: none !important;
 }
 
 /* Typography refinements */
