@@ -590,13 +590,15 @@ interface MessageItemProps {
   isCopied: boolean;
   isSaved: boolean;
   isExportingPdf: boolean;
+  isExportingBib?: boolean;
+  isExportingMd?: boolean;
   isBackendReachable: boolean;
   isMockActive: boolean;
   feedbackStatus?: string;
   onCitationClick: (citation: Citation) => void;
   onExecuteQuery: (query: string) => void;
   onCopy: (id: string, content: string) => void;
-  onDownloadBibtex: (citations?: Citation[]) => void;
+  onDownloadBibtex: (citations?: Citation[], msg?: Message) => void;
   onDownloadMarkdown: (msg: Message) => void;
   onDownloadPdf: (msg: Message) => void;
   onSaveToCollection: (msg: Message) => void;
@@ -609,6 +611,8 @@ const MessageItem = React.memo(
     isCopied,
     isSaved,
     isExportingPdf,
+    isExportingBib = false,
+    isExportingMd = false,
     isBackendReachable,
     isMockActive,
     feedbackStatus,
@@ -732,22 +736,41 @@ const MessageItem = React.memo(
                 </button>
 
                 <button
-                  onClick={() => onDownloadBibtex(msg.citations)}
-                  disabled={!msg.citations || msg.citations.length === 0}
+                  onClick={() => onDownloadBibtex(msg.citations, msg)}
+                  disabled={isExportingBib || !msg.citations || msg.citations.length === 0}
                   className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
                   title="Export BibTeX"
                 >
-                  <Download size={13} />
-                  <span>.BIB</span>
+                  {isExportingBib ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin text-[#60A5FA]" />
+                      <span>Exporting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download size={13} />
+                      <span>.BIB</span>
+                    </>
+                  )}
                 </button>
 
                 <button
                   onClick={() => onDownloadMarkdown(msg)}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                  disabled={isExportingMd}
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
                   title="Export Markdown (.md)"
                 >
-                  <FileText size={13} />
-                  <span>.MD</span>
+                  {isExportingMd ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin text-[#60A5FA]" />
+                      <span>Exporting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileText size={13} />
+                      <span>.MD</span>
+                    </>
+                  )}
                 </button>
 
                 <button
@@ -820,6 +843,8 @@ const MessageItem = React.memo(
       prev.isCopied === next.isCopied &&
       prev.isSaved === next.isSaved &&
       prev.isExportingPdf === next.isExportingPdf &&
+      prev.isExportingBib === next.isExportingBib &&
+      prev.isExportingMd === next.isExportingMd &&
       prev.isBackendReachable === next.isBackendReachable &&
       prev.isMockActive === next.isMockActive &&
       prev.feedbackStatus === next.feedbackStatus
@@ -877,6 +902,8 @@ export default function ThreadView({
   const [feedbackSent, setFeedbackSent] = useState<Record<string, 'positive' | 'negative' | 'flagged'>>({});
   const [isBackendReachable, setIsBackendReachable] = useState<boolean>(false);
   const [isExportingPdf, setIsExportingPdf] = useState<Record<string, boolean>>({});
+  const [isExportingBib, setIsExportingBib] = useState<Record<string, boolean>>({});
+  const [isExportingMd, setIsExportingMd] = useState<Record<string, boolean>>({});
   const [recentHistory, setRecentHistory] = useState<HistoryEntry[]>([]);
 
   const { settings } = useSettingsContext();
@@ -1540,12 +1567,14 @@ export default function ThreadView({
     copyTimerRef.current = window.setTimeout(() => setCopiedMsgId(null), 2000);
   };
 
-  const handleDownloadBibtex = async (citations: Citation[] = []) => {
+  const handleDownloadBibtex = async (citations: Citation[] = [], msg?: Message) => {
     if (!citations || citations.length === 0) {
       showDownloadToast('No citations available to export.', true);
       return;
     }
+    const msgKey = msg?.id || 'all';
     try {
+      setIsExportingBib((prev) => ({ ...prev, [msgKey]: true }));
       const bibContent = citations
         .map((cit) => {
           const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
@@ -1558,10 +1587,13 @@ export default function ThreadView({
       if (!blob || blob.size === 0) {
         throw new Error('Failed to generate BibTeX content');
       }
-      await saveOrDownloadFile(blob, 'aria-citations.bib', 'text/plain');
+      const safeQuery = msg?.query ? (msg.query).trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_') : 'aria-citations';
+      await saveOrDownloadFile(blob, `${safeQuery}.bib`, 'text/plain');
     } catch (err: any) {
       console.error('Download BibTeX failed:', err);
       showDownloadToast(`BibTeX Export Error: ${err?.message || 'Export error'}`, true);
+    } finally {
+      setIsExportingBib((prev) => ({ ...prev, [msgKey]: false }));
     }
   };
 
@@ -1571,6 +1603,7 @@ export default function ThreadView({
       return;
     }
     try {
+      setIsExportingMd((prev) => ({ ...prev, [msg.id]: true }));
       const blob = new Blob([msg.content], { type: 'text/markdown;charset=utf-8' });
       if (!blob || blob.size === 0) {
         throw new Error('Empty markdown content');
@@ -1580,6 +1613,8 @@ export default function ThreadView({
     } catch (err: any) {
       console.error('Download Markdown failed:', err);
       showDownloadToast(`Markdown Export Error: ${err?.message || 'Export error'}`, true);
+    } finally {
+      setIsExportingMd((prev) => ({ ...prev, [msg.id]: false }));
     }
   };
 
@@ -1792,6 +1827,8 @@ export default function ThreadView({
             isCopied={copiedMsgId === msg.id}
             isSaved={Boolean(savedCollectionIds[msg.id] || isInCollection(msg.query || ''))}
             isExportingPdf={Boolean(isExportingPdf[msg.id])}
+            isExportingBib={Boolean(isExportingBib[msg.id])}
+            isExportingMd={Boolean(isExportingMd[msg.id])}
             isBackendReachable={isBackendReachable}
             isMockActive={isMockActive}
             feedbackStatus={feedbackSent[msg.id]}

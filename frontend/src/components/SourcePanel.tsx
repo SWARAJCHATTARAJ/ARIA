@@ -46,6 +46,7 @@ export default function SourcePanel({
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [copiedAllBib, setCopiedAllBib] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isExportingBib, setIsExportingBib] = useState(false);
   const [tierFilter, setTierFilter] = useState<'ALL' | 'OKF' | 'RAG' | 'LIVE'>('ALL');
 
   const citationMap = useMemo(() => {
@@ -84,6 +85,7 @@ export default function SourcePanel({
       return;
     }
     try {
+      setIsExportingBib(true);
       const bibContent = citations
         .map((cit) => {
           const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
@@ -102,6 +104,8 @@ export default function SourcePanel({
     } catch (err: any) {
       console.error('Inspector BibTeX export error:', err);
       showDownloadToast(`BibTeX Export Error: ${err?.message || 'Export error'}`, true);
+    } finally {
+      setIsExportingBib(false);
     }
   };
 
@@ -288,10 +292,17 @@ export default function SourcePanel({
             <button
               type="button"
               onClick={handleDownloadAllBibtex}
-              className="p-1.5 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.98] transition-all text-[11px] font-mono flex items-center gap-1 cursor-pointer"
+              disabled={isExportingBib}
+              className="p-1.5 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.98] transition-all text-[11px] font-mono flex items-center gap-1 cursor-pointer disabled:opacity-50"
               title="Download all citations (.bib)"
             >
-              {copiedAllBib ? <Check size={13} className="text-[#60A5FA]" /> : <Download size={13} />}
+              {isExportingBib ? (
+                <Loader2 size={13} className="animate-spin text-[#60A5FA]" />
+              ) : copiedAllBib ? (
+                <Check size={13} className="text-[#60A5FA]" />
+              ) : (
+                <Download size={13} />
+              )}
               <span className="hidden sm:inline">.BIB</span>
             </button>
           )}
