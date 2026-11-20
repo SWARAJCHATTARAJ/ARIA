@@ -3,7 +3,8 @@ import logging
 import urllib.parse
 import xml.etree.ElementTree as ET
 import re
-from typing import List, Dict, Any, Optional
+import math
+from typing import List, Dict, Any, Optional, Tuple
 import httpx
 import os
 import html
@@ -94,27 +95,116 @@ def clean_scraped_reference_text(text: str) -> str:
     # 4. Collapse whitespace
     return " ".join(t.split()).strip()
 
+def extract_core_subject_entities(query: str, canonical_topic: Optional[str] = None) -> Tuple[str, List[str]]:
+    """
+    Extracts the clean core subject and core entity tokens from a user query or canonical topic
+    by stripping conversational boilerplate, question framing, and noise.
+    """
+    raw = canonical_topic if canonical_topic and len(canonical_topic.split()) >= 2 else query
+    clean = (raw or "").strip()
+
+    # Strip conversational and question prefixes
+    prefixes = [
+        r'^(?:can you\s+)?(?:please\s+)?(?:explain\s+the|explain|describe|tell me about|tell me everything about|overview of|give me an overview of|give me details on|what is the|what is a|what is an|what is|what are the|what are|how does|how do|how did|why does|why do|analyze the|analyze|research the|research on|discuss|summarize|what do we know about|details on|information on|information about)\s+',
+        r'^(?:what can you tell me about)\s+',
+    ]
+    for pat in prefixes:
+        clean = re.sub(pat, '', clean, flags=re.IGNORECASE).strip()
+
+    clean = re.sub(r'[\?\.!/\\:;,]+$', '', clean).strip()
+    clean = re.sub(r'\s+(?:please|thanks|thank you)\s*$', '', clean, flags=re.IGNORECASE).strip()
+    # Strip secondary clauses like "and its structure", "and its properties"
+    clean = re.sub(r'\s+(?:and\s+its|and\s+their|and\s+the|and\s+how|and\s+why)\b.*$', '', clean, flags=re.IGNORECASE).strip()
+
+    # Extract significant tokens
+    stops = STOP_WORDS | {
+        "what", "when", "where", "which", "whose", "whom", "how", "does", "explain",
+        "describe", "there", "about", "their", "would", "these", "those", "from", "with",
+        "into", "over", "under", "between", "through", "using", "based", "overview", "the", "and",
+        "its", "it", "our", "his", "her", "also", "well",
+        "mechanism", "mechanisms", "property", "properties", "analysis", "analyses",
+        "empirical", "architecture", "system", "systems", "study", "studies", "review"
+    }
+    tokens = [w.lower() for w in re.findall(r'\b[a-zA-Z0-9_-]{2,}\b', clean) if w.lower() not in stops]
+    return clean, tokens
+
+def evaluate_topical_relevance(
+    title: str,
+    text: str,
+    core_subject: str,
+    core_entities: List[str]
+) -> Tuple[float, bool]:
+    """
+    Evaluates strict topical relevance of a candidate source against core subject and entities.
+    Returns (score, is_relevant).
+    Strictly drops off-topic or tangentially related sources (e.g. Dwarf Irregular Galaxies for Milky Way).
+    """
+    title_norm = (title or "").lower()
+    text_norm = (text or "").lower()[:3000]
+    subj_norm = (core_subject or "").lower().strip()
+
+    if not subj_norm or not core_entities:
+        return 1.0, True
+
+    score = 0.0
+
+    # 1. Exact phrase match in title / text
+    core_phrase_in_title = subj_norm in title_norm
+    core_phrase_in_text = subj_norm in text_norm
+
+    if core_phrase_in_title:
+        score += 18.0
+    elif core_phrase_in_text:
+        score += 8.0
+
+    # 2. Check core entities match in title / text
+    matched_title = sum(1 for e in core_entities if e in title_norm)
+    matched_text = sum(1 for e in core_entities if e in text_norm)
+    matched_total = sum(1 for e in core_entities if e in title_norm or e in text_norm)
+
+    # Strict requirement:
+    # If the core phrase is not in the title or text, require at least 75% entity overlap
+    if not core_phrase_in_title and not core_phrase_in_text:
+        min_required = max(1, int(len(core_entities) * 0.75))
+        if matched_total < min_required:
+            return 0.0, False
+
+    score += (matched_title * 5.0) + (matched_text * 2.0)
+
+    # 3. Frequency of core phrase in abstract text
+    phrase_count = text_norm.count(subj_norm)
+    score += min(5, phrase_count) * 3.0
+
+    # 4. Check whether core subject is mentioned early in the abstract (first 250 chars)
+    if subj_norm in text_norm[:250]:
+        score += 4.0
+
+    # 5. Competing / Off-topic primary subject penalty:
+    # If the title does NOT contain the core subject, AND the title focuses on another object/topic,
+    # AND the core subject is only mentioned once or twice in the abstract as an incidental comparison:
+    if not core_phrase_in_title and matched_title < len(core_entities):
+        if phrase_count <= 1:
+            score -= 20.0
+
+    # Negative domain check for ambiguous acronyms (e.g. PVC medical vs polymer)
+    if "pvc" in subj_norm and any(neg in f"{title_norm} {text_norm}" for neg in ("ventricular", "arrhythmia", "cardiac", "myocardial", "ecg", "cardiomyopathy", "extrasystole", "systolic", "diastolic")):
+        return -50.0, False
+
+    is_relevant = score >= 8.0
+    return score, is_relevant
+
 async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Optional[str] = None, topic: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Queries official arXiv API with relevance sort, domain scoping, and optional submittedDate range from query year.
-    Drops results with no topic overlap.
+    Queries official arXiv API with targeted title/abstract matching,
+    strict topical relevance scoring, and drops off-topic papers completely.
     """
-    # Prefer canonical topic keywords for short/acronym queries to prevent cross-domain collisions
-    effective_query = query
-    if canonical_topic and len(canonical_topic.split()) >= 2:
-        effective_query = canonical_topic
+    core_subject, core_entities = extract_core_subject_entities(query, canonical_topic)
+    effective_query = core_subject or query
 
     # Check if recency / specific year is requested
-    year_match = re.search(r"\b(20[12][0-9])\b", effective_query)
+    year_match = re.search(r"\b(20[12][0-9])\b", query)
     target_year = year_match.group(1) if year_match else None
-    
-    # Strip explicit year and wildcard characters from query keywords for cleaner arXiv term matching
-    search_q = re.sub(r"\b20[12][0-9]\b", "", effective_query)
-    search_q = re.sub(r"[?*#&%=+]", " ", search_q).strip()
-    search_q = " ".join(search_q.split())
-    fallback_q = re.sub(r"[?*#&%=+]", " ", effective_query).strip()
-    clean_query = urllib.parse.quote_plus(search_q if search_q else fallback_q)
-    
+
     # Add domain category scoping if specified
     cat_clause = ""
     if topic:
@@ -124,20 +214,33 @@ async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Option
                 cat_clause = f"+AND+{v}"
                 break
 
+    # Build title/abstract match query for precision
+    if core_entities:
+        if len(core_entities) >= 2:
+            ti_parts = "+AND+".join(f"ti:{urllib.parse.quote_plus(e)}" for e in core_entities[:3])
+            abs_parts = "+AND+".join(f"abs:{urllib.parse.quote_plus(e)}" for e in core_entities[:3])
+            search_clause = f"({ti_parts})+OR+({abs_parts})"
+        else:
+            term = urllib.parse.quote_plus(core_entities[0])
+            search_clause = f"ti:{term}+OR+abs:{term}"
+    else:
+        clean_q = urllib.parse.quote_plus(re.sub(r"[?*#&%=+]", " ", effective_query).strip())
+        search_clause = f"all:{clean_q}"
+
+    fetch_limit = max_results * 3
     if target_year:
         url = (
-            f"https://export.arxiv.org/api/query?search_query=all:{clean_query}{cat_clause}"
+            f"https://export.arxiv.org/api/query?search_query={search_clause}{cat_clause}"
             f"+AND+submittedDate:[{target_year}01010000+TO+{target_year}12312359]"
-            f"&sortBy=relevance&sortOrder=descending&start=0&max_results={max_results}"
+            f"&sortBy=relevance&sortOrder=descending&start=0&max_results={fetch_limit}"
         )
     else:
         url = (
-            f"https://export.arxiv.org/api/query?search_query=all:{clean_query}{cat_clause}"
-            f"&sortBy=relevance&sortOrder=descending&start=0&max_results={max_results}"
+            f"https://export.arxiv.org/api/query?search_query={search_clause}{cat_clause}"
+            f"&sortBy=relevance&sortOrder=descending&start=0&max_results={fetch_limit}"
         )
-    
-    q_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", effective_query.lower())) - STOP_WORDS
-    results = []
+
+    candidates = []
     t0 = time.time()
     start_iso = datetime.datetime.now().isoformat()
     status_str = "error"
@@ -157,54 +260,41 @@ async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Option
                     id_elem = entry.find("atom:id", ns)
                     doi_elem = entry.find("arxiv:doi", ns)
                     published_elem = entry.find("atom:published", ns)
-                    
+
                     title = title_elem.text.strip().replace("\n", " ") if title_elem is not None and title_elem.text else "Untitled Paper"
                     summary = summary_elem.text.strip().replace("\n", " ") if summary_elem is not None and summary_elem.text else ""
                     raw_id = id_elem.text.strip() if id_elem is not None and id_elem.text else ""
                     arxiv_id = raw_id.split("/abs/")[-1] if "/abs/" in raw_id else raw_id
                     doi = doi_elem.text.strip() if doi_elem is not None and doi_elem.text else None
                     pub_str = published_elem.text.strip()[:10] if published_elem is not None and published_elem.text else None
-                    
+
                     year = None
                     if pub_str and len(pub_str) >= 4 and pub_str[:4].isdigit():
                         year = int(pub_str[:4])
-                    
-                    # Negative domain filter for ambiguous acronyms (e.g. PVC medical arrhythmia vs polymer PVC)
-                    lower_combo = (title + " " + summary).lower()
-                    if "pvc" in effective_query.lower() and any(neg in lower_combo for neg in ("ventricular", "arrhythmia", "cardiac", "myocardial", "ecg", "cardiomyopathy", "extrasystole")):
-                        logger.info(f"Dropping off-topic cardiology arXiv paper for PVC: {title}")
+
+                    # Require substantial abstract
+                    if not summary or len(summary.strip()) < 100:
                         continue
 
-                    # Drop results without at least 2 distinct content words overlap
-                    paper_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", lower_combo))
-                    overlap_tokens = q_tokens.intersection(paper_tokens)
-                    if len(q_tokens) >= 2 and len(overlap_tokens) < 2:
-                        logger.info(f"Dropping arXiv paper with <2 content words overlap ({len(overlap_tokens)} matched): {title}")
-                        continue
-                    elif len(q_tokens) == 1 and len(overlap_tokens) == 0:
-                        logger.info(f"Dropping arXiv paper with 0 content words overlap: {title}")
-                        continue
-                        
-                    # Require substantial abstracts (minimum 120 characters)
-                    if not summary or len(summary.strip()) < 120:
-                        logger.info(f"Dropping arXiv paper with empty or short (<120 chars) abstract: {title}")
+                    # Strict topical relevance evaluation
+                    score, is_relevant = evaluate_topical_relevance(title, summary, core_subject, core_entities)
+                    if not is_relevant:
+                        logger.info(f"Dropping off-topic arXiv paper for '{core_subject}': {title}")
                         continue
 
-                    # Drop other years if target_year specified
                     if target_year and year and year != int(target_year):
-                        logger.info(f"Dropping arXiv paper outside target year {target_year}: [{year}] {title}")
                         continue
-                    
+
                     raw_authors = []
                     for author_elem in entry.findall("atom:author", ns):
                         name = author_elem.find("atom:name", ns)
                         if name is not None and name.text:
                             raw_authors.append(name.text.strip())
-                            
+
                     authors = clean_authors_list(raw_authors)
                     author_str = f" ({', '.join(authors[:2])}{' et al.' if len(authors) > 2 else ''})" if authors else ""
 
-                    results.append({
+                    candidates.append((score, {
                         "tier": "LIVE",
                         "source_type": "arxiv",
                         "review_status": "preprint",
@@ -220,7 +310,7 @@ async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Option
                         "doi": doi,
                         "is_retracted": False,
                         "published": pub_str
-                    })
+                    }))
     except Exception as e:
         status_str = f"failed: {type(e).__name__}"
         logger.warning(f"arXiv search error: {e}")
@@ -228,41 +318,34 @@ async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Option
         t1 = time.time()
         end_iso = datetime.datetime.now().isoformat()
         retrieval_tracker.record("provider_arxiv", t0, t1, start_iso, end_iso, status_str)
-        
-    return results
 
-async def search_openalex(query: str, max_results: int = 3, topic: Optional[str] = None) -> List[Dict[str, Any]]:
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return [c[1] for c in candidates[:max_results]]
+
+async def search_openalex(query: str, max_results: int = 3, topic: Optional[str] = None, canonical_topic: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Queries OpenAlex API for open scientific literature.
-    Applies domain scoping and publication_year filter when a year is present in the query.
+    Queries OpenAlex API for open scientific literature, sorted by strict topical relevance
+    and citation weight, preferring high-citation authoritative papers and reviews.
     """
+    core_subject, core_entities = extract_core_subject_entities(query, canonical_topic)
+    search_term = core_subject or query
+
     # Strip punctuation/wildcards that trigger OpenAlex 400 errors
-    clean_q = re.sub(r"[?*#&%=+]", " ", query).strip()
-    
-    # Enhance query with topic concept if provided
-    topic_addon = ""
-    if topic:
-        t_key = topic.lower().strip()
-        for k, concept in OPENALEX_TOPIC_CONCEPTS.items():
-            if k in t_key or t_key in k:
-                if concept not in clean_q.lower():
-                    topic_addon = f" {concept}"
-                break
+    clean_q = re.sub(r"[?*#&%=+]", " ", search_term).strip()
+    clean_query = urllib.parse.quote_plus(" ".join(clean_q.split()))
 
-    clean_query = urllib.parse.quote_plus(" ".join((clean_q + topic_addon).split()))
-    
-    # Check for target year filter
     year_match = re.search(r"\b(20[12][0-9])\b", query)
     target_year = year_match.group(1) if year_match else None
-    
+
+    fetch_limit = max(10, max_results * 3)
     if target_year:
-        url = f"https://api.openalex.org/works?search={clean_query}&filter=publication_year:{target_year},type:article&per-page={max_results}"
+        url = f"https://api.openalex.org/works?search={clean_query}&filter=publication_year:{target_year},type:article&per-page={fetch_limit}"
     else:
-        url = f"https://api.openalex.org/works?search={clean_query}&per-page={max_results}"
+        url = f"https://api.openalex.org/works?search={clean_query}&per-page={fetch_limit}"
 
     headers = {"User-Agent": "ARIA-Research-Assistant/2.0 (mailto:swarajchattaraj@users.noreply.github.com)"}
-    
-    results = []
+
+    candidates = []
     t0 = time.time()
     start_iso = datetime.datetime.now().isoformat()
     status_str = "error"
@@ -279,13 +362,15 @@ async def search_openalex(query: str, max_results: int = 3, topic: Optional[str]
                     year = work.get("publication_year") or None
                     pub_date = work.get("publication_date") or (str(year) if year else None)
                     is_retracted = bool(work.get("is_retracted", False))
-                    
-                    # Venue / Journal Name
+                    cited_by_count = work.get("cited_by_count", 0)
+                    work_type = (work.get("type") or "").lower()
+
+                    # Primary Location / Venue
                     primary_loc = work.get("primary_location") or {}
                     source_obj = primary_loc.get("source") or {}
                     venue = source_obj.get("display_name") or "OpenAlex"
-                    
-                    # Extract authors (with affiliation filtering)
+
+                    # Extract authors
                     raw_authors = []
                     for authorship in work.get("authorships", []):
                         author_obj = authorship.get("author") or {}
@@ -293,35 +378,41 @@ async def search_openalex(query: str, max_results: int = 3, topic: Optional[str]
                         if author_name:
                             raw_authors.append(author_name)
                     authors = clean_authors_list(raw_authors)
-                    
-                    # Extract arxiv_id from ids dictionary if present
+
+                    # Extract arxiv_id
                     ids = work.get("ids", {})
                     arxiv_url = ids.get("arxiv") or ""
                     arxiv_id = arxiv_url.split("/")[-1] if arxiv_url else None
-                    
-                    # OpenAlex abstract inverted index reconstruction
+
+                    # Reconstruct abstract
                     abstract = ""
                     inv_index = work.get("abstract_inverted_index")
                     if inv_index and isinstance(inv_index, dict):
                         words = sorted([(pos, word) for word, positions in inv_index.items() for pos in positions])
-                        abstract = " ".join([w[1] for w in words[:150]])
-                        
-                    snippet = abstract if abstract else f"Published in {year}. Scientific paper indexed by OpenAlex."
+                        abstract = " ".join([w[1] for w in words[:180]])
+
+                    # Strict topical relevance evaluation
+                    rel_score, is_relevant = evaluate_topical_relevance(title, abstract, core_subject, core_entities)
+                    if not is_relevant:
+                        logger.info(f"Dropping off-topic OpenAlex paper for '{core_subject}': {title}")
+                        continue
+
+                    snippet = abstract if abstract else f"Published in {year}. Authoritative work indexed by OpenAlex ({cited_by_count} citations)."
                     source_str = f"OpenAlex [{year}]: {title}"
                     if raw_doi:
                         source_str = raw_doi
 
-                    # Fix doubled OpenAlex URL
                     raw_work_id = work.get("id") or ""
-                    if raw_work_id.startswith("http"):
-                        work_url = raw_work_id
-                    elif raw_work_id:
-                        work_url = f"https://openalex.org/{raw_work_id}"
-                    else:
-                        work_url = None
+                    work_url = raw_work_id if raw_work_id.startswith("http") else (f"https://openalex.org/{raw_work_id}" if raw_work_id else None)
                     final_url = raw_doi or work_url
 
-                    results.append({
+                    # Citation weighting and review preference:
+                    citation_weight = math.log10(max(1, cited_by_count) + 1.0) * 2.5
+                    is_review = work_type in ("review", "book-chapter") or "review" in title.lower()
+                    review_bonus = 6.0 if is_review else 0.0
+                    authoritative_score = rel_score + citation_weight + review_bonus
+
+                    candidates.append((authoritative_score, {
                         "tier": "LIVE",
                         "source_type": "openalex",
                         "review_status": "scholarly",
@@ -337,8 +428,8 @@ async def search_openalex(query: str, max_results: int = 3, topic: Optional[str]
                         "arxiv_id": arxiv_id,
                         "is_retracted": is_retracted,
                         "published": pub_date,
-                        "cited_by_count": work.get("cited_by_count", 0)
-                    })
+                        "cited_by_count": cited_by_count
+                    }))
     except Exception as e:
         status_str = f"failed: {type(e).__name__}"
         logger.warning(f"OpenAlex search error: {e}")
@@ -346,8 +437,9 @@ async def search_openalex(query: str, max_results: int = 3, topic: Optional[str]
         t1 = time.time()
         end_iso = datetime.datetime.now().isoformat()
         retrieval_tracker.record("provider_openalex", t0, t1, start_iso, end_iso, status_str)
-        
-    return results
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return [c[1] for c in candidates[:max_results]]
 
 async def search_duckduckgo(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
     """
@@ -543,72 +635,118 @@ async def search_semantic_scholar(query: str, max_results: int = 3) -> List[Dict
 
     return results
 
-async def search_wikipedia(query: str, max_results: int = 1, exact_title: Optional[str] = None) -> List[Dict[str, Any]]:
+async def search_wikipedia(query: str, max_results: int = 1, exact_title: Optional[str] = None, canonical_topic: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Encyclopedic reference search using Wikipedia. Returns chunks under tier='LIVE' with source_type='wikipedia'.
-    When a disambiguated canonical article title is available (Part 1.1 reformulator), that exact title is
-    tried first before generic search.
+    Encyclopedic reference search using Wikipedia. Returns canonical summary and key facts.
+    Tries the exact canonical Wikipedia page summary REST API first (<300ms) before library search.
     """
+    core_subject, _ = extract_core_subject_entities(query, canonical_topic)
+    target_title = exact_title or core_subject or query
+
     results = []
     t0 = time.time()
     start_iso = datetime.datetime.now().isoformat()
     status_str = "error"
-    try:
-        def _run_wiki():
-            import wikipedia
-            wikipedia.set_user_agent("ARIA-Scientific-Assistant/2.0 (https://aria.swarajchattaraj.tech; contact@swarajchattaraj.tech)")
-            ranked: List[tuple] = []
-            if exact_title and exact_title.strip():
-                try:
-                    summ = wikipedia.summary(exact_title.strip(), sentences=3, auto_suggest=False)
-                    summ_clean = clean_scraped_reference_text(summ)
-                    if summ_clean and len(summ_clean) >= 60:
-                        ranked.append((exact_title.strip(), summ_clean))
-                except Exception:
-                    pass
-            if len(ranked) < max(1, max_results):
-                hits = wikipedia.search(query, results=max_results)
-                for hit in hits:
-                    if any(h.lower() == hit.lower() for h, _ in ranked):
+    headers = {"User-Agent": "ARIA-Scientific-Assistant/2.0 (https://aria.swarajchattaraj.tech; contact@swarajchattaraj.tech)"}
+
+    # 1. Try exact canonical Wikipedia REST summary first
+    if target_title and target_title.strip():
+        clean_target = target_title.strip()
+        try:
+            async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
+                wiki_rest_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(clean_target.replace(' ', '_'))}"
+                w_resp = await client.get(wiki_rest_url, headers=headers)
+                if w_resp.status_code == 200:
+                    w_data = w_resp.json()
+                    extract = w_data.get("extract", "").strip()
+                    title = w_data.get("title", clean_target)
+                    desc = w_data.get("description", "")
+                    page_url = w_data.get("content_urls", {}).get("desktop", {}).get("page") or f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+
+                    if extract and len(extract) >= 60:
+                        prefix_desc = f" ({desc})" if desc else ""
+                        canonical_snippet = clean_scraped_reference_text(f"Canonical scientific definition{prefix_desc}: {extract}")
+                        results.append({
+                            "tier": "LIVE",
+                            "source_type": "wikipedia",
+                            "review_status": "unreviewed_web",
+                            "title": f"Wikipedia: {title}",
+                            "path": None,
+                            "url": page_url,
+                            "authors": None,
+                            "year": None,
+                            "venue": "Wikipedia",
+                            "snippet": canonical_snippet,
+                            "source": f"Wikipedia ({title})",
+                            "doi": None,
+                            "arxiv_id": None,
+                            "is_retracted": False,
+                            "published": None
+                        })
+                        status_str = f"Wikipedia REST hit: {title}"
+        except Exception as e:
+            logger.debug(f"Wikipedia REST summary lookup failed: {e}")
+
+    # 2. Fallback to python wikipedia library search if REST API produced nothing
+    if not results:
+        try:
+            def _run_wiki():
+                import wikipedia
+                wikipedia.set_user_agent("ARIA-Scientific-Assistant/2.0 (https://aria.swarajchattaraj.tech; contact@swarajchattaraj.tech)")
+                ranked: List[tuple] = []
+                for candidate in [target_title, query]:
+                    if not candidate:
                         continue
                     try:
-                        summ = wikipedia.summary(hit, sentences=3, auto_suggest=False)
+                        summ = wikipedia.summary(candidate, sentences=4, auto_suggest=True)
                         summ_clean = clean_scraped_reference_text(summ)
                         if summ_clean and len(summ_clean) >= 60:
-                            ranked.append((hit, summ_clean))
+                            ranked.append((candidate, summ_clean))
+                            break
                     except Exception:
-                        continue
-            return ranked
-        wiki_data = await asyncio.wait_for(asyncio.to_thread(_run_wiki), timeout=6.0)
-        status_str = f"Wikipedia {len(wiki_data)} hits"
-        for hit, summary in wiki_data:
-            clean_summ = clean_scraped_reference_text(summary)
-            results.append({
-                "tier": "LIVE",
-                "source_type": "wikipedia",
-                "review_status": "unreviewed_web",
-                "title": f"Wikipedia: {hit}",
-                "path": None,
-                "url": f"https://en.wikipedia.org/wiki/{urllib.parse.quote(hit)}",
-                "authors": None,
-                "year": None,
-                "venue": "Wikipedia",
-                "snippet": clean_summ,
-                "source": f"Wikipedia ({hit})",
-                "doi": None,
-                "arxiv_id": None,
-                "is_retracted": False,
-                "published": None
-            })
-    except Exception as e:
-        status_str = f"failed: {type(e).__name__}"
-        logger.warning(f"Wikipedia search error: {e}")
-    finally:
-        t1 = time.time()
-        end_iso = datetime.datetime.now().isoformat()
-        retrieval_tracker.record("provider_wikipedia", t0, t1, start_iso, end_iso, status_str)
-        
-    return results
+                        pass
+                if not ranked:
+                    hits = wikipedia.search(target_title or query, results=max_results)
+                    for hit in hits:
+                        try:
+                            summ = wikipedia.summary(hit, sentences=4, auto_suggest=False)
+                            summ_clean = clean_scraped_reference_text(summ)
+                            if summ_clean and len(summ_clean) >= 60:
+                                ranked.append((hit, summ_clean))
+                                break
+                        except Exception:
+                            continue
+                return ranked
+
+            wiki_data = await asyncio.wait_for(asyncio.to_thread(_run_wiki), timeout=5.0)
+            status_str = f"Wikipedia library {len(wiki_data)} hits"
+            for hit, summary in wiki_data:
+                clean_summ = clean_scraped_reference_text(summary)
+                results.append({
+                    "tier": "LIVE",
+                    "source_type": "wikipedia",
+                    "review_status": "unreviewed_web",
+                    "title": f"Wikipedia: {hit}",
+                    "path": None,
+                    "url": f"https://en.wikipedia.org/wiki/{urllib.parse.quote(hit.replace(' ', '_'))}",
+                    "authors": None,
+                    "year": None,
+                    "venue": "Wikipedia",
+                    "snippet": clean_summ,
+                    "source": f"Wikipedia ({hit})",
+                    "doi": None,
+                    "arxiv_id": None,
+                    "is_retracted": False,
+                    "published": None
+                })
+        except Exception as e:
+            status_str = f"failed: {type(e).__name__}"
+            logger.warning(f"Wikipedia search error: {e}")
+
+    t1 = time.time()
+    end_iso = datetime.datetime.now().isoformat()
+    retrieval_tracker.record("provider_wikipedia", t0, t1, start_iso, end_iso, status_str)
+    return results[:max_results]
 
 def compute_source_score(chunk: Dict[str, Any], query: str, canonical_topic: Optional[str] = None) -> float:
     """
@@ -894,24 +1032,26 @@ async def fetch_readable_text(url: Optional[str], query: str, fallback_snippet: 
 async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = None, canonical_topic: Optional[str] = None, topic: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Executes parallel multi-source search across:
-    1. arXiv (canonical topic expanded query + topic category filter)
-    2. OpenAlex (topic-scoped open literature)
-    3. Semantic Scholar
-    4. DuckDuckGo
-    5. Wikipedia (prioritizes disambiguated exact article title from the reformulator)
-    Capped at 15s total: providers capped at 10.0s, page fetches capped at 5.0s max.
-    Filters out results with 0 query overlap and ranks candidates fairly.
+    1. Wikipedia (canonical summary + key facts)
+    2. OpenAlex (sorted by relevance + citation weight, preferring high-citation authoritative papers/reviews)
+    3. arXiv (targeted title/abstract match)
+    4. Semantic Scholar
+    5. DuckDuckGo
+    Strictly filters all candidate sources on topical relevance against the core subject entities
+    and drops off-topic sources completely before ranking.
     """
     t_retrieval_start = time.time()
     iso_start = datetime.datetime.now().isoformat()
     retrieval_tracker.record("live_retrieval_start", t_retrieval_start, t_retrieval_start, iso_start, iso_start, "cap=15s")
 
+    core_subject, core_entities = extract_core_subject_entities(query, canonical_topic)
+
     provider_tasks = [
+        asyncio.create_task(search_wikipedia(query, max_results=1, exact_title=wikipedia_title, canonical_topic=canonical_topic)),
+        asyncio.create_task(search_openalex(query, max_results=3, topic=topic, canonical_topic=canonical_topic)),
         asyncio.create_task(search_arxiv(query, max_results=3, canonical_topic=canonical_topic, topic=topic)),
-        asyncio.create_task(search_openalex(query, max_results=3, topic=topic)),
         asyncio.create_task(search_semantic_scholar(query, max_results=2)),
         asyncio.create_task(search_duckduckgo(query, max_results=3)),
-        asyncio.create_task(search_wikipedia(query, max_results=1, exact_title=wikipedia_title))
     ]
     
     # Cap providers at 10.0s so total retrieval stays well within 15.0s
@@ -930,28 +1070,23 @@ async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = N
         except Exception as e:
             logger.warning(f"Provider task failed: {e}")
             
-    # Filter 1: Drop results with zero query term overlap and negative domain noise
-    q_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", query.lower())) - STOP_WORDS
+    # Strict Topical Relevance Filtering against Core Subject & Entities:
     valid_chunks = []
     for chunk in combined:
-        title_snippet = (chunk.get("title", "") + " " + chunk.get("snippet", "")).lower()
-        chunk_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", title_snippet))
-        if q_tokens and len(q_tokens.intersection(chunk_tokens)) == 0:
-            logger.info(f"Dropped result with 0 query overlap: '{chunk.get('title')}'")
+        title = chunk.get("title", "")
+        text = chunk.get("snippet", "") or chunk.get("content", "")
+        score, is_relevant = evaluate_topical_relevance(title, text, core_subject, core_entities)
+        if not is_relevant:
+            logger.info(f"Cross-provider filter: Dropped off-topic source for '{core_subject}': {title}")
             continue
-
-        # Strict semantic relevance check against canonical topic and negative domains
-        if canonical_topic:
-            q_lower_words = set(re.findall(r"\b[a-zA-Z0-9]+\b", query.lower()))
-            if "pvc" in q_lower_words and any(neg in title_snippet for neg in ("ventricular", "arrhythmia", "cardiac", "myocardial", "ecg", "cardiomyopathy", "extrasystole", "systolic", "diastolic")):
-                logger.info(f"Dropped off-topic medical PVC paper: '{chunk.get('title')}'")
-                continue
-            canon_core = {w for w in set(re.findall(r"\b[a-zA-Z]{4,}\b", canonical_topic.lower())) - STOP_WORDS}
-            if len(canon_core) >= 2 and len(canon_core.intersection(chunk_tokens)) == 0 and len(q_tokens) <= 2:
-                logger.info(f"Dropped result with 0 canonical topic overlap ({canon_core}): '{chunk.get('title')}'")
-                continue
-
+        chunk["_topical_score"] = score
         valid_chunks.append(chunk)
+
+    # Fallback safety: if strict filtering dropped all web/scholar results, keep Wikipedia if available
+    if not valid_chunks and combined:
+        wiki_candidates = [c for c in combined if c.get("source_type") == "wikipedia"]
+        if wiki_candidates:
+            valid_chunks = wiki_candidates
 
     # Filter 2: When the query has a year, drop results from other years unless nothing else remains
     year_match = re.search(r"\b(20[12][0-9])\b", query)

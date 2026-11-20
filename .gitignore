@@ -50,7 +50,8 @@ android/app/src/main/assets/
 android/capacitor.settings.gradle
 android/app/capacitor.build.gradle
 android/capacitor-cordova-android-plugins/
-android/app/src/main/res/xml/
+android/app/src/main/res/xml/*
+!android/app/src/main/res/xml/file_paths.xml
 *.apk
 *.msi
 *.dmg

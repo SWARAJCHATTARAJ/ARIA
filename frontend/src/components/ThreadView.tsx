@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 import { DomainPicker } from './ui/DomainPicker';
-import { saveOrDownloadFile } from '../utils/nativeDownload';
+import { saveOrDownloadFile, showDownloadToast } from '../utils/nativeDownload';
 import { streamQuery } from '../services/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim, HistoryEntry, FigureData, ChartData } from '../types';
 import { API_BASE_URL } from '../services/config';
@@ -678,11 +678,23 @@ export default function ThreadView({
         headers: exportHeaders,
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('PDF export failed');
+      if (!res.ok) {
+        let errMsg = `PDF export failed (HTTP ${res.status})`;
+        try {
+          const errJson = await res.json();
+          if (errJson?.detail) errMsg = `${errJson.detail} (${res.status})`;
+        } catch {}
+        throw new Error(errMsg);
+      }
       const blob = await res.blob();
-      await saveOrDownloadFile(blob, 'aria-research-paper.pdf', 'application/pdf');
+      if (!blob || blob.size === 0) {
+        throw new Error('Received empty PDF blob from server');
+      }
+      const safeQuery = (msg.query || 'aria-research-paper').trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_');
+      await saveOrDownloadFile(blob, `${safeQuery}.pdf`, 'application/pdf');
     } catch (err: any) {
       console.error('Download PDF failed:', err);
+      showDownloadToast(`PDF Export Error: ${err?.message || 'Network error'}`, true);
     } finally {
       setIsExportingPdf((prev) => ({ ...prev, [msg.id]: false }));
     }
@@ -929,6 +941,9 @@ export default function ThreadView({
           if (evt.chart) {
             updatedChart = evt.chart;
             updatedTelemetry.chart = evt.chart;
+          } else {
+            updatedChart = undefined;
+            updatedTelemetry.chart = undefined;
           }
           break;
 
@@ -1256,17 +1271,46 @@ export default function ThreadView({
   };
 
   const handleDownloadBibtex = async (citations: Citation[] = []) => {
-    if (citations.length === 0) return;
-    const bibContent = citations
-      .map((cit) => {
-        const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
-        const key = (authorsStr.split(' ')[0] || 'source').replace(/[^a-zA-Z]/g, '') + (cit.year || '2026');
-        return `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${authorsStr || 'Unknown'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
-      })
-      .join('\n\n');
+    if (!citations || citations.length === 0) {
+      showDownloadToast('No citations available to export.', true);
+      return;
+    }
+    try {
+      const bibContent = citations
+        .map((cit) => {
+          const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
+          const key = (authorsStr.split(' ')[0] || 'source').replace(/[^a-zA-Z]/g, '') + (cit.year || '2026');
+          return `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${authorsStr || 'Unknown'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
+        })
+        .join('\n\n');
 
-    const blob = new Blob([bibContent], { type: 'text/plain;charset=utf-8' });
-    await saveOrDownloadFile(blob, 'aria-citations.bib', 'text/plain');
+      const blob = new Blob([bibContent], { type: 'text/plain;charset=utf-8' });
+      if (!blob || blob.size === 0) {
+        throw new Error('Failed to generate BibTeX content');
+      }
+      await saveOrDownloadFile(blob, 'aria-citations.bib', 'text/plain');
+    } catch (err: any) {
+      console.error('Download BibTeX failed:', err);
+      showDownloadToast(`BibTeX Export Error: ${err?.message || 'Export error'}`, true);
+    }
+  };
+
+  const handleDownloadMarkdown = async (msg: Message) => {
+    if (!msg.content) {
+      showDownloadToast('No synthesis content to export.', true);
+      return;
+    }
+    try {
+      const blob = new Blob([msg.content], { type: 'text/markdown;charset=utf-8' });
+      if (!blob || blob.size === 0) {
+        throw new Error('Empty markdown content');
+      }
+      const safeQuery = (msg.query || 'aria-synthesis').trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_');
+      await saveOrDownloadFile(blob, `${safeQuery}.md`, 'text/markdown');
+    } catch (err: any) {
+      console.error('Download Markdown failed:', err);
+      showDownloadToast(`Markdown Export Error: ${err?.message || 'Export error'}`, true);
+    }
   };
 
   const handleFeedback = async (msg: Message, type: 'positive' | 'negative' | 'flagged') => {
@@ -1584,6 +1628,15 @@ export default function ThreadView({
                       >
                         <Download size={13} />
                         <span>.BIB</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleDownloadMarkdown(msg)}
+                        className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-zinc-400 hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                        title="Export Markdown (.md)"
+                      >
+                        <FileText size={13} />
+                        <span>.MD</span>
                       </button>
 
                       <button

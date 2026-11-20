@@ -7,8 +7,8 @@ function blobToBase64(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.onloadend = () => {
       const result = reader.result as string;
-      const base64 = result.includes(',') ? result.split(',')[1] : result;
-      resolve(base64);
+      const pureBase64 = result.split(',').pop() || '';
+      resolve(pureBase64);
     };
     reader.onerror = reject;
     reader.readAsDataURL(blob);
@@ -39,7 +39,7 @@ export function showDownloadToast(message: string, isError = false) {
       toast.style.transform = 'translate(-50%, 8px)';
       setTimeout(() => toast.remove(), 250);
     }
-  }, 3200);
+  }, 3500);
 }
 
 export async function saveOrDownloadFile(
@@ -48,28 +48,36 @@ export async function saveOrDownloadFile(
   _mimeType: string = 'application/octet-stream'
 ): Promise<boolean> {
   try {
+    if (!blob || blob.size === 0) {
+      showDownloadToast('Export failed: Empty file content received.', true);
+      return false;
+    }
+
+    const safeFilename = filename.replace(/[^a-zA-Z0-9_.-]/g, '_');
+
     if (Capacitor.isNativePlatform()) {
-      const base64Data = await blobToBase64(blob);
+      const pureBase64 = await blobToBase64(blob);
 
+      // Write raw bytes to Directory.Cache without encoding parameter to prevent binary corruption
       await Filesystem.writeFile({
-        path: filename,
-        data: base64Data,
+        path: safeFilename,
+        data: pureBase64,
         directory: Directory.Cache,
       });
 
-      const uriResult = await Filesystem.getUri({
-        path: filename,
+      const { uri } = await Filesystem.getUri({
+        path: safeFilename,
         directory: Directory.Cache,
       });
 
+      // Always launch native Android Share/Open sheet with files: [uri]
       await Share.share({
-        title: filename,
-        text: `ARIA Research: ${filename}`,
-        url: uriResult.uri,
-        dialogTitle: `Save or Open ${filename}`,
+        title: safeFilename,
+        files: [uri],
+        dialogTitle: `Open or Save ${safeFilename}`,
       });
 
-      showDownloadToast(`Ready: ${filename}`);
+      showDownloadToast(`Ready: ${safeFilename}`);
       return true;
     } else {
       // Standard browser/desktop download
@@ -77,19 +85,19 @@ export async function saveOrDownloadFile(
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = filename;
+      a.download = safeFilename;
       document.body.appendChild(a);
       a.click();
       window.setTimeout(() => {
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
       }, 100);
-      showDownloadToast(`Downloaded: ${filename}`);
+      showDownloadToast(`Downloaded: ${safeFilename}`);
       return true;
     }
   } catch (err: any) {
     console.error('saveOrDownloadFile error:', err);
-    if (err?.message?.includes('canceled') || err?.message?.includes('dismissed')) {
+    if (err?.message?.includes('canceled') || err?.message?.includes('dismissed') || err?.name === 'AbortError') {
       return false;
     }
     showDownloadToast(`Download failed: ${err?.message || 'Unknown error'}`, true);

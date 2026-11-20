@@ -16,7 +16,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { Citation, MessageTelemetry, AuditClaim, ClaimStatus } from '../types';
-import { saveOrDownloadFile } from '../utils/nativeDownload';
+import { saveOrDownloadFile, showDownloadToast } from '../utils/nativeDownload';
 import { API_BASE_URL } from '../services/config';
 import { supabase } from '../lib/supabase';
 
@@ -79,19 +79,30 @@ export default function SourcePanel({
   };
 
   const handleDownloadAllBibtex = async () => {
-    if (citations.length === 0) return;
-    const bibContent = citations
-      .map((cit) => {
-        const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
-        const key = (authorsStr.split(' ')[0] || 'source').replace(/[^a-zA-Z]/g, '') + (cit.year || '2026');
-        return `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${authorsStr || 'Unknown'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
-      })
-      .join('\n\n');
+    if (!citations || citations.length === 0) {
+      showDownloadToast('No citations available to export.', true);
+      return;
+    }
+    try {
+      const bibContent = citations
+        .map((cit) => {
+          const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
+          const key = (authorsStr.split(' ')[0] || 'source').replace(/[^a-zA-Z]/g, '') + (cit.year || '2026');
+          return `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${authorsStr || 'Unknown'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
+        })
+        .join('\n\n');
 
-    const blob = new Blob([bibContent], { type: 'text/plain;charset=utf-8' });
-    await saveOrDownloadFile(blob, 'aria-research-citations.bib', 'text/plain');
-    setCopiedAllBib(true);
-    window.setTimeout(() => setCopiedAllBib(false), 2000);
+      const blob = new Blob([bibContent], { type: 'text/plain;charset=utf-8' });
+      if (!blob || blob.size === 0) {
+        throw new Error('Failed to generate BibTeX content');
+      }
+      await saveOrDownloadFile(blob, 'aria-research-citations.bib', 'text/plain');
+      setCopiedAllBib(true);
+      window.setTimeout(() => setCopiedAllBib(false), 2000);
+    } catch (err: any) {
+      console.error('Inspector BibTeX export error:', err);
+      showDownloadToast(`BibTeX Export Error: ${err?.message || 'Export error'}`, true);
+    }
   };
 
   const handleExportPdf = async () => {
@@ -99,11 +110,14 @@ export default function SourcePanel({
       onExportPdf();
       return;
     }
-    if (citations.length === 0) return;
+    if (!citations || citations.length === 0) {
+      showDownloadToast('No citations available to export.', true);
+      return;
+    }
     try {
       setIsExportingPdf(true);
       const payload = {
-        query: activeQuery ? 'Research Overview' : 'ARIA Synthesis',
+        query: 'Research Overview',
         answer_final: telemetry?.audit?.answer_final || 'Verified Research Synthesis',
         confidence: telemetry?.audit?.entailment_score ?? telemetry?.audit?.confidence ?? 0.85,
         tiers: telemetry?.retrieval?.tiers || ['OKF'],
@@ -129,11 +143,22 @@ export default function SourcePanel({
         headers: exportHeaders,
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('PDF export failed');
+      if (!res.ok) {
+        let errMsg = `PDF export failed (HTTP ${res.status})`;
+        try {
+          const errJson = await res.json();
+          if (errJson?.detail) errMsg = `${errJson.detail} (${res.status})`;
+        } catch {}
+        throw new Error(errMsg);
+      }
       const blob = await res.blob();
+      if (!blob || blob.size === 0) {
+        throw new Error('Received empty PDF blob from server');
+      }
       await saveOrDownloadFile(blob, 'aria-research-paper.pdf', 'application/pdf');
     } catch (err: any) {
       console.error('Inspector PDF export error:', err);
+      showDownloadToast(`PDF Export Error: ${err?.message || 'Network error'}`, true);
     } finally {
       setIsExportingPdf(false);
     }
