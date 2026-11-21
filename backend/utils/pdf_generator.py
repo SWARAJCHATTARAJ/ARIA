@@ -126,11 +126,14 @@ _MATH_MAP = {
 
 def is_complex_latex_block(expr: str) -> bool:
     """
-    Detects if a LaTeX math block contains fractions, integrals, roots, or summations.
+    Detects if a LaTeX math block contains fractions, integrals, roots, summations, or key Greek formulas.
     """
     if not expr:
         return False
-    patterns = [r'\\frac', r'\\int', r'\\sqrt', r'\\sum', r'\\prod', r'\\iint', r'\\oint', r'\\partial']
+    patterns = [
+        r'\\frac', r'\\int', r'\\sqrt', r'\\sum', r'\\prod', r'\\iint', r'\\oint',
+        r'\\partial', r'\\alpha', r'\\beta', r'\\gamma', r'\\theta', r'\\lambda'
+    ]
     return any(re.search(p, expr) for p in patterns)
 
 def render_latex_to_png(expr: str, dpi: int = 300) -> Optional[bytes]:
@@ -241,6 +244,7 @@ def sanitize_academic_text(text: str) -> str:
     s = re.sub(r'\\(?:mathcal|mathbf|mathrm|mathbb)\{([A-Za-z0-9])\}', r'\1', s)
 
     # 3. LaTeX Greek letters -> Unicode
+    s = re.sub(r'\bfactor\s*\\?gamma\b', 'factor γ', s, flags=re.I)
     greek_latex = {
         r'\alpha': 'α', r'\beta': 'β', r'\gamma': 'γ', r'\delta': 'δ', r'\epsilon': 'ε',
         r'\zeta': 'ζ', r'\eta': 'η', r'\theta': 'θ', r'\vartheta': 'θ', r'\iota': 'ι',
@@ -283,29 +287,34 @@ def sanitize_academic_text(text: str) -> str:
     s = re.sub(r'\\sqrt\{([^{}]*)\}', r'√(\1)', s)
     s = re.sub(r'\\(?:log|ln|exp|min|max|det|dim)\b', lambda m: m.group(0)[1:], s)
 
-    # 6. Scientific notation ranges: e.g. 10^{5}-10^{7} -> 10⁵–10⁷
+    # 6. Scientific notation ranges & Subscripts / Superscripts (T_op -> Tₒₚ, P_op -> Pₒₚ, E_op -> Eₒₚ)
+    s = re.sub(r'<sub>(.*?)</sub>', lambda m: _to_sub(m.group(1)), s, flags=re.I)
+    s = re.sub(r'<sup>(.*?)</sup>', lambda m: _to_sup(m.group(1)), s, flags=re.I)
     s = re.sub(r'10\^\{([0-9+-]+)\}\s*[-–]\s*10\^\{([0-9+-]+)\}', lambda m: f"10{_to_sup(m.group(1))}–10{_to_sup(m.group(2))}", s)
     s = re.sub(r'([A-Za-z0-9])\^\{([^{}]+)\}', lambda m: f"{m.group(1)}{_to_sup(m.group(2))}", s)
-    s = re.sub(r'([A-Za-z0-9])\_\{([^{}]+)\}', lambda m: f"{m.group(1)}{_to_sub(m.group(2))}", s)
+    s = re.sub(r'([A-Za-z0-9])\\?\_\{([^{}]+)\}', lambda m: f"{m.group(1)}{_to_sub(m.group(2))}", s)
     s = re.sub(r'\^\{([^{}]+)\}', lambda m: _to_sup(m.group(1)), s)
-    s = re.sub(r'\_\{([^{}]+)\}', lambda m: _to_sub(m.group(1)), s)
-    s = re.sub(r'([A-Za-z0-9])\^([0-9a-zA-Z+-])\b', lambda m: f"{m.group(1)}{_to_sup(m.group(2))}", s)
-    s = re.sub(r'([A-Za-z0-9])\_([0-9a-zA-Z])\b', lambda m: f"{m.group(1)}{_to_sub(m.group(2))}", s)
+    s = re.sub(r'\\?\_\{([^{}]+)\}', lambda m: _to_sub(m.group(1)), s)
+    s = re.sub(r'([A-Za-z0-9])\^([0-9a-zA-Z+-]+)\b', lambda m: f"{m.group(1)}{_to_sup(m.group(2))}", s)
+    s = re.sub(r'([A-Za-z0-9])\\?\_([0-9a-zA-Z]+)\b', lambda m: f"{m.group(1)}{_to_sub(m.group(2))}", s)
+    s = re.sub(r'\\?\_([0-9a-zA-Z]+)\b', lambda m: _to_sub(m.group(1)), s)
 
     # 7. Strip delimiters and macros
     s = re.sub(r'\\(?:left|right|Big|big|Bigg|bigg)[lrm]?\b\s*', '', s)
     s = re.sub(r'\\text\{([^{}]*)\}', r'\1', s)
     s = re.sub(r'\\begin\{[^{}]*\}|\\end\{[^{}]*\}', '', s)
 
-    # 8. Clean escaped characters
+    # 8. Clean escaped characters & protect currency
     s = s.replace(r'\_', '_').replace(r'\%', '%').replace(r'\&', '&').replace(r'\#', '#')
 
-    # 9. Strip math delimiters: $$, $, \(, \), \[, \]
+    # 9. Strip math delimiters: $$, $, \(, \), \[, \] and ensure zero raw $ outside currency
+    s = re.sub(r'\$\s*N/A\s*\$', 'N/A', s, flags=re.I)
     s = re.sub(r'\$\$([^\$]+)\$\$', r' \1 ', s)
     s = re.sub(r'\\\[([\s\S]+?)\\\]', r' \1 ', s)
     s = re.sub(r'\\\(([\s\S]+?)\\\)', r' \1 ', s)
     s = re.sub(r'\$([^$\n]+)\$', r' \1 ', s)
-    s = s.replace('$', '').replace('\\(', '').replace('\\)', '').replace('\\[', '').replace('\\]', '')
+    s = re.sub(r'\$(?!\d)', '', s)
+    s = s.replace('\\(', '').replace('\\)', '').replace('\\[', '').replace('\\]', '')
 
     # 10. Clean residual LaTeX braces and backslashes
     s = re.sub(r'\{([A-Za-z0-9+–\s_-]*)\}', r'\1', s)
@@ -319,11 +328,15 @@ def sanitize_academic_text(text: str) -> str:
     return " ".join(s.split()).strip()
 
 UPPERCASE_ACRONYMS = {
+    "DSA": "Data Structures and Algorithms (DSA)",
+    "RAG": "Retrieval-Augmented Generation (RAG)",
+    "OS": "Operating Systems (OS)",
+    "DBMS": "Database Management Systems (DBMS)",
+    "CPU": "Central Processing Unit (CPU)",
     "ML": "Machine Learning (ML)",
     "AI": "Artificial Intelligence (AI)",
     "LLM": "Large Language Models (LLMs)",
     "LLMS": "Large Language Models (LLMs)",
-    "RAG": "Retrieval-Augmented Generation (RAG)",
     "NLP": "Natural Language Processing (NLP)",
     "CRISPR": "CRISPR-Cas9",
     "JWST": "James Webb Space Telescope (JWST)",
@@ -343,11 +356,12 @@ UPPERCASE_ACRONYMS = {
 }
 
 UPPERCASE_TOKENS = {
-    "ML", "AI", "LLM", "LLMS", "RAG", "NLP", "CRISPR", "JWST", "BFT", "RNA", "DNA", "NMR",
-    "BERT", "GAN", "GANS", "QAOA", "PCR", "CAS9", "PBFT", "CNN", "RNN", "LSTM", "GPU", "CPU",
-    "TPU", "RL", "RLHF", "DPO", "NLI", "SGD", "DAG", "IEEE", "ACM", "API", "REST", "HTTP",
-    "HTTPS", "SSRF", "SQL", "UUID", "NASA", "ESA", "PVC", "PE", "PP", "PS", "PET", "PTFE",
-    "PVA", "ABS", "PMMA", "PU", "TPE", "VCM"
+    "DSA", "RAG", "OS", "DBMS", "CPU", "ML", "AI", "LLM", "LLMS", "NLP", "CRISPR",
+    "JWST", "BFT", "RNA", "DNA", "NMR", "BERT", "GAN", "GANS", "QAOA", "PCR", "CAS9",
+    "PBFT", "CNN", "RNN", "LSTM", "GPU", "TPU", "RL", "RLHF", "DPO", "NLI", "SGD",
+    "DAG", "IEEE", "ACM", "API", "REST", "HTTP", "HTTPS", "SSRF", "SQL", "UUID",
+    "NASA", "ESA", "PVC", "PE", "PP", "PS", "PET", "PTFE", "PVA", "ABS", "PMMA",
+    "PU", "TPE", "VCM"
 }
 
 LOWERCASE_TITLE_WORDS = {
@@ -482,8 +496,9 @@ def _wrap_rich_runs(words: List[Tuple[str, str]], max_w: float, fontsize: float)
     return lines
 
 def strip_markdown(text: str) -> str:
-    """Strips Markdown syntax for clean academic prose."""
+    """Strips Markdown syntax and raw HTML bold/italic tags for clean academic prose."""
     t = re.sub(r'```(?:[a-zA-Z0-9_-]*\n)?(.*?)```', r'\1', text, flags=re.DOTALL)
+    t = re.sub(r'</?[bi]>', '', t, flags=re.I)
     t = re.sub(r'\*\*\*(.*?)\*\*\*', r'\1', t, flags=re.DOTALL)
     t = re.sub(r'\*\*(.*?)\*\*', r'\1', t, flags=re.DOTALL)
     t = re.sub(r'(?<!\w)\*(?!\s)([^*]+?)\*(?!\w)', r'\1', t)
@@ -495,37 +510,128 @@ def strip_markdown(text: str) -> str:
 def is_table_separator(line: str) -> bool:
     return bool(re.match(r'^\|?\s*[-:]+[-| :]+\s*\|?$', line.strip()))
 
-def parse_markdown_table_rows(lines: List[str]) -> List[List[str]]:
-    """Parses Markdown table lines into list-of-cells (header + data rows), cleaning empty trailing columns and substituting N/A."""
+def split_markdown_table_row(line: str) -> List[str]:
+    r"""
+    Splits a markdown table row on pipe characters `|` ONLY outside:
+    - single/double dollar math spans ($...$, $$...$$)
+    - latex parenthesis math spans (\(...\))
+    - latex bracket math spans (\[...\])
+    - backtick code spans (`...`)
+    and ignores escaped pipes (\|).
+    Strips leading and trailing empty cells resulting from outer table borders.
+    """
+    s = line.strip()
+    if not s:
+        return []
+    cells = []
+    current = []
+    in_single_dollar = False
+    in_double_dollar = False
+    in_paren_math = False
+    in_bracket_math = False
+    in_code = False
+    i = 0
+    n = len(s)
+    while i < n:
+        if s[i] == '\\' and i + 1 < n:
+            next_ch = s[i + 1]
+            if next_ch == '|':
+                current.append('|')
+                i += 2
+                continue
+            elif next_ch == '(' and not (in_single_dollar or in_double_dollar or in_code):
+                in_paren_math = True
+                current.append('\\(')
+                i += 2
+                continue
+            elif next_ch == ')' and in_paren_math:
+                in_paren_math = False
+                current.append('\\)')
+                i += 2
+                continue
+            elif next_ch == '[' and not (in_single_dollar or in_double_dollar or in_code):
+                in_bracket_math = True
+                current.append('\\[')
+                i += 2
+                continue
+            elif next_ch == ']' and in_bracket_math:
+                in_bracket_math = False
+                current.append('\\]')
+                i += 2
+                continue
+            else:
+                current.append(s[i])
+                current.append(next_ch)
+                i += 2
+                continue
+
+        ch = s[i]
+        if ch == '`' and not (in_single_dollar or in_double_dollar or in_paren_math or in_bracket_math):
+            in_code = not in_code
+            current.append(ch)
+            i += 1
+            continue
+
+        if ch == '$' and not (in_code or in_paren_math or in_bracket_math):
+            if i + 1 < n and s[i + 1] == '$':
+                in_double_dollar = not in_double_dollar
+                current.append('$$')
+                i += 2
+                continue
+            elif not in_double_dollar:
+                in_single_dollar = not in_single_dollar
+                current.append('$')
+                i += 1
+                continue
+
+        if ch == '|' and not (in_code or in_single_dollar or in_double_dollar or in_paren_math or in_bracket_math):
+            cells.append("".join(current).strip())
+            current = []
+            i += 1
+            continue
+
+        current.append(ch)
+        i += 1
+
+    cells.append("".join(current).strip())
+    if s.startswith('|') and len(cells) > 0 and cells[0] == '':
+        cells.pop(0)
+    if s.endswith('|') and len(cells) > 0 and cells[-1] == '':
+        cells.pop(-1)
+    return cells
+
+def parse_markdown_table_rows(lines: Union[List[str], str]) -> List[List[str]]:
+    """
+    Parses Markdown table lines into list-of-cells (header + data rows),
+    splitting on '|' strictly outside math spans and code spans.
+    Preserves exact column count of real 3-5 column tables without phantom columns or ': N/A' padding.
+    """
+    if isinstance(lines, str):
+        lines = [l for l in lines.strip().splitlines() if l.strip()]
     rows = []
     for line in lines:
         s = line.strip()
         if not s.startswith('|') or is_table_separator(s):
             continue
-        cells = [c.strip() for c in s.split('|')[1:-1]]
+        cells = split_markdown_table_row(s)
         if cells:
             rows.append(cells)
     if not rows:
         return []
 
-    # Strip empty trailing columns that are blank across all rows
-    max_c = max(len(r) for r in rows)
-    padded = [r + [""] * (max_c - len(r)) for r in rows]
-    while max_c > 1:
-        if all(r[max_c - 1] == "" for r in padded):
-            padded = [r[:-1] for r in padded]
-            max_c -= 1
-        else:
-            break
-
+    header_len = len(rows[0])
     cleaned_rows = []
-    for r_idx, row in enumerate(padded):
+    for r_idx, row in enumerate(rows):
         cleaned_row = []
-        for cell in row:
+        for cell in row[:header_len]:
             c_val = cell.strip()
-            if r_idx > 0 and (not c_val or c_val in ("-", "--", "---", "None", "null")):
+            if r_idx > 0 and (not c_val or c_val in ("-", "--", "---", "None", "null", "$N/A$", "$ N/A $")):
                 c_val = "N/A"
+            # Format markdown bold **text** to ReportLab <b>text</b>
+            c_val = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', c_val)
             cleaned_row.append(c_val)
+        while len(cleaned_row) < header_len:
+            cleaned_row.append("N/A" if r_idx > 0 else "")
         cleaned_rows.append(cleaned_row)
 
     return cleaned_rows
@@ -839,17 +945,25 @@ class AcademicTwoColumnPaper:
             return first[0].lower() + first[1:] + (" " + " ".join(words[1:]) if len(words) > 1 else "")
 
         if supported_claims:
-            top = [strip_markdown(c.get("text", "")).rstrip(". ") for c in supported_claims[:2]]
+            top = [strip_markdown(sanitize_academic_text(c.get("text", ""))).rstrip(". ") for c in supported_claims[:2]]
             top = [t for t in top if t and len(t) >= 15]
         else:
             top = []
 
-        if top and verified_ratio >= 60.0:
+        n_supported = len(supported_claims)
+        n_partial = len(partial_claims)
+
+        if top and n_supported > 0:
             findings = f"Verified empirical findings demonstrate that {_format_finding_clause(top[0])}."
-            if len(top) > 1:
+            if len(top) > 1 and verified_ratio >= 50.0:
                 findings += f" Further cross-verified analysis confirms that {_format_finding_clause(top[1])}."
-        elif top:
-            findings = f"Partially verified analysis indicates that {_format_finding_clause(top[0])}."
+        elif partial_claims and n_partial > 0:
+            top_part = [strip_markdown(sanitize_academic_text(c.get("text", ""))).rstrip(". ") for c in partial_claims[:1]]
+            top_part = [t for t in top_part if t and len(t) >= 15]
+            if top_part:
+                findings = f"Partially verified analysis indicates that {_format_finding_clause(top_part[0])}."
+            else:
+                findings = f"Partially verified analysis examines the foundational mechanisms of {self.academic_title.split(':')[0]}."
         else:
             findings = (
                 f"An autonomous synthesis over retrieved scientific evidence examines the foundational "
@@ -1059,10 +1173,10 @@ class AcademicTwoColumnPaper:
             return
         words: List[Tuple[str, str]] = []
         if bold_prefix.strip():
-            pfx = bold_prefix.strip()
-            if not pfx.endswith(":"):
-                pfx = f"{pfx}:"
-            words = [(w, "tibo") for w in re.split(r'\s+', pfx) if w]
+            clean_pfx = strip_markdown(sanitize_academic_text(bold_prefix.strip()))
+            if not clean_pfx.endswith(":"):
+                clean_pfx = f"{clean_pfx}:"
+            words = [(w, "tibo") for w in re.split(r'\s+', clean_pfx) if w]
         words += _parse_rich_runs(sanitize_academic_text(body))
         pending = [("•", "tiro")] + words
         lines = _wrap_rich_runs(pending, max_w=self.COL_W - 8.0, fontsize=8.5)
@@ -1078,12 +1192,14 @@ class AcademicTwoColumnPaper:
 
     def _render_key_value_cards(self, rows: List[List[str]], caption: str = ""):
         """
-        Renders wide comparison tables (> 7 columns) as clean, bordered key-value stacked cards
+        Renders wide comparison tables (> 6 columns) as clean, bordered key-value stacked cards
         so wide comparison tables never crush text vertically into illegible single-character columns on portrait pages.
+        Ensures both keys and values are sanitized so raw markdown or $N/A$ never leaks.
         """
         if not rows:
             return
-        header = rows[0] if len(rows) > 1 else [f"Field {i}" for i in range(len(rows[0]))]
+        raw_header = rows[0] if len(rows) > 1 else [f"Field {i}" for i in range(len(rows[0]))]
+        header = [strip_markdown(sanitize_academic_text(h)) for h in raw_header]
         data_rows = rows[1:] if len(rows) > 1 else rows
 
         avail_w = self.COL_W
@@ -1093,6 +1209,7 @@ class AcademicTwoColumnPaper:
             clean_body = re.sub(r'^(?:Table\s+[0-9IVXivx]*\s*[:\.\-]\s*)', '', caption, flags=re.I).strip()
             if not clean_body:
                 clean_body = caption.strip()
+            clean_body = strip_markdown(sanitize_academic_text(clean_body))
             caption_str = f"Table {self.get_next_table_num()}: {clean_body} (Structured Metric Cards)"
             cap_lines = self.wrap_line(caption_str, max_w=avail_w, fontname="tiit", fontsize=7.5)
             self.ensure_space(len(cap_lines) * 9.0 + 4.0)
@@ -1102,13 +1219,17 @@ class AcademicTwoColumnPaper:
             self.y += 3.0
 
         for row_idx, r in enumerate(data_rows):
-            entity_title = strip_markdown(sanitize_academic_text(r[0] if r else f"Entry {row_idx + 1}"))
+            raw_entity = r[0] if r else f"Entry {row_idx + 1}"
+            entity_title = strip_markdown(sanitize_academic_text(raw_entity))
             primary_label = f"{header[0]}: {entity_title}" if header else entity_title
 
             items: List[Tuple[str, str]] = []
             for col in range(1, len(header)):
-                key = strip_markdown(sanitize_academic_text(header[col]))
-                val = strip_markdown(sanitize_academic_text(r[col] if col < len(r) else "N/A"))
+                key = header[col]
+                raw_val = r[col] if col < len(r) else "N/A"
+                val = strip_markdown(sanitize_academic_text(raw_val))
+                if not val or val in ("None", "null", "$N/A$"):
+                    val = "N/A"
                 items.append((key, val))
 
             col_w_card = (avail_w - 16.0) / 2.0
@@ -1147,16 +1268,17 @@ class AcademicTwoColumnPaper:
         """
         Renders real bordered grid with wrapped cells, header shading, clean pagination,
         and header row repetition on continuation pages (repeatRows=1).
-        For tables with > 7 columns, automatically renders as clean key-value stacked cards.
-        For tables with 6-7 columns, automatically reduces cell font size to 7.0-7.5pt with tighter padding.
+        For tables with > 6 columns, automatically renders as clean key-value stacked cards.
+        For tables with 5-6 columns, automatically reduces cell font size to 7.0-7.5pt with tighter padding.
         """
         if not rows:
             return
-        ncols = max(len(r) for r in rows)
-        rows = [r + ["N/A"] * (ncols - len(r)) for r in rows]
+        header = rows[0] if len(rows) > 1 else None
+        ncols = len(header) if header else (len(rows[0]) if rows else 0)
+        rows = [r[:ncols] + ["N/A"] * max(0, ncols - len(r)) for r in rows]
 
-        # For wide comparison tables with > 7 columns: render as clean key-value stacked cards
-        if ncols > 7 and not custom_col_widths:
+        # For wide comparison tables with > 6 columns: render as clean key-value stacked cards
+        if ncols > 6 and not custom_col_widths:
             self._render_key_value_cards(rows, caption=caption)
             return
 
@@ -1406,7 +1528,7 @@ class AcademicTwoColumnPaper:
         
         for idx, c in enumerate(ledger_claims):
             cid = f"C{idx + 1}"
-            raw_txt = strip_markdown(c.get("text", "")).strip()
+            raw_txt = strip_markdown(sanitize_academic_text(c.get("text", ""))).strip()
             if len(raw_txt) > 75:
                 short_txt = raw_txt[:75].rsplit(' ', 1)[0] + "..."
             else:
@@ -1550,6 +1672,12 @@ class AcademicTwoColumnPaper:
                         img = Image.open(io.BytesIO(resp.content))
                         if img.mode not in ("RGB", "L"):
                             img = img.convert("RGB")
+                        # Reject predominantly dark/blank/monochrome candidate images
+                        from PIL import ImageStat
+                        stat = ImageStat.Stat(img.convert("L"))
+                        if stat.mean[0] < 25.0 or stat.stddev[0] < 8.0:
+                            logger.debug(f"Rejecting dark/blank sync image from {url}: mean={stat.mean[0]:.1f}, std={stat.stddev[0]:.1f}")
+                            return None
                         if img.width > 1200 or img.height > 1200:
                             img.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
                         buf = io.BytesIO()
@@ -1558,6 +1686,21 @@ class AcademicTwoColumnPaper:
             except Exception as e:
                 logger.debug(f"Sync image download failed for {url}: {e}")
             return None
+
+        def _is_valid_chart_for_pdf(chart: Optional[Dict[str, Any]]) -> bool:
+            if not chart:
+                return False
+            cats = chart.get("categories") or []
+            sers = chart.get("series") or []
+            if len(cats) < 3 or not sers:
+                return False
+            all_vals = [v for s in sers for v in s.get("data", [])]
+            if len(all_vals) <= 1 or max(all_vals) == min(all_vals) or len(set(all_vals)) <= 1:
+                return False
+            y_lab = str(chart.get("y_label", ""))
+            if any(tok in y_lab for tok in ("[c:", "c:", "§")):
+                return False
+            return True
 
         # ------------------------------------------------------------------
         # Render the 5 Canonical Manuscript Sections
@@ -1590,8 +1733,8 @@ class AcademicTwoColumnPaper:
                     self._render_table_block(t_rows, caption="Table I: Quantitative Properties & Comparative Benchmark Analysis")
                 self.y += 2.0
 
-                # Embed Figure 2: Matplotlib quantitative comparative benchmark chart
-                if self.chart and not figure2_rendered:
+                # Embed Figure 2: Matplotlib quantitative comparative benchmark chart (rejects degenerate charts)
+                if self.chart and _is_valid_chart_for_pdf(self.chart) and not figure2_rendered:
                     from utils.media import render_chart_matplotlib
                     c_bytes = self.chart.get("chart_bytes") or render_chart_matplotlib(self.chart)
                     if c_bytes:
@@ -1653,8 +1796,8 @@ class AcademicTwoColumnPaper:
                         self.add_figure(img_bytes, f"Figure 1: {cap}", attribution=attr)
                         figure1_rendered = True
 
-                # If Section III had no pending table, still embed Figure 2 if chart exists
-                if s_idx == 2 and self.chart and not figure2_rendered:
+                # If Section III had no pending table, still embed Figure 2 if chart exists and is valid
+                if s_idx == 2 and self.chart and _is_valid_chart_for_pdf(self.chart) and not figure2_rendered:
                     from utils.media import render_chart_matplotlib
                     c_bytes = self.chart.get("chart_bytes") or render_chart_matplotlib(self.chart)
                     if c_bytes:

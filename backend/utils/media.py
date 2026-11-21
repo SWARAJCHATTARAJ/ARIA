@@ -22,13 +22,31 @@ MEDIA_REJECT_TERMS = {
     "audio", "speaker", "placeholder", "wikipedia_logo", "wikimedia_logo", "wiki_icon",
     "advertisement", "banner", "film_poster", "album_cover", "book_cover",
     "user_interface", "status", "arrow", "checkbox",
-    "portrait", "headshot", "selfie", "mugshot"
+    "portrait", "headshot", "selfie", "mugshot",
+    "ia_", ".djvu", ".pdf", "thesis", "national technical information service",
+    "book cover", "title page", "frontispiece", "internet archive", "scanned book"
 }
 
 DESC_REJECT_TERMS = {
     "portrait of", "headshot of", "official portrait", "selfie", "mugshot",
-    "coat of arms", "flag of", "logo of", "official seal", "state emblem"
+    "coat of arms", "flag of", "logo of", "official seal", "state emblem",
+    "national technical information service", "thesis", "book cover", "title page",
+    "frontispiece", "internet archive", "scanned book", "digitized by", "call number",
+    "includes bibliographical", "includes index", "lc control", "isbn", "oclc"
 }
+
+BOOK_SCAN_REJECT_PATTERNS = [
+    re.compile(r'\bia_[a-zA-Z0-9_-]+', re.I),
+    re.compile(r'\.djvu\b', re.I),
+    re.compile(r'\.pdf\b', re.I),
+    re.compile(r'\bthesis\b', re.I),
+    re.compile(r'\bnational technical information service\b', re.I),
+    re.compile(r'\bbook[-_ ]cover\b', re.I),
+    re.compile(r'\btitle[-_ ]page\b', re.I),
+    re.compile(r'\bfrontispiece\b', re.I),
+    re.compile(r'\binternet archive\b', re.I),
+    re.compile(r'\bscanned book\b', re.I),
+]
 
 ALLOWED_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 
@@ -64,7 +82,7 @@ def _extract_media_keywords(topic: str) -> List[str]:
     return tokens
 
 def _is_image_valid(url: str, width: int, height: int, filename: str, desc: str) -> bool:
-    """Strictly validates format, resolution, aspect ratio, and reject terms."""
+    """Strictly validates format, resolution, aspect ratio, reject terms, and book/thesis scans."""
     fn_clean = filename.split("?")[0].lower()
     desc_lower = (desc or "").lower()
     url_clean = url.split("?")[0].lower()
@@ -85,6 +103,11 @@ def _is_image_valid(url: str, width: int, height: int, filename: str, desc: str)
         if term in desc_lower:
             return False
 
+    # Reject book scans, document covers, NTIS reports, theses, or Internet Archive scans
+    for pat in BOOK_SCAN_REJECT_PATTERNS:
+        if pat.search(fn_clean) or pat.search(desc_lower) or pat.search(url_clean):
+            return False
+
     # Resolution constraints: minimum 400px wide, 200px high
     if width < 400 or height < 200:
         return False
@@ -95,6 +118,40 @@ def _is_image_valid(url: str, width: int, height: int, filename: str, desc: str)
         return False
 
     return True
+
+def format_figure_caption(clean_desc: str, fallback_title: str) -> str:
+    """
+    Truncates figure captions strictly at a complete sentence boundary.
+    Avoids mid-word cuts (e.g. 'Includes bibliograp') and noisy metadata dumps.
+    """
+    if not clean_desc:
+        return f"Structural diagram for {fallback_title}."
+
+    clean = re.sub(r'<[^>]+>', '', clean_desc).strip()
+    clean = " ".join(clean.split())
+
+    # Reject/sanitize noisy metadata dumps
+    if any(m in clean.lower() for m in (
+        "includes bibliographical", "includes index", "call number", "lc control",
+        "isbn", "oclc", "digitized by", "reproduction of"
+    )):
+        return f"Structural diagram for {fallback_title}."
+
+    # If short enough and ends with terminal punctuation, return directly
+    if len(clean) <= 220 and re.search(r'[.!?]["\')]*$', clean):
+        return clean
+
+    # Find terminal sentence boundaries within the first 250 characters
+    target = clean[:250]
+    matches = list(re.finditer(r'([.!?]["\')]*)(?:\s+|$)', target))
+    if matches:
+        return target[:matches[-1].end()].strip()
+
+    # If no sentence boundary in range, slice at word boundary and add period
+    truncated = clean[:180].rsplit(' ', 1)[0].rstrip(' ,;:-–—')
+    if not re.search(r'[.!?]$', truncated):
+        truncated += "."
+    return truncated
 
 def _score_image_candidate(filename: str, desc: str, keywords: List[str]) -> float:
     """Scores topical overlap between image metadata and the query keywords."""
@@ -182,10 +239,11 @@ async def fetch_verified_figures(
                                     if is_descriptive:
                                         fig_display_title = fn_title.title()
                                         raw_desc = (data.get("description") or "").strip()
-                                        cap = f"{fig_display_title}. {raw_desc}".strip(". ") if raw_desc else fig_display_title
+                                        desc_full = f"{fig_display_title}. {raw_desc}".strip(". ") if raw_desc else fig_display_title
+                                        cap = format_figure_caption(desc_full, fig_display_title)
                                     else:
                                         fig_display_title = resolved_title
-                                        cap = data.get("description") or f"Scientific overview of {resolved_title}."
+                                        cap = format_figure_caption(data.get("description") or "", resolved_title)
 
                                     figures.append({
                                         "title": fig_display_title,
@@ -248,7 +306,7 @@ async def fetch_verified_figures(
                                     clean_desc = re.sub(r'<[^>]+>', '', desc_val).strip()
                                     if _is_image_valid(u, w, h, raw_title, clean_desc):
                                         clean_fig_title = re.sub(r'[\._-]', ' ', raw_title.rsplit('.', 1)[0]).strip().title()
-                                        cap = clean_desc[:200] if clean_desc else f"Structural diagram for {resolved_title}."
+                                        cap = format_figure_caption(clean_desc, resolved_title)
                                         figures.append({
                                             "title": clean_fig_title,
                                             "caption": cap,
@@ -302,7 +360,7 @@ async def fetch_verified_figures(
                         if len(figures) >= max_figures:
                             break
                         clean_title = re.sub(r'[\._-]', ' ', fn.rsplit('.', 1)[0]).strip().title()
-                        cap = clean_desc[:200] if clean_desc else f"Structural diagram for {resolved_title}."
+                        cap = format_figure_caption(clean_desc, resolved_title)
                         figures.append({
                             "title": clean_title,
                             "caption": cap,
@@ -331,16 +389,122 @@ KNOWN_UNITS = [
     "score", "index", "points"
 ]
 
+def _clean_citation_and_markdown(text: str) -> str:
+    r"""Strips citation tags ([c:\d+], [\d+], §\d+) and markdown formatting before scanning for numeric data."""
+    if not text:
+        return ""
+    t = re.sub(r'\[+c:\d+\]+', '', text, flags=re.I)
+    t = re.sub(r'\[\d+\]', '', t)
+    t = re.sub(r'§\s*\d+', '', t)
+    t = t.replace("**", "").replace("*", "").replace("`", "")
+    return t.strip()
+
+def split_table_row_math_aware(line: str) -> List[str]:
+    """Splits a markdown table row on pipe characters `|` ONLY outside math spans and code spans."""
+    s = line.strip()
+    if not s:
+        return []
+    cells = []
+    current = []
+    in_single_dollar = False
+    in_double_dollar = False
+    in_paren_math = False
+    in_bracket_math = False
+    in_code = False
+    i = 0
+    n = len(s)
+    while i < n:
+        if s[i] == '\\' and i + 1 < n:
+            next_ch = s[i + 1]
+            if next_ch == '|':
+                current.append('|')
+                i += 2
+                continue
+            elif next_ch == '(' and not (in_single_dollar or in_double_dollar or in_code):
+                in_paren_math = True
+                current.append('\\(')
+                i += 2
+                continue
+            elif next_ch == ')' and in_paren_math:
+                in_paren_math = False
+                current.append('\\)')
+                i += 2
+                continue
+            elif next_ch == '[' and not (in_single_dollar or in_double_dollar or in_code):
+                in_bracket_math = True
+                current.append('\\[')
+                i += 2
+                continue
+            elif next_ch == ']' and in_bracket_math:
+                in_bracket_math = False
+                current.append('\\]')
+                i += 2
+                continue
+            else:
+                current.append(s[i])
+                current.append(next_ch)
+                i += 2
+                continue
+
+        ch = s[i]
+        if ch == '`' and not (in_single_dollar or in_double_dollar or in_paren_math or in_bracket_math):
+            in_code = not in_code
+            current.append(ch)
+            i += 1
+            continue
+
+        if ch == '$' and not (in_code or in_paren_math or in_bracket_math):
+            if i + 1 < n and s[i + 1] == '$':
+                in_double_dollar = not in_double_dollar
+                current.append('$$')
+                i += 2
+                continue
+            elif not in_double_dollar:
+                in_single_dollar = not in_single_dollar
+                current.append('$')
+                i += 1
+                continue
+
+        if ch == '|' and not (in_code or in_single_dollar or in_double_dollar or in_paren_math or in_bracket_math):
+            cells.append("".join(current).strip())
+            current = []
+            i += 1
+            continue
+
+        current.append(ch)
+        i += 1
+
+    cells.append("".join(current).strip())
+    if s.startswith('|') and len(cells) > 0 and cells[0] == '':
+        cells.pop(0)
+    if s.endswith('|') and len(cells) > 0 and cells[-1] == '':
+        cells.pop(-1)
+    return cells
+
+QUALITATIVE_HEADERS = {
+    "complexity", "time complexity", "space complexity", "worst case", "average case",
+    "best case", "worst", "average", "best", "paradigm", "type", "description",
+    "notation", "property", "properties", "stability", "definition", "feature",
+    "features", "approach", "algorithm", "data structure", "data structures",
+    "advantage", "advantages", "disadvantage", "disadvantages", "operation",
+    "operations", "trade-off", "tradeoff", "trade-offs", "tradeoffs"
+}
+
 def _extract_unit_from_string(s: str) -> Optional[str]:
-    """Finds known scientific or benchmark unit from a header or string."""
-    s_clean = s.strip().lower()
+    """Finds known scientific or benchmark unit from a header or string, rejecting citation tokens."""
+    if not s:
+        return None
+    s_clean = _clean_citation_and_markdown(s).lower()
     m_paren = re.search(r'[\(\[]([^\)\]]+)[\)\]]', s_clean)
     if m_paren:
         inside = m_paren.group(1).strip()
+        # Reject citation tokens, brackets, colons, or digit-only tokens
+        if any(tok in inside for tok in ("[", "]", ":", "c:", "§")) or inside.isdigit() or inside.startswith("c:"):
+            return None
         for u in KNOWN_UNITS:
             if inside == u or inside.endswith(f" {u}") or inside.startswith(f"{u} "):
                 return u
-        if len(inside) <= 8 and not inside.isdigit():
+        if len(inside) <= 8 and not inside.isdigit() and inside.isalpha():
             return inside
 
     for u in KNOWN_UNITS:
@@ -349,8 +513,12 @@ def _extract_unit_from_string(s: str) -> Optional[str]:
     return None
 
 def _extract_number(s: str) -> Optional[Tuple[float, str]]:
-    """Extracts first valid number and its raw string representation."""
-    m = re.search(r'[-+]?\d+(?:,\d{3})*(?:\.\d+)?(?:[eE][-+]?\d+)?', s)
+    """Extracts first valid number from cell text after stripping citation markers and markdown."""
+    s_clean = _clean_citation_and_markdown(s)
+    # Reject Big-O / asymptotic notation or complexity equations
+    if re.search(r'\bO\s*\(', s_clean) or re.search(r'\b[ΘΩ]\s*\(', s_clean):
+        return None
+    m = re.search(r'[-+]?\d+(?:,\d{3})*(?:\.\d+)?(?:[eE][-+]?\d+)?', s_clean)
     if not m:
         return None
     raw_str = m.group(0)
@@ -384,8 +552,10 @@ def extract_or_generate_topic_chart(
     Returns a chart dictionary ONLY if ALL conditions are met:
       1. Every single numeric value is verified verbatim inside the retrieved source text.
       2. Every bar/point uses the exact same unit and metric (never mixes unrelated numbers).
-      3. At least 3 distinct comparable items exist, with real axis labels and source citations.
-    Otherwise returns None (never forces a chart or generates synthetic mock data).
+      3. At least 3 distinct comparable items exist with variance (rejects constant dummy bars).
+      4. The unit string does not contain brackets, colons, or citation tokens.
+      5. The source table is quantitative, not qualitative/descriptive (rejects Big-O complexity).
+    Otherwise returns None cleanly.
     """
     if not text or not chunks:
         return None
@@ -393,14 +563,14 @@ def extract_or_generate_topic_chart(
     # Build lower-cased source corpus for verbatim number verification
     source_corpus_parts = []
     for c in chunks:
-        t = c.get("text") or c.get("content") or c.get("snippet") or ""
+        t = c.get("text") or c.get("content") or c.get("snippet") or c.get("abstract") or ""
         tit = c.get("title") or ""
         source_corpus_parts.append(f"{tit} {t}")
     source_corpus = " ".join(source_corpus_parts).lower()
     if not source_corpus.strip():
         return None
 
-    # 1. Parse all Markdown tables from text
+    # 1. Parse all Markdown tables from text using math-aware row splitting
     lines = text.split("\n")
     tables = []
     current_table = []
@@ -419,15 +589,15 @@ def extract_or_generate_topic_chart(
         return None
 
     for tbl in tables:
-        # Parse table cells
-        header_cells = [c.strip() for c in tbl[0].split("|")[1:-1]]
+        # Parse table cells math-aware
+        header_cells = [_clean_citation_and_markdown(c) for c in split_table_row_math_aware(tbl[0])]
         if not header_cells or len(header_cells) < 2:
             continue
 
         # Skip separator row (tbl[1])
         data_rows = []
         for r_str in tbl[2:]:
-            cells = [c.strip() for c in r_str.split("|")[1:-1]]
+            cells = split_table_row_math_aware(r_str)
             if len(cells) == len(header_cells):
                 data_rows.append(cells)
 
@@ -439,7 +609,11 @@ def extract_or_generate_topic_chart(
             col0_name = header_cells[0]
             for col_idx in range(1, len(header_cells)):
                 metric_header = header_cells[col_idx]
-                if any(term in metric_header.lower() for term in ("citation", "source", "ref", "url", "notes")):
+                metric_header_lower = metric_header.lower()
+                if any(term in metric_header_lower for term in ("citation", "source", "ref", "url", "notes")):
+                    continue
+                # Reject qualitative / complexity columns
+                if any(qh in metric_header_lower for qh in QUALITATIVE_HEADERS):
                     continue
 
                 header_unit = _extract_unit_from_string(metric_header)
@@ -450,7 +624,7 @@ def extract_or_generate_topic_chart(
                 all_verified = True
 
                 for r in data_rows:
-                    item_name = r[0]
+                    item_name = _clean_citation_and_markdown(r[0])
                     cell_val_str = r[col_idx]
                     parsed_num = _extract_number(cell_val_str)
                     if parsed_num is None:
@@ -466,7 +640,7 @@ def extract_or_generate_topic_chart(
                     # Extract unit for this cell
                     cell_unit = _extract_unit_from_string(cell_val_str) or header_unit
                     if not cell_unit:
-                        if any(term in metric_header.lower() for term in ("score", "f1", "bleu", "accuracy", "rate", "ratio", "index")):
+                        if any(term in metric_header_lower for term in ("score", "f1", "bleu", "accuracy", "rate", "ratio", "index")):
                             cell_unit = "index"
                         else:
                             all_verified = False
@@ -483,12 +657,20 @@ def extract_or_generate_topic_chart(
                 if len(candidate_categories) < 3 or len(set(candidate_categories)) < 3:
                     continue
 
+                # Reject degenerate / constant charts where all values are identical (zero variance)
+                if len(candidate_values) > 1 and (max(candidate_values) == min(candidate_values) or len(set(candidate_values)) <= 1):
+                    continue
+
                 # Check uniform unit: every single item must have the EXACT SAME unit
                 unique_units = set(candidate_units)
                 if len(unique_units) != 1:
                     continue
 
                 common_unit = candidate_units[0]
+                # Reject unit strings containing brackets, colons, or citation tokens
+                if not common_unit or any(tok in common_unit for tok in ("[", "]", ":", "c:", "§")) or common_unit.startswith("c:"):
+                    continue
+
                 display_unit = f" ({common_unit})" if common_unit != "index" else ""
 
                 # Check if there is a citation column in this table
@@ -496,7 +678,7 @@ def extract_or_generate_topic_chart(
                 for c_idx in range(len(header_cells)):
                     if any(term in header_cells[c_idx].lower() for term in ("citation", "source", "ref")):
                         for r in data_rows:
-                            citations_found.append(r[c_idx])
+                            citations_found.append(_clean_citation_and_markdown(r[c_idx]))
                         break
 
                 cite_label = "Source-verified comparative benchmarks"
@@ -525,7 +707,10 @@ def extract_or_generate_topic_chart(
         if len(header_cells) >= 4:
             entity_columns = header_cells[1:]
             for r in data_rows:
-                metric_row_name = r[0]
+                metric_row_name = _clean_citation_and_markdown(r[0])
+                metric_row_lower = metric_row_name.lower()
+                if any(qh in metric_row_lower for qh in QUALITATIVE_HEADERS):
+                    continue
                 row_unit = _extract_unit_from_string(metric_row_name)
 
                 candidate_categories = []
@@ -550,7 +735,7 @@ def extract_or_generate_topic_chart(
 
                     cell_unit = _extract_unit_from_string(cell_val_str) or row_unit
                     if not cell_unit:
-                        if any(term in metric_row_name.lower() for term in ("score", "f1", "bleu", "accuracy", "rate", "ratio", "index")):
+                        if any(term in metric_row_lower for term in ("score", "f1", "bleu", "accuracy", "rate", "ratio", "index")):
                             cell_unit = "index"
                         else:
                             all_verified = False
@@ -561,8 +746,13 @@ def extract_or_generate_topic_chart(
                     candidate_units.append(cell_unit)
 
                 if all_verified and len(candidate_categories) >= 3 and len(set(candidate_categories)) >= 3:
+                    # Reject degenerate / constant charts where all values are identical
+                    if len(candidate_values) > 1 and (max(candidate_values) == min(candidate_values) or len(set(candidate_values)) <= 1):
+                        continue
                     if len(set(candidate_units)) == 1:
                         common_unit = candidate_units[0]
+                        if not common_unit or any(tok in common_unit for tok in ("[", "]", ":", "c:", "§")) or common_unit.startswith("c:"):
+                            continue
                         display_unit = f" ({common_unit})" if common_unit != "index" else ""
                         metric_title = re.sub(r'[\(\[].*?[\)\]]', '', metric_row_name).strip() or "Comparative Metric"
                         return {
@@ -713,6 +903,15 @@ async def download_image_safe(url: str, timeout: Optional[float] = None) -> Opti
             img = Image.open(io.BytesIO(data))
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
+
+            # Lightweight Pillow check: reject predominantly dark, blank, or monochrome solid images
+            from PIL import ImageStat
+            stat = ImageStat.Stat(img.convert("L"))
+            mean_brightness = stat.mean[0]
+            std_dev = stat.stddev[0]
+            if mean_brightness < 25.0 or std_dev < 8.0:
+                logger.debug(f"Rejecting dark/blank/monochrome candidate image from {url}: mean={mean_brightness:.1f}, std={std_dev:.1f}")
+                return None
 
             max_dim = 1200
             if img.width > max_dim or img.height > max_dim:

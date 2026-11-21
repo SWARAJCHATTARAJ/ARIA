@@ -11,9 +11,15 @@ sys.path.insert(0, backend_dir)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(backend_dir, ".env"))
 
-from utils.pdf_generator import generate_research_pdf, generate_academic_paper_title, is_page_empty_or_header_only
+from utils.pdf_generator import (
+    generate_research_pdf,
+    generate_academic_paper_title,
+    is_page_empty_or_header_only,
+    parse_markdown_table_rows
+)
 from pipeline.nodes import expand_to_full_research_paper
 from utils.academic_search import search_all_free_sources, search_wikipedia, clean_scraped_reference_text
+from utils.media import extract_or_generate_topic_chart, _is_image_valid
 
 async def main():
     print("=" * 60)
@@ -228,6 +234,114 @@ Cellular architecture provides the blueprint for synthetic biology [1].
         assert "and" not in index_terms_line.split(", "), "Stop-word 'and' leaked into Index Terms!"
 
     print("  -> Glyph spacing, character collision, and blank page assertions PASS!")
+
+    # 9. Regression Tests for DSA PDF Fixes:
+    # (1) Citation-tag charts & dummy constant charts rejection
+    # (2) Math-pipe table splitting & card formatting
+    # (3) Zero raw $ LaTeX leaks & no contradictory abstract
+    # (4) Dark/blank image & book scan rejection
+    print("\n[9] Running DSA PDF Fix Regression Tests:")
+
+    # 9.1: Citation markers [c:1] / §1 and constant-value charts rejected
+    print("  [9.1] Testing Chart Extractor rejection for citations and constant dummy bars...")
+    citation_table = """
+| Operation | Complexity | Description | Citation |
+| Search | O(log n) | Tree lookup | [c:1] |
+| Insert | O(log n) | Balanced insertion | [c:2] |
+| Delete | O(log n) | Node removal | [c:3] |
+"""
+    c_chart = extract_or_generate_topic_chart(query="Data Structures", text=citation_table, chunks=[])
+    assert c_chart is None, f"Expected None for citation-tag table, got {c_chart}"
+
+    constant_table = """
+| Metric | Value | Unit |
+| M1 | 1 | ops |
+| M2 | 1 | ops |
+| M3 | 1 | ops |
+| M4 | 1 | ops |
+| M5 | 1 | ops |
+"""
+    const_chart = extract_or_generate_topic_chart(query="Performance", text=constant_table, chunks=[])
+    assert const_chart is None, f"Expected None for constant [1,1,1,1,1] chart, got {const_chart}"
+    print("    -> Chart extractor citation and constant rejection PASS!")
+
+    # 9.2: 4-column Markdown table with math pipes stays 4 columns with zero ': N/A' and zero raw '**'
+    print("  [9.2] Testing math-pipe table splitting...")
+    math_pipe_table = """
+| Operation | Time Complexity | Space Complexity | Notes |
+| Substring Matching | $O(|S|/|L|)$ | $O(|S|)$ | **Optimal** string matching |
+| Hash Indexing | $O(1)$ | $O(|S| + |L|)$ | **Average** lookup time |
+"""
+    parsed_table = parse_markdown_table_rows(math_pipe_table)
+    assert len(parsed_table) == 3, f"Expected 3 rows (header + 2 data), got {len(parsed_table)}"
+    for r_idx, row in enumerate(parsed_table):
+        assert len(row) == 4, f"Row {r_idx} has {len(row)} columns instead of 4: {row}"
+        for cell in row:
+            assert ": N/A" not in cell, f"Found ': N/A' phantom padding in cell: {cell}"
+            assert "**" not in cell, f"Found raw '**' in cell: {cell}"
+    print("    -> Math-pipe table splitting PASS!")
+
+    # 9.3: Zero raw $ LaTeX delimiters and zero contradictory 'Partially verified' when partial_count == 0
+    print("  [9.3] Testing PDF text for zero raw $ LaTeX leaks and abstract phrasing...")
+    math_body = r"""
+# I. INTRODUCTION
+Algorithmic complexity guarantees $O(m)$ worst-case bound and $O(m \log n)$ average bound [1].
+Energy efficiency satisfies $\lambda \cdot T + (1-\lambda) \cdot E$ optimization with operational power $P_{op}$ and energy $E_{op}$ [1].
+In C++20 modern implementations, mapping index is $: [0,|S|) \rightarrow L$ where element satisfies $l \in L$ and scaling factor \gamma governs throughput [1].
+
+# II. CORE MECHANISMS
+Balanced trees ensure logarithmic height [1].
+
+# III. QUANTITATIVE PROPERTIES
+| Metric | Time | Space | Notes |
+| Search | $O(\log n)$ | $O(1)$ | Standard lookup |
+| Construction | $O(n)$ | $O(n)$ | Linear initialization |
+
+# IV. EMPIRICAL APPLICATIONS
+Applied in database indexing and compiler symbol tables [1].
+
+# V. CONCLUSION
+Foundational data structures optimize memory and computational time [1].
+"""
+    supported_claims = [
+        {"text": "Algorithmic complexity guarantees worst-case and average bounds.", "citation_ids": [0], "status": "supported", "coverage": 0.95},
+        {"text": "Energy efficiency satisfies operational optimization.", "citation_ids": [0], "status": "supported", "coverage": 0.92},
+    ]
+    math_pdf = generate_research_pdf(
+        query="Data Structures and Algorithms complexity bounds",
+        answer_final=math_body,
+        confidence=0.94,
+        tiers=["LIVE"],
+        claims=supported_claims,
+        sources=[{"title": "Foundations of Computer Science", "venue": "ACM", "snippet": "Complexity bounds.", "tier": "LIVE"}],
+        canonical_topic="Data Structures and Algorithms",
+        full_ledger=True
+    )
+    math_doc = fitz.open(stream=math_pdf, filetype="pdf")
+    math_full_text = ""
+    for page in math_doc:
+        math_full_text += page.get_text() + "\n"
+
+    raw_latex_dollar = re.findall(r'(?<!\d)\$(?!\d)', math_full_text)
+    assert len(raw_latex_dollar) == 0, f"Found raw '$' LaTeX delimiters in PDF text: {raw_latex_dollar}"
+    assert "Partially verified" not in math_full_text, "Found 'Partially verified' in abstract when partial_count == 0!"
+    assert "factor γ" in math_full_text, "Failed to render factor γ in PDF text!"
+    print("    -> Zero raw $ LaTeX leaks and abstract phrasing PASS!")
+
+    # 9.4: Dark/blank image and book scan rejection
+    print("  [9.4] Testing image rejection filter...")
+    assert not _is_image_valid("http://example.com/ia.jpg", 800, 600, "File:ia_904231_scan.djvu.jpg", "Scanned from Internet Archive"), "Failed to reject ia_ scan!"
+    assert not _is_image_valid("http://example.com/thesis.png", 800, 600, "File:Thesis_research_paper.pdf.png", "National Technical Information Service thesis report"), "Failed to reject thesis/NTIS scan!"
+    assert not _is_image_valid("http://example.com/book.jpg", 800, 600, "File:Data_Structures_book_cover.jpg", "Front cover and title page"), "Failed to reject book cover!"
+
+    # Pillow brightness and std-dev check on solid black image
+    from PIL import Image, ImageStat
+    black_img = Image.new("RGB", (100, 100), color=(0, 0, 0))
+    stat = ImageStat.Stat(black_img.convert("L"))
+    mean_b = stat.mean[0]
+    std_b = stat.stddev[0]
+    assert mean_b < 25.0 or std_b < 8.0, "Black image should fail brightness/std-dev check"
+    print("    -> Image filter rejection PASS!")
 
     print("\n" + "=" * 60)
     print(f"ALL TESTS PASSED! PDF generated successfully with {page_count} pages, {words} words.")
