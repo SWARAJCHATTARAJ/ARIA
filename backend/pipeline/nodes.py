@@ -1008,15 +1008,57 @@ def normalize_markers(text: str) -> str:
     text = re.sub(r'【+c:(\d+)】+', r'[[c:\1]]', text)
     return text
 
+def is_standalone_heading_or_sublabel(line: str) -> bool:
+    """
+    Detects if a line is an empty heading, bold sub-label, colon-terminated intro,
+    or bare short sub-label (e.g. 'Applications', 'Technical Limitations', '**Applications**',
+    '- Applications:') with no accompanying body sentences or bullets beneath/inside it.
+    """
+    s = line.strip()
+    if not s:
+        return True
+    if s.startswith('#'):
+        return True
+    m_bullet = re.match(r'^(?:[-*•]|\d+\.)\s+(.*)$', s)
+    if m_bullet:
+        s = m_bullet.group(1).strip()
+    if re.match(r'^(?:\*\*|__|\*|_)[^*_]+(?:\*\*|__|\*|_):?$', s):
+        return True
+    clean = re.sub(r'[*_`#]', '', s).strip()
+    if clean.endswith(':'):
+        return True
+    if not re.search(r'[.!?]$', clean):
+        words = clean.split()
+        if len(words) <= 6 and len(clean) <= 60:
+            lower = clean.lower()
+            label_keywords = {
+                "applications", "practical applications", "empirical applications",
+                "limitations", "technical limitations", "operational limitations",
+                "implications", "overview", "summary", "trade-offs", "tradeoffs",
+                "key trade-offs", "challenges", "open challenges", "directions",
+                "open research directions", "future work", "future directions",
+                "methodology", "architecture", "mechanisms", "core mechanisms",
+                "properties", "quantitative properties", "conclusions", "conclusion",
+                "references", "results", "discussion", "open questions", "notes"
+            }
+            if lower in label_keywords:
+                return True
+            if clean.istitle() or not any(c.islower() for c in clean):
+                return True
+            if len(words) <= 3:
+                return True
+    return False
+
 def strip_orphan_headings(text: str) -> str:
     """
-    Strips orphan and trailing Markdown headings (h1-h6) that have no body content beneath them.
-    E.g. dangling trailing headings before follow-up questions, or empty sections where content was removed.
+    Strips orphan and trailing Markdown headings (h1-h6) and bare sub-labels
+    (like a bare 'Applications' or 'Technical Limitations' line with no bullets/sentences after it)
+    that have no body content beneath them before streaming or exporting.
     """
     if not text:
         return ""
     lines = text.split('\n')
-    while lines and (not lines[-1].strip() or lines[-1].strip().startswith('#')):
+    while lines and is_standalone_heading_or_sublabel(lines[-1]):
         lines.pop()
 
     cleaned_lines = []
@@ -1043,7 +1085,8 @@ def strip_orphan_headings(text: str) -> str:
                         has_content = True
                         break
                 else:
-                    has_content = True
+                    if not is_standalone_heading_or_sublabel(next_stripped) or j + 1 < len(lines):
+                        has_content = True
                     break
             if not has_content:
                 i += 1
@@ -1051,8 +1094,10 @@ def strip_orphan_headings(text: str) -> str:
         cleaned_lines.append(line)
         i += 1
 
-    result = '\n'.join(cleaned_lines)
-    result = re.sub(r'(?:^|\n)\s*#{1,6}[^\n]*\s*$', '', result).strip()
+    while cleaned_lines and is_standalone_heading_or_sublabel(cleaned_lines[-1]):
+        cleaned_lines.pop()
+
+    result = '\n'.join(cleaned_lines).strip()
     return result
 
 

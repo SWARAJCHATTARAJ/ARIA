@@ -571,6 +571,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
             audit_res = await audit_answer(current_state)
             current_state.update(audit_res)
             final_answer = strip_orphan_headings(audit_res.get("answer_final", clean_answer))
+            current_state["answer_final"] = final_answer
             cited_ids = set(int(m) for m in re.findall(r'\[+c:(\d+)\]+', final_answer))
             sources_with_cited = [
                 {**s, "cited": (idx in cited_ids)}
@@ -606,7 +607,8 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 f"total_tokens={tok_summary['total_tokens']}"
             )
 
-            # 7. Done Event
+            # 7. Done Event (ensure final_answer is post-processed before done)
+            current_state["answer_final"] = strip_orphan_headings(current_state.get("answer_final", final_answer))
             yield f"data: {json.dumps({'event': 'done', 'figures': figures, 'chart': chart, 'unanswerable': bool(current_state.get('unanswerable', False)), 'timing': {'retrieval_seconds': retrieval_seconds, 'time_to_first_token': time_to_first_token, 'total_seconds': total_seconds}, 'tokens': tok_summary})}\n\n"
 
         except Exception as e:

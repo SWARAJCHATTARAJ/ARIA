@@ -23,7 +23,9 @@ MEDIA_REJECT_TERMS = {
     "advertisement", "banner", "film_poster", "album_cover", "book_cover",
     "user_interface", "status", "arrow", "checkbox",
     "portrait", "headshot", "selfie", "mugshot",
-    "ia_", ".djvu", ".pdf", "thesis", "national technical information service",
+    "ia_", "(ia ", "dtic", "ntis", "caltrans", "defense technical information",
+    "national technical information", "technical report", "dissertation",
+    ".djvu", ".pdf", "thesis", "national technical information service",
     "book cover", "title page", "frontispiece", "internet archive", "scanned book"
 }
 
@@ -32,11 +34,22 @@ DESC_REJECT_TERMS = {
     "coat of arms", "flag of", "logo of", "official seal", "state emblem",
     "national technical information service", "thesis", "book cover", "title page",
     "frontispiece", "internet archive", "scanned book", "digitized by", "call number",
-    "includes bibliographical", "includes index", "lc control", "isbn", "oclc"
+    "includes bibliographical", "includes index", "lc control", "isbn", "oclc",
+    "ia_", "(ia ", "dtic", "ntis", "caltrans", "defense technical information",
+    "national technical information", "technical report", "dissertation"
 }
 
 BOOK_SCAN_REJECT_PATTERNS = [
-    re.compile(r'\bia_[a-zA-Z0-9_-]+', re.I),
+    re.compile(r'\bia_[a-zA-Z0-9_-]*', re.I),
+    re.compile(r'\(ia\s+', re.I),
+    re.compile(r'\bia\s+[a-zA-Z0-9_-]+', re.I),
+    re.compile(r'\bdtic\b', re.I),
+    re.compile(r'\bntis\b', re.I),
+    re.compile(r'\bcaltrans\b', re.I),
+    re.compile(r'\bdefense technical information\b', re.I),
+    re.compile(r'\bnational technical information\b', re.I),
+    re.compile(r'\btechnical report\b', re.I),
+    re.compile(r'\bdissertation\b', re.I),
     re.compile(r'\.djvu\b', re.I),
     re.compile(r'\.pdf\b', re.I),
     re.compile(r'\bthesis\b', re.I),
@@ -102,6 +115,23 @@ def _is_image_valid(url: str, width: int, height: int, filename: str, desc: str)
     for term in DESC_REJECT_TERMS:
         if term in desc_lower:
             return False
+
+    # Reject Internet Archive, scanned technical reports, theses, and book/report covers
+    scan_terms = (
+        "(ia ", "ia_", "dtic", "ntis", "caltrans",
+        "defense technical information", "national technical information",
+        "technical report", "dissertation"
+    )
+    for term in scan_terms:
+        if term in fn_clean or term in desc_lower or term in url_clean:
+            return False
+
+    # Catch Internet Archive book scans with "ia " (e.g. 'Ia Datastructuresal00Gren', 'Ia Conceptualframew109451411')
+    fn_bare = fn_clean.replace("file:", "").strip()
+    if fn_bare.startswith("ia ") or " ia " in fn_clean or desc_lower.startswith("ia ") or " ia " in desc_lower:
+        return False
+    if re.search(r'\b\(?ia\s+[a-z0-9_-]+', fn_clean) or re.search(r'\b\(?ia\s+[a-z0-9_-]+', desc_lower):
+        return False
 
     # Reject book scans, document covers, NTIS reports, theses, or Internet Archive scans
     for pat in BOOK_SCAN_REJECT_PATTERNS:

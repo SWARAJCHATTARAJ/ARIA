@@ -17,7 +17,7 @@ from utils.pdf_generator import (
     is_page_empty_or_header_only,
     parse_markdown_table_rows
 )
-from pipeline.nodes import expand_to_full_research_paper
+from pipeline.nodes import expand_to_full_research_paper, strip_orphan_headings
 from utils.academic_search import search_all_free_sources, search_wikipedia, clean_scraped_reference_text
 from utils.media import extract_or_generate_topic_chart, _is_image_valid
 
@@ -333,6 +333,15 @@ Foundational data structures optimize memory and computational time [1].
     assert not _is_image_valid("http://example.com/ia.jpg", 800, 600, "File:ia_904231_scan.djvu.jpg", "Scanned from Internet Archive"), "Failed to reject ia_ scan!"
     assert not _is_image_valid("http://example.com/thesis.png", 800, 600, "File:Thesis_research_paper.pdf.png", "National Technical Information Service thesis report"), "Failed to reject thesis/NTIS scan!"
     assert not _is_image_valid("http://example.com/book.jpg", 800, 600, "File:Data_Structures_book_cover.jpg", "Front cover and title page"), "Failed to reject book cover!"
+    assert not _is_image_valid("http://example.com/ia1.jpg", 800, 600, "Ia Datastructuresal00Gren.jpg", ""), "Failed to reject Ia book scan!"
+    assert not _is_image_valid("http://example.com/ia2.jpg", 800, 600, "Ia Conceptualframew109451411.jpg", ""), "Failed to reject Ia title scan!"
+    assert not _is_image_valid("http://example.com/ia3.jpg", 800, 600, "File:(ia 109451411).jpg", ""), "Failed to reject (ia scan!"
+    assert not _is_image_valid("http://example.com/dtic.jpg", 800, 600, "DTIC_ADA123456.jpg", ""), "Failed to reject DTIC report!"
+    assert not _is_image_valid("http://example.com/ntis.jpg", 800, 600, "NTIS_PB987654.jpg", ""), "Failed to reject NTIS report!"
+    assert not _is_image_valid("http://example.com/caltrans.jpg", 800, 600, "Caltrans_Research_Report.jpg", ""), "Failed to reject Caltrans report!"
+    assert not _is_image_valid("http://example.com/rep.jpg", 800, 600, "image.jpg", "Published by Defense Technical Information Center"), "Failed to reject Defense Technical Information!"
+    assert not _is_image_valid("http://example.com/rep2.jpg", 800, 600, "image.jpg", "Technical report submitted in partial fulfillment"), "Failed to reject technical report!"
+    assert not _is_image_valid("http://example.com/diss.jpg", 800, 600, "image.jpg", "Doctoral dissertation, Stanford University"), "Failed to reject dissertation!"
 
     # Pillow brightness and std-dev check on solid black image
     from PIL import Image, ImageStat
@@ -342,6 +351,36 @@ Foundational data structures optimize memory and computational time [1].
     std_b = stat.stddev[0]
     assert mean_b < 25.0 or std_b < 8.0, "Black image should fail brightness/std-dev check"
     print("    -> Image filter rejection PASS!")
+
+    # 9.5: Answer post-processor strips trailing empty headings and standalone short sub-labels
+    print("  [9.5] Testing answer post-processor trailing heading and sub-label stripping...")
+    ans_with_trailing_sublabel = (
+        "# I. INTRODUCTION\n"
+        "Data structures organize computational memory efficiently [[c:0]].\n\n"
+        "Applications"
+    )
+    stripped1 = strip_orphan_headings(ans_with_trailing_sublabel)
+    assert "Applications" not in stripped1, f"Failed to strip bare 'Applications' sub-label: {stripped1}"
+    assert "Data structures organize" in stripped1
+
+    ans_with_trailing_limitations = (
+        "# I. INTRODUCTION\n"
+        "Data structures organize computational memory efficiently [[c:0]].\n\n"
+        "# II. PERSPECTIVES\n\n"
+        "Technical Limitations"
+    )
+    stripped2 = strip_orphan_headings(ans_with_trailing_limitations)
+    assert "Technical Limitations" not in stripped2, f"Failed to strip 'Technical Limitations': {stripped2}"
+    assert "II. PERSPECTIVES" not in stripped2, f"Failed to strip empty section '# II. PERSPECTIVES': {stripped2}"
+
+    ans_with_trailing_bullet_label = (
+        "# I. INTRODUCTION\n"
+        "Data structures organize computational memory efficiently [[c:0]].\n\n"
+        "- **Key Limitations:**"
+    )
+    stripped3 = strip_orphan_headings(ans_with_trailing_bullet_label)
+    assert "Key Limitations" not in stripped3, f"Failed to strip bullet sub-label: {stripped3}"
+    print("    -> Answer post-processor trailing heading & sub-label stripping PASS!")
 
     print("\n" + "=" * 60)
     print(f"ALL TESTS PASSED! PDF generated successfully with {page_count} pages, {words} words.")

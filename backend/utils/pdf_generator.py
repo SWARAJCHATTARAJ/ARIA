@@ -1783,18 +1783,30 @@ class AcademicTwoColumnPaper:
                 # Embed Figure 1: verified topic picture/diagram inside Section I or II
                 if s_idx in (0, 1) and self.figures and not figure1_rendered:
                     fig0 = self.figures[0]
-                    img_bytes = fig0.get("image_bytes")
-                    if not img_bytes and fig0.get("url"):
-                        img_bytes = _download_img_sync(fig0["url"])
-                    if img_bytes:
-                        fig_title = fig0.get("title", "").strip()
-                        cap = fig0.get("caption") or fig_title or f"Scientific overview of {self.academic_title.split(':')[0]}."
-                        if fig_title and any(d in fig_title.lower() for d in ("diagram", "structure", "schematic", "eukaryotic", "prokaryotic", "cell", "model", "pathway", "architecture")):
-                            if not any(d in cap.lower() for d in ("diagram", "structure", "schematic")):
-                                cap = f"{fig_title}. {cap}"
-                        attr = fig0.get("attribution") or "Wikimedia Commons"
-                        self.add_figure(img_bytes, f"Figure 1: {cap}", attribution=attr)
-                        figure1_rendered = True
+                    fig_title_l = (fig0.get("title") or "").lower()
+                    fig_cap_l = (fig0.get("caption") or "").lower()
+                    fig_url_l = (fig0.get("url") or "").lower()
+                    scan_terms = (
+                        "(ia ", "ia_", "dtic", "ntis", "caltrans",
+                        "defense technical information", "national technical information",
+                        "technical report", "dissertation", "book cover", "title page", ".djvu"
+                    )
+                    is_rejected_scan = any(st in fig_title_l or st in fig_cap_l or st in fig_url_l for st in scan_terms)
+                    if fig_title_l.startswith("ia ") or fig_url_l.split("/")[-1].startswith("ia "):
+                        is_rejected_scan = True
+                    if not is_rejected_scan:
+                        img_bytes = fig0.get("image_bytes")
+                        if not img_bytes and fig0.get("url"):
+                            img_bytes = _download_img_sync(fig0["url"])
+                        if img_bytes:
+                            fig_title = fig0.get("title", "").strip()
+                            cap = fig0.get("caption") or fig_title or f"Scientific overview of {self.academic_title.split(':')[0]}."
+                            if fig_title and any(d in fig_title.lower() for d in ("diagram", "structure", "schematic", "eukaryotic", "prokaryotic", "cell", "model", "pathway", "architecture")):
+                                if not any(d in cap.lower() for d in ("diagram", "structure", "schematic")):
+                                    cap = f"{fig_title}. {cap}"
+                            attr = fig0.get("attribution") or "Wikimedia Commons"
+                            self.add_figure(img_bytes, f"Figure 1: {cap}", attribution=attr)
+                            figure1_rendered = True
 
                 # If Section III had no pending table, still embed Figure 2 if chart exists and is valid
                 if s_idx == 2 and self.chart and _is_valid_chart_for_pdf(self.chart) and not figure2_rendered:
