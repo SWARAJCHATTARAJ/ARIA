@@ -382,6 +382,37 @@ Foundational data structures optimize memory and computational time [1].
     assert "Key Limitations" not in stripped3, f"Failed to strip bullet sub-label: {stripped3}"
     print("    -> Answer post-processor trailing heading & sub-label stripping PASS!")
 
+    # 9.6: Graceful handling of broken / unreachable / 404 figure URLs
+    print("  [9.6] Testing PDF export resilience against broken / 404 / slow figure URLs...")
+    broken_figures = [
+        {
+            "url": "http://127.0.0.1:9999/broken_nonexistent_image.jpg",
+            "title": "Broken Nonexistent Figure",
+            "caption": "This figure is on an unreachable port and should be skipped gracefully.",
+            "source": "Wikimedia Commons"
+        },
+        {
+            "url": "https://invalid-nonexistent-domain-xyz123.org/image.png",
+            "title": "Unreachable Domain Figure",
+            "caption": "Unreachable domain figure.",
+            "source": "Wikimedia Commons"
+        }
+    ]
+    resilient_pdf = generate_research_pdf(
+        query="Fault Tolerant Systems",
+        answer_final="# I. INTRODUCTION\nFault tolerance ensures continuity under partial failure [1].\n\n# II. CONCLUSION\nRobust systems remain available.",
+        confidence=0.92,
+        tiers=["LIVE"],
+        claims=[{"text": "Fault tolerance ensures continuity under partial failure.", "citation_ids": [0], "status": "supported"}],
+        sources=[{"title": "Reliable Distributed Systems", "venue": "IEEE", "snippet": "Fault tolerance ensures continuity.", "tier": "LIVE"}],
+        figures=broken_figures,
+        canonical_topic="Fault Tolerant Systems"
+    )
+    assert resilient_pdf and len(resilient_pdf) > 1000, "Resilient PDF generation failed or returned empty bytes!"
+    resilient_doc = fitz.open(stream=resilient_pdf, filetype="pdf")
+    assert len(resilient_doc) >= 1, "Resilient PDF has 0 pages!"
+    print(f"    -> Broken figure URL resilience PASS! (Generated {len(resilient_doc)} pages, {len(resilient_pdf)} bytes)")
+
     print("\n" + "=" * 60)
     print(f"ALL TESTS PASSED! PDF generated successfully with {page_count} pages, {words} words.")
     print("=" * 60)

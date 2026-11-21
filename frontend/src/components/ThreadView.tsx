@@ -31,6 +31,7 @@ import { saveOrDownloadFile, showDownloadToast } from '../utils/nativeDownload';
 import { streamQuery } from '../services/sseClient';
 import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim, HistoryEntry, FigureData, ChartData } from '../types';
 import { API_BASE_URL } from '../services/config';
+import { exportPdfApi, ExportPdfPayload } from '../services/api';
 import { useSettingsContext } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { addHistoryEntry, getHistory, addToCollection, isInCollection } from '../services/storage';
@@ -928,7 +929,7 @@ export default function ThreadView({
   const handleDownloadPdf = async (msg: Message) => {
     try {
       setIsExportingPdf((prev) => ({ ...prev, [msg.id]: true }));
-      const payload = {
+      const payload: ExportPdfPayload = {
         query: msg.query || 'Research Overview',
         answer_final: msg.content,
         confidence: msg.telemetry?.audit?.confidence ?? 0.85,
@@ -938,27 +939,7 @@ export default function ThreadView({
         figures: msg.figures || msg.telemetry?.figures || [],
         chart: msg.chart || msg.telemetry?.chart || null,
       };
-      const exportHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (accessToken) {
-        exportHeaders['Authorization'] = `Bearer ${accessToken}`;
-      }
-      const res = await fetch(`${API_BASE_URL}/api/export/pdf`, {
-        method: 'POST',
-        headers: exportHeaders,
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        let errMsg = `PDF export failed (HTTP ${res.status})`;
-        try {
-          const errJson = await res.json();
-          if (errJson?.detail) errMsg = `${errJson.detail} (${res.status})`;
-        } catch {}
-        throw new Error(errMsg);
-      }
-      const blob = await res.blob();
-      if (!blob || blob.size === 0) {
-        throw new Error('Received empty PDF blob from server');
-      }
+      const blob = await exportPdfApi(payload, 45000, accessToken || undefined);
       const safeQuery = (msg.query || 'aria-research-paper').trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_');
       await saveOrDownloadFile(blob, `${safeQuery}.pdf`, 'application/pdf');
     } catch (err: any) {

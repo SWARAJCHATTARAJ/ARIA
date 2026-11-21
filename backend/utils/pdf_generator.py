@@ -1660,29 +1660,50 @@ class AcademicTwoColumnPaper:
         figure1_rendered = False
         figure2_rendered = False
 
-        def _download_img_sync(url: str, timeout: float = 3.0) -> Optional[bytes]:
+        def _download_img_sync(url: str, timeout: float = 5.0) -> Optional[bytes]:
             if not url or not url.startswith("http"):
                 return None
             try:
-                from utils.media import USER_AGENT
-                headers = {"User-Agent": USER_AGENT}
-                with httpx.Client(timeout=timeout) as client:
+                from utils.media import USER_AGENT, MAX_IMAGE_BYTES
+                headers = {
+                    "User-Agent": USER_AGENT,
+                    "Accept": "image/webp,image/png,image/jpeg,image/*;q=0.8"
+                }
+                with httpx.Client(timeout=timeout, follow_redirects=True) as client:
                     resp = client.get(url, headers=headers)
-                    if resp.status_code == 200 and len(resp.content) > 100:
-                        img = Image.open(io.BytesIO(resp.content))
-                        if img.mode not in ("RGB", "L"):
-                            img = img.convert("RGB")
-                        # Reject predominantly dark/blank/monochrome candidate images
-                        from PIL import ImageStat
-                        stat = ImageStat.Stat(img.convert("L"))
-                        if stat.mean[0] < 25.0 or stat.stddev[0] < 8.0:
-                            logger.debug(f"Rejecting dark/blank sync image from {url}: mean={stat.mean[0]:.1f}, std={stat.stddev[0]:.1f}")
-                            return None
-                        if img.width > 1200 or img.height > 1200:
-                            img.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
-                        buf = io.BytesIO()
-                        img.save(buf, format="JPEG", quality=90)
-                        return buf.getvalue()
+                    if resp.status_code != 200:
+                        logger.debug(f"Sync image download HTTP {resp.status_code} for {url}")
+                        return None
+
+                    # Reject non-image responses (such as HTML error pages)
+                    content_type = resp.headers.get("content-type", "").lower()
+                    if not content_type.startswith("image/"):
+                        logger.debug(f"Rejecting non-image Content-Type '{content_type}' for {url}")
+                        return None
+
+                    # Cap image downloads to 4 MB
+                    content_len = resp.headers.get("content-length")
+                    if content_len and int(content_len) > MAX_IMAGE_BYTES:
+                        logger.debug(f"Rejecting image exceeding 4 MB ({content_len} bytes) from {url}")
+                        return None
+
+                    if not resp.content or len(resp.content) < 100 or len(resp.content) > MAX_IMAGE_BYTES:
+                        return None
+
+                    img = Image.open(io.BytesIO(resp.content))
+                    if img.mode not in ("RGB", "L"):
+                        img = img.convert("RGB")
+                    # Reject predominantly dark/blank/monochrome candidate images
+                    from PIL import ImageStat
+                    stat = ImageStat.Stat(img.convert("L"))
+                    if stat.mean[0] < 25.0 or stat.stddev[0] < 8.0:
+                        logger.debug(f"Rejecting dark/blank sync image from {url}: mean={stat.mean[0]:.1f}, std={stat.stddev[0]:.1f}")
+                        return None
+                    if img.width > 1200 or img.height > 1200:
+                        img.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=90)
+                    return buf.getvalue()
             except Exception as e:
                 logger.debug(f"Sync image download failed for {url}: {e}")
             return None

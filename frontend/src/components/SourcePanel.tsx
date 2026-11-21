@@ -19,6 +19,7 @@ import { Citation, MessageTelemetry, AuditClaim, ClaimStatus } from '../types';
 import { saveOrDownloadFile, showDownloadToast } from '../utils/nativeDownload';
 import { API_BASE_URL } from '../services/config';
 import { supabase } from '../lib/supabase';
+import { exportPdfApi, ExportPdfPayload } from '../services/api';
 
 interface SourcePanelProps {
   onClose: () => void;
@@ -120,7 +121,7 @@ export default function SourcePanel({
     }
     try {
       setIsExportingPdf(true);
-      const payload = {
+      const payload: ExportPdfPayload = {
         query: 'Research Overview',
         answer_final: telemetry?.audit?.answer_final || 'Verified Research Synthesis',
         confidence: telemetry?.audit?.entailment_score ?? telemetry?.audit?.confidence ?? 0.85,
@@ -131,34 +132,7 @@ export default function SourcePanel({
         chart: telemetry?.chart || null,
       };
 
-      let token: string | undefined;
-      if (supabase) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          token = session?.access_token;
-        } catch {}
-      }
-
-      const exportHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) exportHeaders['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE_URL}/api/export/pdf`, {
-        method: 'POST',
-        headers: exportHeaders,
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        let errMsg = `PDF export failed (HTTP ${res.status})`;
-        try {
-          const errJson = await res.json();
-          if (errJson?.detail) errMsg = `${errJson.detail} (${res.status})`;
-        } catch {}
-        throw new Error(errMsg);
-      }
-      const blob = await res.blob();
-      if (!blob || blob.size === 0) {
-        throw new Error('Received empty PDF blob from server');
-      }
+      const blob = await exportPdfApi(payload, 45000);
       await saveOrDownloadFile(blob, 'aria-research-paper.pdf', 'application/pdf');
     } catch (err: any) {
       console.error('Inspector PDF export error:', err);

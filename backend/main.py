@@ -54,14 +54,13 @@ async def security_and_limits_middleware(request: Request, call_next):
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
 
-    # Check request body size (cap at 8 KB, or 1 MB for PDF export)
-    max_bytes = 1024 * 1024 if request.url.path == "/api/export/pdf" else MAX_BODY_SIZE_BYTES
+    # Check request body size (cap at 8 KB, or 4 MB for PDF export)
+    max_bytes = 4 * 1024 * 1024 if request.url.path == "/api/export/pdf" else MAX_BODY_SIZE_BYTES
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > max_bytes:
-        return Response(
-            content=f"Request body exceeds {max_bytes // 1024} KB limit.",
+        return JSONResponse(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            media_type="text/plain",
+            content={"detail": f"Request body exceeds {max_bytes // 1024} KB limit."},
             headers={"X-Content-Type-Options": "nosniff", "X-Request-ID": request_id}
         )
 
@@ -1060,27 +1059,35 @@ class ExportPdfRequest(BaseModel):
 async def export_pdf_report(req: ExportPdfRequest, request: Request):
     """
     Generates and returns a multi-page PDF research report via PyMuPDF (fitz).
-    Requires authenticated user JWT session.
+    Requires authenticated user JWT session. Always returns structured JSONResponse
+    on errors so CORS headers are attached, preventing opaque WebView 'Failed to fetch'.
     """
-    auth_header = request.headers.get("authorization", "")
-    token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required. Please sign in to export PDF reports."
-        )
-    await verify_supabase_jwt(token)
-
-    from utils.pdf_generator import generate_research_pdf
-    from pipeline.nodes import expand_to_full_research_paper
-    from utils.media import (
-        fetch_verified_figures,
-        extract_or_generate_topic_chart,
-        download_image_safe,
-        render_chart_matplotlib
-    )
-
     try:
+        auth_header = request.headers.get("authorization", "")
+        token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
+        if not token:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": "Authentication required. Please sign in to export PDF reports."}
+            )
+        try:
+            await verify_supabase_jwt(token)
+        except Exception as auth_err:
+            logger.warning(f"PDF export auth verification failed: {auth_err}")
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": "Invalid or expired session. Please sign in again."}
+            )
+
+        from utils.pdf_generator import generate_research_pdf
+        from pipeline.nodes import expand_to_full_research_paper
+        from utils.media import (
+            fetch_verified_figures,
+            extract_or_generate_topic_chart,
+            download_image_safe,
+            render_chart_matplotlib
+        )
+
         answer_for_pdf = req.answer_final
         claims_for_pdf = req.claims or []
         confidence_for_pdf = req.confidence if req.confidence is not None else 0.85
@@ -1118,12 +1125,15 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
                 logger.debug(f"PDF figure fetch fallback error: {fig_err}")
                 figures_for_pdf = []
 
-        # Pre-download figure bytes
+        # Pre-download figure bytes gracefully skipping broken or slow images
         for fig in figures_for_pdf:
             if "image_bytes" not in fig and fig.get("url"):
-                img_data = await download_image_safe(fig["url"])
-                if img_data:
-                    fig["image_bytes"] = img_data
+                try:
+                    img_data = await download_image_safe(fig["url"])
+                    if img_data:
+                        fig["image_bytes"] = img_data
+                except Exception as img_dl_err:
+                    logger.debug(f"Pre-downloading figure image failed for {fig.get('url')}: {img_dl_err}")
 
         # 2. Resolve topic chart for PDF
         chart_for_pdf = req.chart
@@ -1140,9 +1150,12 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
                 chart_for_pdf = None
 
         if chart_for_pdf and "chart_bytes" not in chart_for_pdf:
-            c_bytes = await asyncio.to_thread(render_chart_matplotlib, chart_for_pdf)
-            if c_bytes:
-                chart_for_pdf["chart_bytes"] = c_bytes
+            try:
+                c_bytes = await asyncio.to_thread(render_chart_matplotlib, chart_for_pdf)
+                if c_bytes:
+                    chart_for_pdf["chart_bytes"] = c_bytes
+            except Exception as chart_render_err:
+                logger.debug(f"PDF chart render failed: {chart_render_err}")
 
         pdf_bytes = await asyncio.to_thread(
             generate_research_pdf,
@@ -1170,7 +1183,10 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
         )
     except Exception as e:
         logger.error(f"PDF export generation failed: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate PDF report: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": f"Failed to generate PDF report: {str(e)}"}
+        )
 
 
 @app.get("/api/okf/graph")

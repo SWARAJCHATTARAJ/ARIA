@@ -10,8 +10,9 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "ARIA-Scientific-Assistant/2.0 (https://aria.swarajchattaraj.tech; contact@swarajchattaraj.tech)"
-EXTERNAL_MEDIA_TIMEOUT = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
+USER_AGENT = "ARIA-Research-Engine/2.0 (https://aria.swarajchattaraj.tech; contact@swarajchattaraj.tech)"
+EXTERNAL_MEDIA_TIMEOUT = httpx.Timeout(5.0, connect=5.0, read=5.0, write=5.0)
+MAX_IMAGE_BYTES = 4 * 1024 * 1024  # 4 MB
 
 # UI, navigation, and non-subject terms to discard from media searches
 MEDIA_REJECT_TERMS = {
@@ -183,6 +184,82 @@ def format_figure_caption(clean_desc: str, fallback_title: str) -> str:
         truncated += "."
     return truncated
 
+def clean_figure_title(
+    raw_title: str,
+    extmetadata: Optional[Dict[str, Any]] = None,
+    desc: str = "",
+    fallback: str = ""
+) -> str:
+    """
+    Cleans raw camera/date tokens from figure titles.
+    Strips leading 6-8 digit dates (e.g. '230128 '), camera prefixes ('IMG_', 'DSC_', 'P100_'),
+    and trailing camera/counter suffixes ('Japan04S3', 'DSC0042', '12345').
+    Prefers clean ObjectName or first concise sentence of ImageDescription.
+    """
+    # 1. Prefer ObjectName if available in extmetadata
+    if extmetadata:
+        obj_name = extmetadata.get("ObjectName", {}).get("value")
+        if obj_name and isinstance(obj_name, str):
+            clean_obj = re.sub(r'<[^>]+>', '', obj_name).strip()
+            if len(clean_obj) >= 3 and not re.match(r'^(?:IMG|DSC|P\d|SAM|\d{6,8})\b', clean_obj, flags=re.I):
+                clean_obj = re.sub(r'[\._-]+', ' ', clean_obj).strip().title()
+                if len(clean_obj.split()) >= 1:
+                    return clean_obj
+
+    # 2. Check first concise sentence of ImageDescription
+    if desc:
+        clean_d = re.sub(r'<[^>]+>', '', desc).strip()
+        first_s = re.split(r'[\.\n;]', clean_d)[0].strip()
+        first_words = first_s.split()
+        if 2 <= len(first_words) <= 8 and len(first_s) <= 60 and not re.match(r'^(?:IMG|DSC|P\d|SAM|\d{6,8})\b', first_s, flags=re.I):
+            if not any(noise in first_s.lower() for noise in ("cc by", "wikimedia", "copyright", "author", "permission", "source:", "photo by")):
+                return first_s.title()
+
+    # 3. Clean raw filename / title
+    t = urllib.parse.unquote(raw_title)
+    t = re.sub(r'^File:\s*', '', t, flags=re.I)
+    t = re.sub(r'\.(?:jpg|jpeg|png|webp|svg|gif)$', '', t, flags=re.I)
+
+    # Strip leading dates (e.g. 230128, 20230128)
+    t = re.sub(r'^(?:19|20)?\d{6}\s*[-_ ]*', '', t)
+
+    # Strip camera prefixes (IMG_, DSC_, DSCN, SAM_, P100_, etc.)
+    t = re.sub(r'^(?:IMG|DSC|DSCN|SAM|DJI|WP|P|PHOTO|PICT)[-_0-9]*\s*[-_ ]*', '', t, flags=re.I)
+
+    # Strip trailing camera / counter codes (e.g. "Japan04S3", "04S3", "_DSC0042", " (12345)")
+    t = re.sub(r'[-_ ]+(?:DSC|IMG)?[0-9A-Za-z]*[0-9]{2,}[A-Za-z0-9]*$', '', t)
+    t = re.sub(r'\s*\([0-9]+\)$', '', t)
+
+    # Strip edit / version tokens
+    t = re.sub(r'\s*\((?:cropped|transparent|edit|edited|modified|version \d+)\)$', '', t, flags=re.I)
+
+    # Replace remaining underscores and dashes with spaces
+    t = re.sub(r'[\._-]+', ' ', t).strip()
+    t = re.sub(r'\s{2,}', ' ', t)
+
+    if len(t) >= 2 and not t.isdigit():
+        return t.title()
+
+    return fallback.title() if fallback else "Scientific Overview"
+
+
+def get_figure_attribution(title: str, desc: str, fn: str) -> str:
+    """
+    Returns 'Wikimedia Commons' by default. Only appends 'Scientific Diagram'
+    if the figure is actually a diagram, chart, schematic, pathway, or illustration.
+    """
+    combined = f"{title} {desc} {fn}".lower()
+    is_diagram = any(k in combined for k in (
+        "diagram", "schematic", "chart", "flowchart", "architecture",
+        "illustration", "pathway", "cycle", "formula", "anatomy",
+        "micrograph", "histology", "cross-section", "cross section",
+        "spectrogram", "plot", "circuit", "model"
+    ))
+    if is_diagram:
+        return "Wikimedia Commons / Scientific Diagram"
+    return "Wikimedia Commons"
+
+
 def _score_image_candidate(filename: str, desc: str, keywords: List[str]) -> float:
     """Scores topical overlap between image metadata and the query keywords."""
     fn_clean = filename.split("?")[0].lower()
@@ -205,6 +282,10 @@ def _score_image_candidate(filename: str, desc: str, keywords: List[str]) -> flo
         elif kw in desc_lower:
             score += 2.0
             matched_kws += 1
+
+    # Candidate MUST match at least one specific topic keyword to prevent unrelated photos
+    if matched_kws == 0:
+        return -1.0
 
     # Bonus for scientific / technical diagrams, structures, and schematics
     if any(tech in fn_clean or tech in desc_lower for tech in (
@@ -262,25 +343,18 @@ async def fetch_verified_figures(
                             if _is_image_valid(src, w, h, fn, desc):
                                 score = _score_image_candidate(fn, desc, keywords)
                                 if score >= 0.0:
-                                    raw_fn_clean = urllib.parse.unquote(fn)
-                                    fn_title = re.sub(r'[\._-]', ' ', raw_fn_clean.rsplit('.', 1)[0]).strip()
-                                    fn_title = re.sub(r'\s+(?:svg|png|jpg|jpeg)\b', '', fn_title, flags=re.I).strip()
-                                    is_descriptive = len(fn_title.split()) >= 2 and any(k in fn_title.lower() for k in ("diagram", "structure", "cell", "model", "schematic", "overview", "anatomy", "cycle", "pathway", "curve", "spectrum", "formula"))
-                                    if is_descriptive:
-                                        fig_display_title = fn_title.title()
-                                        raw_desc = (data.get("description") or "").strip()
-                                        desc_full = f"{fig_display_title}. {raw_desc}".strip(". ") if raw_desc else fig_display_title
-                                        cap = format_figure_caption(desc_full, fig_display_title)
-                                    else:
-                                        fig_display_title = resolved_title
-                                        cap = format_figure_caption(data.get("description") or "", resolved_title)
+                                    fig_display_title = clean_figure_title(fn, desc=desc, fallback=resolved_title)
+                                    raw_desc = (data.get("description") or "").strip()
+                                    desc_full = f"{fig_display_title}. {raw_desc}".strip(". ") if raw_desc else fig_display_title
+                                    cap = format_figure_caption(desc_full, fig_display_title)
+                                    attr = get_figure_attribution(fig_display_title, desc, fn)
 
                                     figures.append({
                                         "title": fig_display_title,
                                         "caption": cap,
                                         "url": src,
                                         "source_url": data.get("content_urls", {}).get("desktop", {}).get("page", ""),
-                                        "attribution": "Wikipedia / Wikimedia Commons"
+                                        "attribution": attr
                                     })
                                     seen_urls.add(src)
         except Exception as e:
@@ -332,17 +406,19 @@ async def fetch_verified_figures(
                                 h = info.get("thumbheight") or info.get("height") or 0
                                 if u and u not in seen_urls:
                                     raw_title = ip.get("title", "").replace("File:", "").split("?")[0]
-                                    desc_val = info.get("extmetadata", {}).get("ImageDescription", {}).get("value", "")
+                                    ext_meta = info.get("extmetadata", {})
+                                    desc_val = ext_meta.get("ImageDescription", {}).get("value", "")
                                     clean_desc = re.sub(r'<[^>]+>', '', desc_val).strip()
                                     if _is_image_valid(u, w, h, raw_title, clean_desc):
-                                        clean_fig_title = re.sub(r'[\._-]', ' ', raw_title.rsplit('.', 1)[0]).strip().title()
-                                        cap = format_figure_caption(clean_desc, resolved_title)
+                                        clean_fig_title = clean_figure_title(raw_title, extmetadata=ext_meta, desc=clean_desc, fallback=resolved_title)
+                                        cap = format_figure_caption(clean_desc, clean_fig_title)
+                                        attr = get_figure_attribution(clean_fig_title, clean_desc, raw_title)
                                         figures.append({
                                             "title": clean_fig_title,
                                             "caption": cap,
                                             "url": u,
                                             "source_url": info.get("descriptionurl", ""),
-                                            "attribution": "Wikimedia Commons / Scientific Reference"
+                                            "attribution": attr
                                         })
                                         seen_urls.add(u)
                                         if len(figures) >= max_figures:
@@ -372,7 +448,8 @@ async def fetch_verified_figures(
                         url = info.get("thumburl") or info.get("url")
                         w = info.get("thumbwidth") or info.get("width") or 0
                         h = info.get("thumbheight") or info.get("height") or 0
-                        desc_meta = info.get("extmetadata", {}).get("ImageDescription", {}).get("value", "")
+                        ext_meta = info.get("extmetadata", {})
+                        desc_meta = ext_meta.get("ImageDescription", {}).get("value", "")
 
                         if not url or url in seen_urls:
                             continue
@@ -383,20 +460,21 @@ async def fetch_verified_figures(
                             score = _score_image_candidate(fn, clean_desc, keywords)
                             # Require strong topic keyword overlap for Commons fallback
                             if score >= 4.0:
-                                scored_candidates.append((score, fn, clean_desc, url, info.get("descriptionurl", "")))
+                                scored_candidates.append((score, fn, clean_desc, url, info.get("descriptionurl", ""), ext_meta))
 
                     scored_candidates.sort(key=lambda x: x[0], reverse=True)
-                    for _, fn, clean_desc, url, page_url in scored_candidates:
+                    for _, fn, clean_desc, url, page_url, ext_meta in scored_candidates:
                         if len(figures) >= max_figures:
                             break
-                        clean_title = re.sub(r'[\._-]', ' ', fn.rsplit('.', 1)[0]).strip().title()
-                        cap = format_figure_caption(clean_desc, resolved_title)
+                        clean_title = clean_figure_title(fn, extmetadata=ext_meta, desc=clean_desc, fallback=resolved_title)
+                        cap = format_figure_caption(clean_desc, clean_title)
+                        attr = get_figure_attribution(clean_title, clean_desc, fn)
                         figures.append({
                             "title": clean_title,
                             "caption": cap,
                             "url": url,
                             "source_url": page_url,
-                            "attribution": "Wikimedia Commons / Open Educational Media"
+                            "attribution": attr
                         })
                         seen_urls.add(url)
             except Exception as e:
@@ -911,23 +989,41 @@ def render_chart_matplotlib(chart_data: Optional[Dict[str, Any]]) -> Optional[by
 # Safe Image Downloader with Pillow Verification for PDF
 # ---------------------------------------------------------------------------
 
-async def download_image_safe(url: str, timeout: Optional[float] = None) -> Optional[bytes]:
+async def download_image_safe(url: str, timeout: Optional[float] = 5.0) -> Optional[bytes]:
     """
-    Downloads image with strict timeout and proper User-Agent header.
-    Validates and converts image via Pillow to a standard RGB JPEG/PNG byte stream.
-    Skips cleanly on network or decoding error without crashing.
+    Downloads image with strict 5s timeout and compliant Wikimedia User-Agent header.
+    Rejects non-image Content-Types, caps size to 4 MB, downscales large JPEGs/PNGs with Pillow to max 1200px.
+    Gracefully skips cleanly on network, 404, or decoding error without crashing.
     """
     if not url or not url.startswith("http"):
         return None
 
     try:
-        headers = {"User-Agent": USER_AGENT}
-        async with httpx.AsyncClient(timeout=EXTERNAL_MEDIA_TIMEOUT) as client:
+        req_timeout = httpx.Timeout(timeout or 5.0)
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "image/webp,image/png,image/jpeg,image/*;q=0.8"
+        }
+        async with httpx.AsyncClient(timeout=req_timeout, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code != 200:
+                logger.debug(f"Image download HTTP {resp.status_code} for {url}")
                 return None
+
+            # Reject non-image responses (such as HTML error pages)
+            content_type = resp.headers.get("content-type", "").lower()
+            if not content_type.startswith("image/"):
+                logger.debug(f"Rejecting non-image Content-Type '{content_type}' for {url}")
+                return None
+
+            # Cap image downloads to 4 MB
+            content_len = resp.headers.get("content-length")
+            if content_len and int(content_len) > MAX_IMAGE_BYTES:
+                logger.debug(f"Rejecting image exceeding 4 MB ({content_len} bytes) from {url}")
+                return None
+
             data = resp.content
-            if not data or len(data) < 100:
+            if not data or len(data) < 100 or len(data) > MAX_IMAGE_BYTES:
                 return None
 
             img = Image.open(io.BytesIO(data))
