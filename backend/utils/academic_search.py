@@ -56,6 +56,21 @@ OPENALEX_TOPIC_CONCEPTS = {
     "law": "law",
 }
 
+SCHOLARLY_SOURCE_TYPES = {"openalex", "crossref", "arxiv", "semantic_scholar", "pubmed"}
+
+
+def resolve_min_year(recency: Optional[str] = None) -> Optional[int]:
+    """Resolves UI recency filter ('all' | '5y' | '2y') to an inclusive cutoff year."""
+    if not recency or recency == "all":
+        return None
+    cur_year = datetime.datetime.now().year
+    if recency == "2y":
+        return cur_year - 2
+    if recency == "5y":
+        return cur_year - 5
+    return None
+
+
 def clean_authors_list(authors: List[str]) -> Optional[List[str]]:
     """Filters out institutional affiliations from authors list."""
     cleaned = []
@@ -243,7 +258,13 @@ def evaluate_topical_relevance(
     is_relevant = score >= 8.0
     return score, is_relevant
 
-async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Optional[str] = None, topic: Optional[str] = None) -> List[Dict[str, Any]]:
+async def search_arxiv(
+    query: str,
+    max_results: int = 3,
+    canonical_topic: Optional[str] = None,
+    topic: Optional[str] = None,
+    min_year: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     """
     Queries official arXiv API with targeted title/abstract matching,
     strict topical relevance scoring, and drops off-topic papers completely.
@@ -282,6 +303,13 @@ async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Option
         url = (
             f"https://export.arxiv.org/api/query?search_query={search_clause}{cat_clause}"
             f"+AND+submittedDate:[{target_year}01010000+TO+{target_year}12312359]"
+            f"&sortBy=relevance&sortOrder=descending&start=0&max_results={fetch_limit}"
+        )
+    elif min_year:
+        cur_yr = datetime.datetime.now().year
+        url = (
+            f"https://export.arxiv.org/api/query?search_query={search_clause}{cat_clause}"
+            f"+AND+submittedDate:[{min_year}01010000+TO+{cur_yr}12312359]"
             f"&sortBy=relevance&sortOrder=descending&start=0&max_results={fetch_limit}"
         )
     else:
@@ -334,6 +362,8 @@ async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Option
 
                     if target_year and year and year != int(target_year):
                         continue
+                    if min_year and (year is None or year < min_year):
+                        continue
 
                     raw_authors = []
                     for author_elem in entry.findall("atom:author", ns):
@@ -372,7 +402,14 @@ async def search_arxiv(query: str, max_results: int = 3, canonical_topic: Option
     candidates.sort(key=lambda x: x[0], reverse=True)
     return [c[1] for c in candidates[:max_results]]
 
-async def search_openalex(query: str, max_results: int = 3, topic: Optional[str] = None, canonical_topic: Optional[str] = None) -> List[Dict[str, Any]]:
+
+async def search_openalex(
+    query: str,
+    max_results: int = 3,
+    topic: Optional[str] = None,
+    canonical_topic: Optional[str] = None,
+    min_year: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     """
     Queries OpenAlex API for open scientific literature, sorted by strict topical relevance
     and citation weight, preferring high-citation authoritative papers and reviews.
@@ -390,6 +427,8 @@ async def search_openalex(query: str, max_results: int = 3, topic: Optional[str]
     fetch_limit = max(10, max_results * 3)
     if target_year:
         url = f"https://api.openalex.org/works?search={clean_query}&filter=publication_year:{target_year},type:article&per-page={fetch_limit}"
+    elif min_year:
+        url = f"https://api.openalex.org/works?search={clean_query}&filter=publication_year:>{min_year - 1},type:article&per-page={fetch_limit}"
     else:
         url = f"https://api.openalex.org/works?search={clean_query}&per-page={fetch_limit}"
 
@@ -490,6 +529,7 @@ async def search_openalex(query: str, max_results: int = 3, topic: Optional[str]
 
     candidates.sort(key=lambda x: x[0], reverse=True)
     return [c[1] for c in candidates[:max_results]]
+
 
 def _domain_from_url(url: Optional[str], fallback: str = "Web Source") -> str:
     if not url:
@@ -621,7 +661,11 @@ async def search_duckduckgo(query: str, max_results: int = 3) -> List[Dict[str, 
         
     return results
 
-async def search_semantic_scholar(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
+async def search_semantic_scholar(
+    query: str,
+    max_results: int = 3,
+    min_year: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     """
     Queries the free Semantic Scholar Graph API for scholarly papers with abstracts.
     Applies the same evidence-density discipline as arXiv/OpenAlex (>=120 char abstracts
@@ -629,9 +673,11 @@ async def search_semantic_scholar(query: str, max_results: int = 3) -> List[Dict
     """
     clean_q = re.sub(r"[?*#&%=+\[\]\"]", " ", query).strip()
     clean_query = " ".join(clean_q.split())[:200]
+    year_param = f"&year={min_year}-" if min_year else ""
     url = (
         "https://api.semanticscholar.org/graph/v1/paper/search"
         f"?query={urllib.parse.quote_plus(clean_query)}"
+        f"{year_param}"
         "&fields=title,abstract,year,venue,externalIds,url,authors,citationCount,openAccessPdf"
         f"&limit={max_results}"
     )
@@ -875,7 +921,12 @@ async def search_wikipedia(query: str, max_results: int = 1, exact_title: Option
     return results[:max_results]
 
 
-async def search_crossref(query: str, max_results: int = 2, canonical_topic: Optional[str] = None) -> List[Dict[str, Any]]:
+async def search_crossref(
+    query: str,
+    max_results: int = 2,
+    canonical_topic: Optional[str] = None,
+    min_year: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     """
     Queries Crossref Works API for peer-reviewed journal and book-chapter literature
     with clean DOI, author, year, and publication venue metadata.
@@ -885,9 +936,10 @@ async def search_crossref(query: str, max_results: int = 2, canonical_topic: Opt
     clean_q = re.sub(r"[?*#&%=+]", " ", search_term).strip()
     clean_query = urllib.parse.quote_plus(" ".join(clean_q.split())[:200])
 
+    date_filter = f"&filter=from-pub-date:{min_year}-01-01" if min_year else ""
     url = (
         f"https://api.crossref.org/works?query={clean_query}"
-        f"&rows={max(6, max_results * 3)}&select=DOI,title,author,published-print,published-online,issued,container-title,abstract,type"
+        f"{date_filter}&rows={max(6, max_results * 3)}&select=DOI,title,author,published-print,published-online,issued,container-title,abstract,type"
     )
     headers = {"User-Agent": "ARIA-Research-Assistant/2.0 (mailto:swarajchattaraj@users.noreply.github.com)"}
 
@@ -967,13 +1019,127 @@ async def search_crossref(query: str, max_results: int = 2, canonical_topic: Opt
     candidates.sort(key=lambda x: x[0], reverse=True)
     return [c[1] for c in candidates[:max_results]]
 
-def compute_source_score(chunk: Dict[str, Any], query: str, canonical_topic: Optional[str] = None) -> float:
+
+async def search_pubmed(
+    query: str,
+    max_results: int = 2,
+    canonical_topic: Optional[str] = None,
+    min_year: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Queries NCBI PubMed E-utilities for peer-reviewed biomedical and life-science literature.
+    """
+    core_subject, core_entities = extract_core_subject_entities(query, canonical_topic)
+    search_term = " ".join(re.sub(r"[?*#&%=+\[\]\"]", " ", core_subject or query).split())[:200]
+    if not search_term:
+        return []
+
+    date_params = f"&datetype=pdat&mindate={min_year}&maxdate={datetime.datetime.now().year}" if min_year else ""
+    esearch_url = (
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        f"?db=pubmed&term={urllib.parse.quote_plus(search_term)}&retmode=json&sort=relevance&retmax={max(4, max_results * 2)}{date_params}"
+    )
+    headers = {"User-Agent": "ARIA-Research-Assistant/2.0 (mailto:swarajchattaraj@users.noreply.github.com)"}
+
+    candidates: List[Tuple[float, Dict[str, Any]]] = []
+    t0 = time.time()
+    start_iso = datetime.datetime.now().isoformat()
+    status_str = "error"
+    try:
+        async with httpx.AsyncClient(timeout=EXTERNAL_SEARCH_TIMEOUT, follow_redirects=True) as client:
+            es_resp = await client.get(esearch_url, headers=headers)
+            status_str = f"HTTP {es_resp.status_code}"
+            if es_resp.status_code != 200:
+                return []
+            id_list = (es_resp.json().get("esearchresult") or {}).get("idlist") or []
+            if not id_list:
+                return []
+
+            efetch_url = (
+                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+                f"?db=pubmed&id={','.join(id_list[:6])}&retmode=xml"
+            )
+            ef_resp = await client.get(efetch_url, headers=headers)
+            status_str = f"HTTP {ef_resp.status_code}"
+            if ef_resp.status_code != 200 or not ef_resp.text:
+                return []
+
+            root = ET.fromstring(ef_resp.text)
+            for art in root.findall(".//PubmedArticle"):
+                title = "".join(art.findtext(".//ArticleTitle", "")).strip()
+                abs_parts = ["".join(ab.itertext()).strip() for ab in art.findall(".//AbstractText")]
+                abstract = clean_scraped_reference_text(" ".join(p for p in abs_parts if p))
+                if not title or len(abstract) < 120:
+                    continue
+
+                rel_score, is_rel = evaluate_topical_relevance(title, abstract, core_subject, core_entities)
+                if not is_rel:
+                    continue
+
+                pmid = (art.findtext(".//MedlineCitation/PMID") or "").strip()
+                venue = (art.findtext(".//Journal/Title") or "PubMed").strip()
+                yr_txt = (art.findtext(".//JournalIssue/PubDate/Year") or art.findtext(".//JournalIssue/PubDate/MedlineDate") or "")
+                yr_match = re.search(r"\b(19|20)\d{2}\b", yr_txt)
+                year = int(yr_match.group(0)) if yr_match else None
+                if min_year and (year is None or year < min_year):
+                    continue
+
+                doi = None
+                for aid in art.findall(".//ArticleIdList/ArticleId"):
+                    if aid.attrib.get("IdType") == "doi" and aid.text:
+                        doi = aid.text.strip()
+                        break
+
+                raw_authors = []
+                for au in art.findall(".//AuthorList/Author"):
+                    fore = (au.findtext("ForeName") or "").strip()
+                    last = (au.findtext("LastName") or "").strip()
+                    full = f"{fore} {last}".strip()
+                    if full:
+                        raw_authors.append(full)
+                authors = clean_authors_list(raw_authors)
+
+                pub_url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else (f"https://doi.org/{doi}" if doi else None)
+                candidates.append((rel_score, {
+                    "tier": "LIVE",
+                    "source_type": "pubmed",
+                    "review_status": "scholarly",
+                    "title": title,
+                    "path": None,
+                    "url": pub_url,
+                    "authors": authors,
+                    "year": year,
+                    "venue": venue,
+                    "snippet": abstract[:1800],
+                    "source": pub_url or venue,
+                    "doi": doi,
+                    "arxiv_id": None,
+                    "is_retracted": False,
+                    "published": str(year) if year else None,
+                }))
+    except Exception as e:
+        status_str = f"failed: {type(e).__name__}"
+        logger.debug(f"PubMed search error: {e}")
+    finally:
+        t1 = time.time()
+        end_iso = datetime.datetime.now().isoformat()
+        retrieval_tracker.record("provider_pubmed", t0, t1, start_iso, end_iso, status_str)
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return [c[1] for c in candidates[:max_results]]
+
+def compute_source_score(
+    chunk: Dict[str, Any],
+    query: str,
+    canonical_topic: Optional[str] = None,
+    recency: Optional[str] = None,
+) -> float:
     """
     Ranks sources with calibrated multi-factor scoring:
     1. Query term overlap / relevance (primary).
     2. Canonical topic semantic alignment (penalizes cross-domain noise).
-    3. Academic credibility (arXiv / OpenAlex > Wikipedia > general web).
-    4. Moderate recency bonus (cannot override low relevance).
+    3. Academic credibility (arXiv / OpenAlex / Crossref / PubMed > Wikipedia > general web).
+    4. Moderate recency bonus (scaled higher when recency filter active).
     """
     query_lower = query.lower()
     q_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", query_lower)) - STOP_WORDS
@@ -1009,7 +1175,7 @@ def compute_source_score(chunk: Dict[str, Any], query: str, canonical_topic: Opt
     stype = chunk.get("source_type")
     if stype == "arxiv":
         credibility_score = 8.0
-    elif stype in ("openalex", "crossref", "semantic_scholar"):
+    elif stype in ("openalex", "crossref", "semantic_scholar", "pubmed"):
         credibility_score = 7.5
     elif stype == "wikipedia":
         credibility_score = 5.5
@@ -1019,6 +1185,7 @@ def compute_source_score(chunk: Dict[str, Any], query: str, canonical_topic: Opt
     # 4. Recency modifier
     year_match = re.search(r"\b(20[12][0-9])\b", query)
     target_year = int(year_match.group(1)) if year_match else None
+    min_year = resolve_min_year(recency)
     chunk_year = chunk.get("year")
     
     recency_score = 0.0
@@ -1027,6 +1194,11 @@ def compute_source_score(chunk: Dict[str, Any], query: str, canonical_topic: Opt
             recency_score = 4.0  # Moderate bonus for exact year
         elif chunk_year < target_year - 2:
             recency_score = -4.0  # Penalty for older work when explicit year is queried
+    elif min_year and isinstance(chunk_year, int):
+        if chunk_year >= min_year:
+            recency_score = 3.5 + min(2.0, (chunk_year - min_year) * 0.5)
+        else:
+            recency_score = -12.0
 
     return relevance_score + credibility_score + recency_score
 
@@ -1263,31 +1435,48 @@ async def fetch_readable_text(url: Optional[str], query: str, fallback_snippet: 
         end_iso_fetch = datetime.datetime.now().isoformat()
         retrieval_tracker.record(f"page_fetch: {url[:50]}", t0_fetch, t1_fetch, start_iso_fetch, end_iso_fetch, status_fetch)
 
-async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = None, canonical_topic: Optional[str] = None, topic: Optional[str] = None) -> List[Dict[str, Any]]:
+async def search_all_free_sources(
+    query: str,
+    wikipedia_title: Optional[str] = None,
+    canonical_topic: Optional[str] = None,
+    topic: Optional[str] = None,
+    source_tier: str = "all",
+    recency: str = "all",
+) -> List[Dict[str, Any]]:
     """
-    Executes parallel multi-source search across:
-    1. Wikipedia (canonical summary + key facts)
-    2. OpenAlex (sorted by relevance + citation weight, preferring high-citation authoritative papers/reviews)
-    3. arXiv (targeted title/abstract match)
-    4. Semantic Scholar
-    5. DuckDuckGo
-    Strictly filters all candidate sources on topical relevance against the core subject entities
-    and drops off-topic sources completely before ranking.
+    Executes parallel multi-source search across scholarly and general providers.
+    - When source_tier == 'peer_reviewed': strictly restricts to OpenAlex, arXiv,
+      Crossref, Semantic Scholar, and PubMed (skipping Wikipedia & DuckDuckGo).
+    - When recency is '5y' or '2y': pushes publication-year cutoff to providers,
+      filters older works, and boosts recent papers in ranking.
     """
     t_retrieval_start = time.time()
     iso_start = datetime.datetime.now().isoformat()
-    retrieval_tracker.record("live_retrieval_start", t_retrieval_start, t_retrieval_start, iso_start, iso_start, "cap=15s")
+    retrieval_tracker.record(
+        "live_retrieval_start",
+        t_retrieval_start,
+        t_retrieval_start,
+        iso_start,
+        iso_start,
+        f"cap=15s tier={source_tier} recency={recency}",
+    )
 
     core_subject, core_entities = extract_core_subject_entities(query, canonical_topic)
+    min_year = resolve_min_year(recency)
+    peer_reviewed_only = (source_tier == "peer_reviewed")
 
     provider_tasks = [
-        asyncio.create_task(search_wikipedia(query, max_results=1, exact_title=wikipedia_title, canonical_topic=canonical_topic)),
-        asyncio.create_task(search_openalex(query, max_results=3, topic=topic, canonical_topic=canonical_topic)),
-        asyncio.create_task(search_crossref(query, max_results=2, canonical_topic=canonical_topic)),
-        asyncio.create_task(search_arxiv(query, max_results=3, canonical_topic=canonical_topic, topic=topic)),
-        asyncio.create_task(search_semantic_scholar(query, max_results=2)),
-        asyncio.create_task(search_duckduckgo(query, max_results=3)),
+        asyncio.create_task(search_openalex(query, max_results=3, topic=topic, canonical_topic=canonical_topic, min_year=min_year)),
+        asyncio.create_task(search_crossref(query, max_results=2, canonical_topic=canonical_topic, min_year=min_year)),
+        asyncio.create_task(search_arxiv(query, max_results=3, canonical_topic=canonical_topic, topic=topic, min_year=min_year)),
+        asyncio.create_task(search_semantic_scholar(query, max_results=2, min_year=min_year)),
+        asyncio.create_task(search_pubmed(query, max_results=2, canonical_topic=canonical_topic, min_year=min_year)),
     ]
+    if not peer_reviewed_only:
+        provider_tasks.extend([
+            asyncio.create_task(search_wikipedia(query, max_results=1, exact_title=wikipedia_title, canonical_topic=canonical_topic)),
+            asyncio.create_task(search_duckduckgo(query, max_results=3)),
+        ])
     
     # Cap providers at 10.0s so total retrieval stays well within 15.0s
     done, pending = await asyncio.wait(provider_tasks, timeout=10.0)
@@ -1304,6 +1493,9 @@ async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = N
                 combined.extend(res)
         except Exception as e:
             logger.warning(f"Provider task failed: {e}")
+
+    if peer_reviewed_only:
+        combined = [c for c in combined if c.get("source_type") in SCHOLARLY_SOURCE_TYPES]
             
     # Strict Topical Relevance Filtering against Core Subject & Entities:
     valid_chunks = []
@@ -1317,22 +1509,31 @@ async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = N
         chunk["_topical_score"] = score
         valid_chunks.append(chunk)
 
-    # Fallback safety: if strict filtering dropped all web/scholar results, keep Wikipedia if available
-    if not valid_chunks and combined:
+    # Fallback safety: if strict filtering dropped all web/scholar results, keep Wikipedia if allowed
+    if not valid_chunks and combined and not peer_reviewed_only:
         wiki_candidates = [c for c in combined if c.get("source_type") == "wikipedia"]
         if wiki_candidates:
             valid_chunks = wiki_candidates
 
-    # Filter 2: When the query has a year, drop results from other years unless nothing else remains
+    # Filter 2: Explicit query year or recency window cutoff
     year_match = re.search(r"\b(20[12][0-9])\b", query)
     target_year = int(year_match.group(1)) if year_match else None
     if target_year:
         year_matching = [c for c in valid_chunks if c.get("year") == target_year]
         if year_matching:
             valid_chunks = [c for c in valid_chunks if c.get("year") == target_year or c.get("year") is None]
+    elif min_year:
+        valid_chunks = [
+            c for c in valid_chunks
+            if isinstance(c.get("year"), int) and c["year"] >= min_year
+        ]
 
     # Rank filtered sources
-    scored_chunks = sorted(valid_chunks, key=lambda c: compute_source_score(c, query, canonical_topic=canonical_topic), reverse=True)
+    scored_chunks = sorted(
+        valid_chunks,
+        key=lambda c: compute_source_score(c, query, canonical_topic=canonical_topic, recency=recency),
+        reverse=True,
+    )
     
     # Assign 1-indexed ranks
     for rank_idx, chunk in enumerate(scored_chunks, start=1):
@@ -1340,12 +1541,12 @@ async def search_all_free_sources(query: str, wikipedia_title: Optional[str] = N
         chunk["tier"] = "LIVE"
 
     # Fetch readable text for top N general-web results only (duckduckgo and similar) in rank order
-    # OpenAlex and arXiv already carry abstracts
+    # Scholarly providers already carry abstracts
     fetch_n = int(os.environ.get("FETCH_TOP_N", getattr(settings, "fetch_top_n", 2)))
-    if fetch_n > 0 and scored_chunks:
+    if fetch_n > 0 and scored_chunks and not peer_reviewed_only:
         fetch_targets = [
             c for c in scored_chunks
-            if c.get("source_type") not in ("openalex", "arxiv", "okf_note", "okf_graph", "pgvector")
+            if c.get("source_type") not in ("openalex", "arxiv", "crossref", "semantic_scholar", "pubmed", "okf_note", "okf_graph", "pgvector")
         ][:fetch_n]
         if fetch_targets:
             elapsed = time.time() - t_retrieval_start

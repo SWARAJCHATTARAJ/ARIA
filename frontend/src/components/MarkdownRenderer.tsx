@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ExternalLink, CheckCircle2, AlertCircle, BookOpen } from 'lucide-react';
 import katex from 'katex';
 import { Citation, TierType, AuditClaim } from '../types';
+import { triggerLightHaptic } from '../utils/haptics';
+import { useSettingsStore } from '../context/SettingsContext';
 
 export function sanitizeHref(url?: string | null): string | undefined {
   if (!url) return undefined;
@@ -20,7 +22,7 @@ export function sanitizeHref(url?: string | null): string | undefined {
 interface MarkdownRendererProps {
   content: string;
   citations?: Citation[];
-  onCitationClick?: (citation: Citation) => void;
+  onCitationClick?: (citation: Citation, claim?: AuditClaim) => void;
   isStreaming?: boolean;
   auditClaims?: AuditClaim[];
   answerFinal?: string;
@@ -756,7 +758,7 @@ function MarkdownRendererInner({
   }, [displayContent, answerFinal, validClaims, claimIndexMap, citationMap, claimByCitationId]);
 
   return (
-    <div className="space-y-1 select-text max-w-[70ch] leading-[1.7]">
+    <div className="editorial-prose space-y-1 select-text max-w-[70ch] leading-[1.7]">
       {blocks}
       {/* Stream Caret: subtle vertical blinking caret at stream end */}
       {isStreaming && <span className="streaming-caret" aria-hidden="true" />}
@@ -773,13 +775,34 @@ function InlineCitationPill({
   cit: Citation;
   citId: number;
   claim?: AuditClaim;
-  onCitationClick?: (citation: Citation) => void;
+  onCitationClick?: (citation: Citation, claim?: AuditClaim) => void;
 }) {
+  const { settings } = useSettingsStore();
   const [showPreview, setShowPreview] = useState(false);
+  const hoverTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current !== null) window.clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
+
+  const handleMouseEnter = () => {
+    if (hoverTimerRef.current !== null) window.clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = window.setTimeout(() => {
+      setShowPreview(true);
+    }, 120);
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setShowPreview(false);
+  };
+
   const colorClass = getTierColorClass(cit.tier);
-  const authorsStr = Array.isArray(cit.authors)
-    ? cit.authors.filter(Boolean).join(', ')
-    : String(cit.authors || '').trim();
   const rawUrl = cit.doi
     ? cit.doi.startsWith('http')
       ? cit.doi
@@ -787,31 +810,41 @@ function InlineCitationPill({
     : cit.url || (cit.arxiv_id ? `https://arxiv.org/abs/${cit.arxiv_id}` : '');
   const targetUrl = sanitizeHref(rawUrl);
 
-  const supportingQuote = claim?.evidence || cit.snippet || '';
-  const claimStatus = claim?.status;
+  const supportingQuote = claim?.evidence_quote || claim?.evidence || cit.snippet || '';
+  const claimVerdict =
+    claim?.verdict ||
+    (claim?.status === 'supported'
+      ? 'supported'
+      : claim?.status === 'partially_supported'
+      ? 'partial'
+      : claim?.status
+      ? 'unverified'
+      : undefined);
+
   const statusDotColor =
-    claimStatus === 'supported'
+    claimVerdict === 'supported'
       ? 'bg-emerald-400'
-      : claimStatus === 'partially_supported'
+      : claimVerdict === 'partial'
       ? 'bg-amber-400'
-      : claimStatus === 'unsupported'
+      : claimVerdict === 'unverified'
       ? 'bg-rose-400'
       : '';
 
   return (
     <span
       className="relative inline-block align-baseline group"
-      onMouseEnter={() => setShowPreview(true)}
-      onMouseLeave={() => setShowPreview(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          setShowPreview((prev) => !prev);
-          if (onCitationClick) onCitationClick(cit);
+          triggerLightHaptic(settings.nativeHaptics);
+          setShowPreview(false);
+          if (onCitationClick) onCitationClick(cit, claim);
         }}
-        className={`inline-flex items-center gap-1 font-mono text-[10.5px] font-medium px-1.5 py-[1px] mx-0.5 rounded-[4px] border tabular-nums transition-all duration-150 select-none cursor-pointer align-baseline hover:brightness-110 active:scale-[0.96] ${colorClass}`}
+        className={`inline-flex items-center gap-1 font-mono text-[10.5px] font-medium px-1.5 py-[1px] mx-0.5 rounded-[4px] border tabular-nums transition-all duration-150 select-none cursor-pointer align-baseline hover:brightness-110 active:scale-[0.95] ${colorClass}`}
         aria-label={`Citation [${citId + 1}]: ${cit.title || 'Source'}`}
         aria-expanded={showPreview}
       >
@@ -819,89 +852,65 @@ function InlineCitationPill({
         <span>[{citId + 1}]</span>
       </button>
 
-      {/* Interactive Citation & Verification Popover */}
+      {/* Lightweight Desktop Hover Intent Preview Card (120ms delay, non-blocking) */}
       {showPreview && (
         <span
-          className="animate-popover-reveal absolute bottom-full left-1/2 mb-2 w-80 max-w-[85vw] p-3.5 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.14] shadow-2xl z-50 rounded-[8px] pointer-events-auto text-left block"
+          className="hidden sm:block animate-popover-reveal absolute bottom-full left-1/2 mb-2 w-72 max-w-[82vw] p-3 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.14] shadow-2xl z-50 rounded-[8px] pointer-events-auto text-left"
           style={{ filter: 'drop-shadow(0 12px 28px rgba(0,0,0,0.32))' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <span className="flex items-center justify-between text-[10px] font-mono mb-2 border-b border-slate-200 dark:border-white/[0.07] pb-1.5 text-slate-500 dark:text-[#8B8B8E]">
-            <span
-              className="flex items-center gap-1.5 font-semibold"
-              style={{
-                color: cit.tier === 'OKF' ? '#60A5FA' : cit.tier === 'RAG' ? '#A78BFA' : '#F59E0B',
-              }}
-            >
-              <span>[{citId + 1}]</span>
-              <span>· {cit.tier || 'LIVE'}</span>
-              {cit.year && <span className="text-slate-400 dark:text-[#71717A] tabular-nums">· {cit.year}</span>}
+          <span className="flex items-center justify-between gap-2 text-[10px] font-mono mb-1.5 text-slate-500 dark:text-[#8B8B8E]">
+            <span className="inline-flex items-center gap-1.5 truncate">
+              {statusDotColor && <span className={`w-1.5 h-1.5 rounded-full ${statusDotColor} shrink-0`} />}
+              <span className="font-semibold text-slate-800 dark:text-[#EDEDED]">[{citId + 1}]</span>
+              <span>{[cit.year, cit.venue].filter(Boolean).join(' · ') || cit.tier || 'LIVE'}</span>
             </span>
 
-            {claimStatus ? (
+            {claimVerdict && (
               <span
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold border ${
-                  claimStatus === 'supported'
-                    ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
-                    : claimStatus === 'partially_supported'
-                    ? 'text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/10'
-                    : 'text-rose-600 dark:text-rose-400 border-rose-500/30 bg-rose-500/10'
+                className={`inline-flex items-center gap-0.5 text-[9.5px] font-semibold shrink-0 ${
+                  claimVerdict === 'supported'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : claimVerdict === 'partial'
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-rose-600 dark:text-rose-400'
                 }`}
               >
-                {claimStatus === 'supported' ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
+                {claimVerdict === 'supported' ? <CheckCircle2 size={9} /> : <AlertCircle size={9} />}
                 <span>
-                  {claimStatus === 'supported'
-                    ? 'Supported'
-                    : claimStatus === 'partially_supported'
+                  {claimVerdict === 'supported'
+                    ? 'Verified'
+                    : claimVerdict === 'partial'
                     ? 'Partial'
                     : 'Flagged'}
                 </span>
               </span>
-            ) : (
-              <span className="text-[9.5px] text-slate-400 dark:text-[#71717A]">Cited Source</span>
             )}
           </span>
 
-          <span className="block font-sans font-semibold text-[12.5px] text-slate-900 dark:text-[#EDEDED] leading-snug line-clamp-2 mb-1">
+          <span className="block font-sans font-semibold text-[12px] text-slate-900 dark:text-[#EDEDED] leading-snug line-clamp-2 mb-1.5">
             {cit.title || cit.path || 'Academic Citation'}
           </span>
 
-          {(authorsStr || cit.venue) && (
-            <span className="block font-mono text-[10px] text-slate-500 dark:text-[#8B8B8E] line-clamp-1 mb-2">
-              {[authorsStr, cit.venue].filter(Boolean).join(' · ')}
-            </span>
-          )}
-
           {supportingQuote && (
-            <span className="block p-2 rounded-[5px] bg-slate-50 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.06] border-l-2 border-l-[#60A5FA] text-[11px] font-sans text-slate-700 dark:text-zinc-300 leading-relaxed line-clamp-3 mb-2">
+            <span className="block text-[10.5px] font-sans text-slate-600 dark:text-zinc-300 leading-snug line-clamp-1 pl-2 border-l-2 border-l-[#60A5FA] mb-1.5">
               &ldquo;{supportingQuote}&rdquo;
             </span>
           )}
 
-          <span className="flex items-center justify-between pt-1">
-            {onCitationClick && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCitationClick(cit);
-                  setShowPreview(false);
-                }}
-                className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-600 dark:text-[#8B8B8E] hover:text-slate-900 dark:hover:text-[#EDEDED] cursor-pointer"
-              >
-                <BookOpen size={10} />
-                <span>Inspect</span>
-              </button>
-            )}
+          <span className="flex items-center justify-between pt-1 border-t border-slate-200/70 dark:border-white/[0.06] text-[9.5px] font-mono">
+            <span className="text-[#60A5FA] inline-flex items-center gap-1">
+              <BookOpen size={9} />
+              <span>Click to verify proof</span>
+            </span>
             {targetUrl && (
               <a
                 href={targetUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[10px] font-mono text-blue-600 dark:text-[#60A5FA] hover:underline ml-auto"
+                className="text-slate-500 hover:text-[#60A5FA] inline-flex items-center gap-0.5"
               >
-                <span>Open Source</span>
-                <ExternalLink size={10} />
+                <ExternalLink size={9} />
               </a>
             )}
           </span>

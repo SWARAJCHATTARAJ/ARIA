@@ -6,7 +6,7 @@ import re
 import urllib.parse
 import uuid
 import traceback
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 import httpx
 
 from fastapi import FastAPI, HTTPException, Request, status, Response
@@ -67,7 +67,8 @@ async def security_and_limits_middleware(request: Request, call_next):
     sec_headers = _security_headers(request_id)
 
     # Check request body size (cap at 8 KB, or 4 MB for PDF export), including chunked bodies without Content-Length
-    max_bytes = 4 * 1024 * 1024 if request.url.path == "/api/export/pdf" else MAX_BODY_SIZE_BYTES
+    path = request.url.path
+    max_bytes = 4 * 1024 * 1024 if path == "/api/export/pdf" else MAX_BODY_SIZE_BYTES
     content_length = request.headers.get("content-length")
     if content_length:
         try:
@@ -94,7 +95,6 @@ async def security_and_limits_middleware(request: Request, call_next):
             )
 
     # Sliding-window per-IP rate limit on auxiliary API routes (query/feedback enforce dedicated hourly limits)
-    path = request.url.path
     if path.startswith("/api/") and path not in ("/api/query", "/api/research", "/api/feedback"):
         client_ip = get_client_ip(request)
         allowed, retry_after, limit_msg = check_general_ip_rate_limit(client_ip, max_per_minute=40)
@@ -136,6 +136,9 @@ class QueryRequest(BaseModel):
     thread_id: Optional[str] = Field(default=None, max_length=64)
     user_id: Optional[str] = Field(default=None, max_length=64)
     compare_mode: bool = False
+    source_tier: Literal["all", "peer_reviewed"] = "all"
+    recency: Literal["all", "5y", "2y"] = "all"
+    strict_academic: bool = False
 
 class KeyTestRequest(BaseModel):
     api_key: str = Field(..., min_length=10, max_length=200)
@@ -262,6 +265,9 @@ async def query_pipeline(req: QueryRequest, request: Request):
         "thread_id": thread_id,
         "user_id": user_id,
         "compare_mode": req.compare_mode,
+        "source_tier": req.source_tier,
+        "recency": req.recency,
+        "strict_academic": req.strict_academic,
         "chat_history": [{"role": "user", "content": req.query}],
         "token_tracker": token_tracker,
         "_skip_regeneration": True
@@ -435,7 +441,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
                         rev_status = "draft" if chunk.get("confidence") == "draft" else "verified"
                     elif chunk.get("tier") == "RAG":
                         rev_status = "draft" if chunk.get("confidence") == "draft" else "verified"
-                    elif chunk.get("source_type") in ("openalex", "crossref", "semantic_scholar"):
+                    elif chunk.get("source_type") in ("openalex", "crossref", "semantic_scholar", "pubmed"):
                         rev_status = "scholarly"
                     elif chunk.get("source_type") == "arxiv":
                         rev_status = "preprint"
@@ -490,7 +496,12 @@ async def query_pipeline(req: QueryRequest, request: Request):
             from pipeline.nodes import build_synthesis_prompt
             from utils.key_manager import KeyRotationManager
             km = KeyRotationManager(request_keys=initial_state.get("api_key_pool"))
-            synthesis_prompt = build_synthesis_prompt(topic=current_state.get("topic") or initial_state.get("topic"))
+            synthesis_prompt = build_synthesis_prompt(
+                topic=current_state.get("topic") or initial_state.get("topic"),
+                strict_academic=bool(current_state.get("strict_academic", False)),
+                source_tier=current_state.get("source_tier") or "all",
+                recency=current_state.get("recency") or "all",
+            )
             messages = [
                 SystemMessage(content=synthesis_prompt),
                 HumanMessage(content=f"Query: {current_state['query']}\n\nContext:\n{context}")
@@ -652,16 +663,17 @@ async def query_pipeline(req: QueryRequest, request: Request):
             )
 
             # 7. Done Event (ensure final_answer is post-processed before done)
-            from pipeline.nodes import generate_followup_questions
+            from pipeline.nodes import generate_followup_cards
             final_clean = strip_orphan_headings(current_state.get("answer_final", final_answer))
             current_state["answer_final"] = final_clean
-            followup_questions = generate_followup_questions(
+            followup_cards = generate_followup_cards(
                 query=current_state.get("query", ""),
                 answer_final=final_clean,
                 claims=audit_res.get("claims", []),
                 canonical_topic=current_state.get("canonical_topic"),
             )
-            yield f"data: {json.dumps({'event': 'done', 'figures': figures, 'chart': chart, 'followup_questions': followup_questions, 'unanswerable': bool(current_state.get('unanswerable', False)), 'timing': {'retrieval_seconds': retrieval_seconds, 'time_to_first_token': time_to_first_token, 'total_seconds': total_seconds}, 'tokens': tok_summary})}\n\n"
+            followup_questions = [c["question"] for c in followup_cards]
+            yield f"data: {json.dumps({'event': 'done', 'figures': figures, 'chart': chart, 'followup_questions': followup_questions, 'followup_cards': followup_cards, 'unanswerable': bool(current_state.get('unanswerable', False)), 'timing': {'retrieval_seconds': retrieval_seconds, 'time_to_first_token': time_to_first_token, 'total_seconds': total_seconds}, 'tokens': tok_summary})}\n\n"
 
         except Exception as e:
             err_str = str(e).lower()
@@ -1107,6 +1119,7 @@ class ExportPdfRequest(BaseModel):
     # v3 Part 1: export toggles from the Settings Control Center
     full_ledger: bool = True
     clickable_urls: bool = True
+    pdf_style: Literal["academic", "executive"] = "academic"
 
 @app.post("/api/export/pdf")
 async def export_pdf_report(req: ExportPdfRequest, request: Request):
@@ -1228,7 +1241,8 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
             full_ledger=req.full_ledger,
             clickable_urls=req.clickable_urls,
             figures=figures_for_pdf,
-            chart=chart_for_pdf
+            chart=chart_for_pdf,
+            pdf_style=req.pdf_style
         )
         return Response(
             content=pdf_bytes,

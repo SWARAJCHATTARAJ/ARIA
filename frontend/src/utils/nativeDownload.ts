@@ -98,7 +98,8 @@ export function showDownloadToast(
 export async function saveOrDownloadFile(
   blob: Blob,
   filename: string,
-  mimeType: string = 'application/octet-stream'
+  mimeType: string = 'application/octet-stream',
+  options?: { autoOpen?: boolean }
 ): Promise<boolean> {
   try {
     if (!blob || blob.size === 0) {
@@ -120,6 +121,13 @@ export async function saveOrDownloadFile(
         });
 
         const displayPath = res?.displayPath || `Downloads/ARIA/${safeFilename}`;
+        if (options?.autoOpen && res?.uri) {
+          try {
+            await DirectDownload.openFile({ uri: res.uri, mimeType });
+          } catch {
+            // Viewer may be absent on some formats; fall back to toast with Open button
+          }
+        }
         showDownloadToast(`Saved to ${displayPath}`, false, {
           label: 'Open',
           onClick: async () => {

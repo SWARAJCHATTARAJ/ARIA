@@ -1,7 +1,10 @@
 import asyncio
+import datetime
+import fitz
+import json
 import os
 import sys
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 backend_dir = os.path.dirname(os.path.abspath(__file__))
 if backend_dir not in sys.path:
@@ -9,10 +12,17 @@ if backend_dir not in sys.path:
 
 from fastapi.testclient import TestClient
 from main import app
-from pipeline.nodes import audit_answer, generate_followup_questions
+from pipeline.nodes import (
+    audit_answer,
+    generate_followup_cards,
+    generate_followup_questions,
+    run_claim_audit,
+)
 from utils.academic_search import (
+    SCHOLARLY_SOURCE_TYPES,
     clean_scraped_reference_text,
     fetch_readable_text,
+    search_all_free_sources,
     search_wikipedia,
 )
 from utils.media import format_figure_caption
@@ -20,7 +30,7 @@ from utils.ssrf_guard import is_allowed_image_url, is_safe_url
 
 
 def test_wikipedia_clean_extraction():
-    print("[1/4] Testing clean Wikipedia API extraction & boilerplate stripping...")
+    print("[1/6] Testing clean Wikipedia API extraction & boilerplate stripping...")
     noisy = (
         "Jump to content Main menu Toggle the table of contents "
         "331 languages Аԥсшәа Acèh Afrikaans Alemannisch العربية 日本語 "
@@ -34,7 +44,6 @@ def test_wikipedia_clean_extraction():
     assert "Jump to content" not in cleaned, f"Navigation leaked: {cleaned}"
     assert "Nippon-koku" in cleaned, f"Factual prose missing: {cleaned}"
 
-    # Verify live/API MediaWiki extraction returns clean prose without nav boilerplate
     wiki_results = asyncio.run(search_wikipedia("Japan", exact_title="Japan", canonical_topic="Japan"))
     assert wiki_results, "Wikipedia search returned no results for Japan"
     entry = wiki_results[0]
@@ -45,18 +54,17 @@ def test_wikipedia_clean_extraction():
     assert entry.get("venue") == "Wikipedia", f"Unexpected venue: {entry.get('venue')}"
     assert entry.get("year") is not None, "Missing Wikipedia revision year"
 
-    # Verify Wikipedia URL routed through fetch_readable_text uses MediaWiki API cleanly
     fetched = asyncio.run(fetch_readable_text("https://en.wikipedia.org/wiki/Japan", "Japan"))
     assert "331 languages" not in fetched
     assert len(fetched) >= 150
     print("  -> PASS: Wikipedia API extraction & cleaning verified.")
 
 
-def test_export_pdf_endpoint_200():
-    print("[2/4] Testing /api/export/pdf HTTP 200 & %PDF- signature...")
+def test_export_pdf_endpoint_styles():
+    print("[2/6] Testing /api/export/pdf Academic Paper & Executive Brief modes...")
     client = TestClient(app)
 
-    payload = {
+    base_payload = {
         "query": "Japan",
         "answer_final": (
             "## I. Geographic & Historical Foundations\n"
@@ -102,24 +110,40 @@ def test_export_pdf_endpoint_200():
         ],
         "full_ledger": True,
         "clickable_urls": True,
+        "pdf_style": "academic",
     }
 
     with patch("main.verify_supabase_jwt", new=AsyncMock(return_value={"id": "00000000-0000-0000-0000-000000000001"})):
-        resp = client.post(
+        resp_acad = client.post(
             "/api/export/pdf",
-            json=payload,
+            json=base_payload,
             headers={"Authorization": "Bearer valid-test-token"},
         )
+        assert resp_acad.status_code == 200, f"Academic PDF failed: {resp_acad.status_code} {resp_acad.text}"
+        assert resp_acad.content[:5] == b"%PDF-"
+        doc_acad = fitz.open(stream=resp_acad.content, filetype="pdf")
+        acad_text = "\n".join(p.get_text() for p in doc_acad)
+        assert "ARIA v2 AUTONOMOUS VERIFICATION PREPRINT" in acad_text
+        assert "APPENDIX: VERIFICATION AUDIT LEDGER" in acad_text
 
-    assert resp.status_code == 200, f"Expected HTTP 200 from /api/export/pdf, got {resp.status_code}: {resp.text}"
-    assert resp.headers.get("content-type", "").startswith("application/pdf")
-    assert resp.content[:5] == b"%PDF-", f"Invalid PDF magic bytes: {resp.content[:16]!r}"
-    assert len(resp.content) > 2000
-    print(f"  -> PASS: /api/export/pdf returned HTTP 200 ({len(resp.content)} bytes, valid %PDF-).")
+        exec_payload = {**base_payload, "pdf_style": "executive", "full_ledger": False}
+        resp_exec = client.post(
+            "/api/export/pdf",
+            json=exec_payload,
+            headers={"Authorization": "Bearer valid-test-token"},
+        )
+        assert resp_exec.status_code == 200, f"Executive PDF failed: {resp_exec.status_code} {resp_exec.text}"
+        assert resp_exec.content[:5] == b"%PDF-"
+        doc_exec = fitz.open(stream=resp_exec.content, filetype="pdf")
+        exec_text = "\n".join(p.get_text() for p in doc_exec)
+        assert "ARIA v2 EXECUTIVE RESEARCH BRIEF" in exec_text
+        assert "APPENDIX: VERIFICATION AUDIT LEDGER" not in exec_text
+
+    print("  -> PASS: /api/export/pdf Academic & Executive styles and ledger toggle verified.")
 
 
 def test_ssrf_metadata_and_loopback_blocked():
-    print("[3/4] Testing SSRF blocker against Azure IMDS & loopback...")
+    print("[3/6] Testing SSRF blocker against Azure IMDS & loopback...")
     ok_imds, reason_imds = is_safe_url("http://169.254.169.254/metadata/instance")
     assert ok_imds is False, f"IMDS URL must be blocked! Got: {reason_imds}"
 
@@ -138,7 +162,7 @@ def test_ssrf_metadata_and_loopback_blocked():
 
 
 def test_verification_state_and_adaptive_followups():
-    print("[4/4] Testing resolved audit verification state & content-grounded follow-ups...")
+    print("[4/6] Testing resolved audit verification state, 3-angle follow-ups & caption deduplication...")
     state = {
         "query": "Japan",
         "canonical_topic": "Japan",
@@ -173,52 +197,203 @@ def test_verification_state_and_adaptive_followups():
             "text": "Japan is an island country in East Asia.",
             "citation_ids": [0],
             "status": "supported",
+            "verdict": "supported",
             "supported": True,
             "coverage": 1.0,
             "evidence": "Japan is an island country in East Asia.",
+            "evidence_quote": "Japan is an island country in East Asia.",
         },
         {
             "claim_id": 1,
             "text": "Japan is a constitutional monarchy with a bicameral National Diet.",
             "citation_ids": [0],
             "status": "supported",
+            "verdict": "supported",
             "supported": True,
             "coverage": 1.0,
             "evidence": "Japan is a constitutional monarchy with a bicameral National Diet.",
+            "evidence_quote": "Japan is a constitutional monarchy with a bicameral National Diet.",
         },
         {
             "claim_id": 2,
             "text": "Tokyo is the capital and largest city of Japan.",
             "citation_ids": [0],
             "status": "supported",
+            "verdict": "supported",
             "supported": True,
             "coverage": 1.0,
             "evidence": "Tokyo is the capital and largest city of Japan.",
+            "evidence_quote": "Tokyo is the capital and largest city of Japan.",
         },
     ])), patch("pipeline.nodes.check_retractions", new=AsyncMock(return_value=[])):
         res = asyncio.run(audit_answer(state))
 
-    assert res.get("verification_status") in ("verified", "partial", "unverified"), f"Unresolved status: {res.get('verification_status')}"
-    assert res["verification_status"] == "verified"
+    assert res.get("verification_status") == "verified"
     assert isinstance(res.get("entailment_score"), float) and res["entailment_score"] > 0.0
     assert len(res.get("claims", [])) == 3
 
-    # Ensure follow-up questions are topic-specific and NEVER plug headings into generic templates
+    cards = generate_followup_cards("Japan", state["answer_final"], res["claims"], "Japan")
+    assert len(cards) == 3
+    assert [c["intent"] for c in cards] == ["deep_dive", "counter_view", "applied"]
+    assert [c["label"] for c in cards] == ["Deep Dive", "Counter-View", "Applied"]
     followups = generate_followup_questions("Japan", state["answer_final"], res["claims"], "Japan")
     assert len(followups) == 3
     for q in followups:
-        assert "What empirical benchmarks validate" not in q, f"Generic template leaked: {q}"
-        assert "Geographic Foundations" not in q and "Constitutional Governance" not in q, f"Heading plugged into question: {q}"
+        assert "What empirical benchmarks validate" not in q
+        assert "Geographic Foundations" not in q and "Constitutional Governance" not in q
 
-    # Verify figure caption deduplication never repeats title word-for-word
     cap = format_figure_caption("Japan Orthographic Projection", "Japan Orthographic Projection", "Japan is an island country in East Asia.")
     assert cap.lower().strip(". ") != "japan orthographic projection"
-    print("  -> PASS: Resolved verification state, grounded follow-ups, and figure caption deduplication verified.")
+    print("  -> PASS: Resolved state, structured 3-angle follow-ups, and caption deduplication verified.")
+
+
+def test_evidence_quote_alignment_and_strict_academic():
+    print("[5/6] Testing click-to-proof evidence_quote substring alignment & strict_academic mode...")
+    chunks = [
+        {
+            "title": "CRISPR Off-Target Reduction via High-Fidelity Cas9",
+            "venue": "Nature Biotechnology",
+            "source_type": "openalex",
+            "year": 2025,
+            "snippet": (
+                "High-fidelity SpCas9 variants substantially reduce genome-wide off-target DNA cleavage "
+                "while preserving on-target editing efficiency in mammalian cells. "
+                "Truncated guide RNAs of 17 nucleotides also improve specificity in human cell lines."
+            ),
+        }
+    ]
+    answer_text = (
+        "High-fidelity SpCas9 variants reduce genome-wide off-target cleavage in mammalian cells [[c:0]]. "
+        "Truncated guide RNAs also improve editing specificity [[c:0]]."
+    )
+    mock_judge_payload = json.dumps([
+        {"claim_id": 0, "supported": True, "quotes": ["High-fidelity SpCas9 variants substantially reduce genome-wide off-target DNA cleavage"]},
+        {"claim_id": 1, "supported": True, "quotes": ["Truncated guide RNAs of 17 nucleotides also improve specificity in human cell lines"]},
+    ])
+    mock_llm_inst = MagicMock()
+    mock_llm_inst.ainvoke = AsyncMock(
+        return_value=MagicMock(content=mock_judge_payload, response_metadata={"finish_reason": "stop"}, usage_metadata=None)
+    )
+
+    with patch("pipeline.nodes.current_judge_llm", return_value=mock_llm_inst):
+        audited = asyncio.run(run_claim_audit(answer_text, chunks))
+
+    assert len(audited) == 2
+    for c in audited:
+        assert c.get("source_index") == 0
+        assert c.get("verdict") == "supported"
+        eq = c.get("evidence_quote") or ""
+        assert eq and eq in chunks[0]["snippet"], f"evidence_quote not exact substring of snippet: {eq!r}"
+
+    # Verify strict_academic mode withholds partial low-coverage claims (< 0.60)
+    strict_c0 = (
+        "High-fidelity SpCas9 engineered protein variants substantially reduce genome-wide off-target DNA cleavage "
+        "while reliably preserving on-target genome editing efficiency across mammalian cell lines in experimental assays"
+    )
+    strict_c1 = "Truncated guide RNAs eliminate all off-target effects universally"
+    strict_answer = f"{strict_c0} [[c:0]]. {strict_c1} [[c:0]]."
+    strict_state = {
+        "query": "CRISPR off-target mitigation",
+        "canonical_topic": "CRISPR",
+        "tiers_fired": ["LIVE"],
+        "strict_academic": True,
+        "retrieved_chunks": chunks,
+        "answer_final": strict_answer,
+        "compare_mode": False,
+        "_skip_regeneration": True,
+    }
+    mixed_claims = [
+        {
+            "claim_id": 0,
+            "text": strict_c0,
+            "citation_ids": [0],
+            "source_index": 0,
+            "status": "supported",
+            "verdict": "supported",
+            "supported": True,
+            "coverage": 0.92,
+            "evidence": "High-fidelity SpCas9 variants substantially reduce genome-wide off-target DNA cleavage",
+            "evidence_quote": "High-fidelity SpCas9 variants substantially reduce genome-wide off-target DNA cleavage",
+            "start": 0,
+            "end": len(strict_c0),
+        },
+        {
+            "claim_id": 1,
+            "text": strict_c1,
+            "citation_ids": [0],
+            "source_index": 0,
+            "status": "partially_supported",
+            "verdict": "partial",
+            "supported": False,
+            "coverage": 0.42,
+            "evidence": "Truncated guide RNAs of 17 nucleotides also improve specificity",
+            "evidence_quote": "Truncated guide RNAs of 17 nucleotides also improve specificity",
+            "start": len(strict_c0) + 9,
+            "end": len(strict_c0) + 9 + len(strict_c1),
+        },
+    ]
+    with patch("pipeline.nodes.run_claim_audit", new=AsyncMock(return_value=mixed_claims)), \
+         patch("pipeline.nodes.check_retractions", new=AsyncMock(return_value=[])):
+        strict_res = asyncio.run(audit_answer(strict_state))
+
+    assert len(strict_res["claims"]) == 1, f"Strict mode should withhold <60% partial claim, got {len(strict_res['claims'])}"
+    assert strict_res["claims"][0]["verdict"] == "supported"
+    print("  -> PASS: Exact evidence_quote alignment and strict_academic withholding verified.")
+
+
+def test_peer_reviewed_and_recency_filters():
+    print("[6/6] Testing source_tier='peer_reviewed' & recency='2y' backend retrieval filters...")
+    cur_year = datetime.datetime.now().year
+    mock_scholarly = [
+        {
+            "tier": "LIVE",
+            "source_type": "openalex",
+            "review_status": "scholarly",
+            "title": "CRISPR-Cas9 high fidelity nucleases in gene editing",
+            "snippet": "CRISPR-Cas9 nucleases with high fidelity engineering significantly decrease off-target mutations in genome editing.",
+            "year": cur_year,
+            "venue": "Nature",
+            "url": "https://doi.org/10.1000/recent",
+        },
+        {
+            "tier": "LIVE",
+            "source_type": "crossref",
+            "review_status": "scholarly",
+            "title": "Older CRISPR genome editing survey from 2016",
+            "snippet": "CRISPR genome editing mechanisms studied in 2016 baseline experiments and mammalian cell lines.",
+            "year": 2016,
+            "venue": "Science",
+            "url": "https://doi.org/10.1000/old",
+        },
+    ]
+
+    with patch("utils.academic_search.search_wikipedia", new=AsyncMock(side_effect=AssertionError("Wikipedia must NOT be called in peer_reviewed mode"))), \
+         patch("utils.academic_search.search_duckduckgo", new=AsyncMock(side_effect=AssertionError("DuckDuckGo must NOT be called in peer_reviewed mode"))), \
+         patch("utils.academic_search.search_openalex", new=AsyncMock(return_value=[mock_scholarly[0]])), \
+         patch("utils.academic_search.search_crossref", new=AsyncMock(return_value=[mock_scholarly[1]])), \
+         patch("utils.academic_search.search_arxiv", new=AsyncMock(return_value=[])), \
+         patch("utils.academic_search.search_semantic_scholar", new=AsyncMock(return_value=[])), \
+         patch("utils.academic_search.search_pubmed", new=AsyncMock(return_value=[])):
+        results = asyncio.run(
+            search_all_free_sources(
+                "CRISPR gene editing",
+                canonical_topic="CRISPR",
+                source_tier="peer_reviewed",
+                recency="2y",
+            )
+        )
+
+    assert len(results) == 1, f"Expected 1 recent scholarly paper after 2y filter, got {len(results)}"
+    assert results[0]["source_type"] in SCHOLARLY_SOURCE_TYPES
+    assert results[0]["year"] >= cur_year - 2
+    print("  -> PASS: peer_reviewed exclusion & recency cutoff verified.")
 
 
 if __name__ == "__main__":
     test_wikipedia_clean_extraction()
-    test_export_pdf_endpoint_200()
+    test_export_pdf_endpoint_styles()
     test_ssrf_metadata_and_loopback_blocked()
     test_verification_state_and_adaptive_followups()
+    test_evidence_quote_alignment_and_strict_academic()
+    test_peer_reviewed_and_recency_filters()
     print("\nALL UPGRADE VERIFICATION TESTS PASSED!")

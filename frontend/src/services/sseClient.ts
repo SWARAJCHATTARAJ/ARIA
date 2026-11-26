@@ -5,6 +5,9 @@ export interface SSEClientOptions {
   query: string;
   topic?: string;
   compareMode?: boolean;
+  sourceTier?: 'all' | 'peer_reviewed';
+  recency?: 'all' | '5y' | '2y';
+  strictAcademic?: boolean;
   signal?: AbortSignal;
   onEvent: (event: any) => void;
   onError: (error: Error) => void;
@@ -18,6 +21,9 @@ export async function streamQuery({
   query,
   topic,
   compareMode = false,
+  sourceTier = 'all',
+  recency = 'all',
+  strictAcademic = false,
   signal,
   onEvent,
   onError,
@@ -136,6 +142,9 @@ export async function streamQuery({
         query,
         topic: topic || undefined,
         compare_mode: compareMode,
+        source_tier: sourceTier,
+        recency,
+        strict_academic: strictAcademic,
       }),
       signal,
     });

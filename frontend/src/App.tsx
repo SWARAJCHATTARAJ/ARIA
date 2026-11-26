@@ -5,14 +5,15 @@ import SourcePanel from './components/SourcePanel';
 import { HistoryView, CollectionsView, OkfSpaceView, SettingsView } from './components/HubViews';
 import { MobileTopBar } from './components/ui/MobileNavBar';
 import CommandPalette from './components/ui/CommandPalette';
-import { Citation, MessageTelemetry } from './types';
+import { AuditClaim, Citation, MessageTelemetry } from './types';
 import { AuthProvider, useAuth, isNativeRuntime } from './context/AuthContext';
-import { SettingsProvider } from './context/SettingsContext';
+import { SettingsProvider, useSettingsStore } from './context/SettingsContext';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import LoginScreen from './components/LoginScreen';
 import AuthModal from './components/ui/AuthModal';
 import ErrorBoundary from './components/ui/ErrorBoundary';
-import { Loader2 } from 'lucide-react';
+import { recordSourceExplored } from './utils/researchPulse';
+import { Loader2, X, Keyboard } from 'lucide-react';
 
 const MarkdownTestHarness = lazy(() => import('./components/MarkdownTestHarness'));
 
@@ -78,7 +79,18 @@ function RootGate() {
   return <AppShell />;
 }
 
+const DESKTOP_SHORTCUTS = [
+  { keys: '/', desc: 'Focus research prompt bar' },
+  { keys: '⌘ / Ctrl + K', desc: 'Start a fresh research thread' },
+  { keys: '⌘ / Ctrl + P', desc: 'Open quick command palette' },
+  { keys: '[  /  ]', desc: 'Step backward / forward through cited sources' },
+  { keys: '⌘ / Ctrl + ]', desc: 'Toggle Research Inspector drawer' },
+  { keys: '⌘ / Ctrl + B', desc: 'Collapse or expand navigation rail' },
+  { keys: 'Esc', desc: 'Close active modal, popover, or drawer' },
+];
+
 function AppShell() {
+  const { settings } = useSettingsStore();
   const [isSourcePanelOpen, setSourcePanelOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('query');
   const [isFocusMode, setIsFocusMode] = useState(false);
@@ -87,6 +99,8 @@ function AppShell() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+  const [threadResetCounter, setThreadResetCounter] = useState(0);
 
   // Query handed over from History -> New question
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
@@ -95,31 +109,107 @@ function AppShell() {
   const [activeCitations, setActiveCitations] = useState<Citation[]>([]);
   const [activeTelemetry, setActiveTelemetry] = useState<MessageTelemetry | undefined>(undefined);
   const [selectedCitationId, setSelectedCitationId] = useState<number | null>(null);
+  const [highlightedEvidenceQuote, setHighlightedEvidenceQuote] = useState<string | null>(null);
   const [hasActiveError, setHasActiveError] = useState<boolean>(false);
 
-  // Global Ctrl+K / Cmd+K listener and Ctrl+B / Cmd+B sidebar toggle
+  const startNewThread = useCallback(() => {
+    setPendingQuery(null);
+    setHasQuery(false);
+    setActiveCitations([]);
+    setActiveTelemetry(undefined);
+    setSelectedCitationId(null);
+    setHighlightedEvidenceQuote(null);
+    setHasActiveError(false);
+    setThreadResetCounter((c) => c + 1);
+    setActiveTab('query');
+    setIsMobileDrawerOpen(false);
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('aria:focus-composer'));
+    }, 40);
+  }, []);
+
+  // Power-user desktop keyboard shortcuts: /, Esc, Cmd/Ctrl+K (new thread), [ and ], Cmd/Ctrl+B, ?
   useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
+        startNewThread();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
         setIsCommandPaletteOpen((prev) => !prev);
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         setIsRailCollapsed((prev) => !prev);
-      } else if ((e.ctrlKey || e.metaKey) && (e.key === ']' || e.code === 'BracketRight')) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === ']' || e.code === 'BracketRight')) {
         e.preventDefault();
         setSourcePanelOpen((prev) => !prev);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowShortcutsModal(false);
+        setIsCommandPaletteOpen(false);
+        setIsMobileDrawerOpen(false);
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        if (window.innerWidth < 1024) {
+          setSourcePanelOpen(false);
+        }
+        return;
+      }
+
+      if (isTypingTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+      }
+
+      if (e.key === '/') {
+        e.preventDefault();
+        setActiveTab('query');
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('aria:focus-composer'));
+        }, 20);
+      } else if (e.key === '?') {
+        e.preventDefault();
+        setShowShortcutsModal((prev) => !prev);
+      } else if ((e.key === '[' || e.key === ']') && activeCitations.length > 0) {
+        e.preventDefault();
+        setSourcePanelOpen(true);
+        const ids = activeCitations.map((c) => c.id);
+        const curIdx = selectedCitationId !== null ? ids.indexOf(selectedCitationId) : -1;
+        const nextIdx =
+          e.key === ']'
+            ? curIdx === -1
+              ? 0
+              : (curIdx + 1) % ids.length
+            : curIdx <= 0
+            ? ids.length - 1
+            : curIdx - 1;
+        setSelectedCitationId(ids[nextIdx]);
+        setHighlightedEvidenceQuote(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [activeCitations, selectedCitationId, startNewThread]);
 
-  // Stable handlers (useCallback) — memoized children deep in the tree
-  // (MarkdownRenderer, SourcePanel, Sidebar) skip re-renders while streaming.
-  const handleCitationClick = useCallback((citation: Citation) => {
+  // Click-to-Proof sync: open Inspector directly to Sources, highlight exact evidence_quote
+  const handleCitationClick = useCallback((citation: Citation, claim?: AuditClaim) => {
     setSelectedCitationId(citation.id);
+    setHighlightedEvidenceQuote(claim?.evidence_quote || claim?.evidence || null);
     setSourcePanelOpen(true);
+    recordSourceExplored();
   }, []);
 
   const handleOpenQuery = useCallback((query: string) => {
@@ -129,7 +219,6 @@ function AppShell() {
 
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab);
-    // Close the slide-over drawer on navigation
     setIsMobileDrawerOpen(false);
   }, []);
 
@@ -156,6 +245,7 @@ function AppShell() {
   return (
     <div
       data-runtime={isNativeRuntime ? 'native' : 'web'}
+      data-preset={settings.themePreset}
       className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-[#09090B] text-[#EDEDED] font-sans overflow-hidden relative select-none"
     >
       {/* Mobile Top Bar (< 768px): Unified minimal 48px header */}
@@ -165,12 +255,7 @@ function AppShell() {
         isInspectorOpen={isSourcePanelOpen}
         onTabChange={handleTabChange}
         onOpenDrawer={handleOpenDrawer}
-        onNewQuestion={() => {
-          setPendingQuery(null);
-          setHasQuery(false);
-          setActiveTab('query');
-          setIsMobileDrawerOpen(false);
-        }}
+        onNewQuestion={startNewThread}
         onToggleInspector={handleToggleInspector}
       />
 
@@ -214,6 +299,7 @@ function AppShell() {
         >
           {activeTab === 'query' && (
             <ThreadView
+              key={threadResetCounter}
               onCitationClick={handleCitationClick}
               isFocusMode={isFocusMode}
               onToggleFocus={() => setIsFocusMode(!isFocusMode)}
@@ -231,6 +317,7 @@ function AppShell() {
               isInspectorOpen={isSourcePanelOpen}
               onToggleInspector={handleToggleInspector}
               onQueryErrorChange={setHasActiveError}
+              onOpenShortcuts={() => setShowShortcutsModal(true)}
             />
           )}
           {activeTab === 'history' && <HistoryView onOpenQuery={handleOpenQuery} />}
@@ -255,12 +342,57 @@ function AppShell() {
               citations={activeCitations}
               telemetry={activeTelemetry}
               selectedCitationId={selectedCitationId}
-              onSelectCitation={setSelectedCitationId}
+              highlightedEvidenceQuote={highlightedEvidenceQuote}
+              onSelectCitation={(id, quote) => {
+                setSelectedCitationId(id);
+                setHighlightedEvidenceQuote(quote ?? null);
+              }}
               isMockActive={isMockActive}
               hasError={hasActiveError}
             />
           </aside>
         </>
+      )}
+
+      {/* Desktop Keyboard Shortcuts Cheat-Sheet Modal */}
+      {showShortcutsModal && (
+        <div
+          className="hidden md:flex fixed inset-0 z-50 items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Keyboard Shortcuts"
+          onClick={() => setShowShortcutsModal(false)}
+        >
+          <div
+            className="w-full max-w-md p-5 bg-[#111115] border border-white/[0.10] rounded-[10px] shadow-2xl space-y-4 animate-fade-slide"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.07]">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-[#EDEDED]">
+                <Keyboard size={15} className="text-[var(--aria-accent)]" />
+                <span>Keyboard Shortcuts</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowShortcutsModal(false)}
+                className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] rounded hover:bg-[#18181E] cursor-pointer"
+                aria-label="Close shortcuts"
+              >
+                <X size={15} />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {DESKTOP_SHORTCUTS.map((sc) => (
+                <div key={sc.keys} className="flex items-center justify-between text-[12px]">
+                  <span className="text-[#8B8B8E]">{sc.desc}</span>
+                  <kbd className="px-2 py-0.5 rounded bg-[#09090B] border border-white/[0.1] font-mono text-[11px] text-[#EDEDED]">
+                    {sc.keys}
+                  </kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Global Modals */}

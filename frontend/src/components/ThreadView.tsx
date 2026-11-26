@@ -22,17 +22,37 @@ import {
   Image as ImageIcon,
   BarChart2,
   ExternalLink,
+  Layers,
+  Scale,
+  Compass,
+  Flame,
+  HelpCircle,
+  FileCode2,
 } from 'lucide-react';
 import MarkdownRenderer, { sanitizeHref } from './MarkdownRenderer';
 import { DomainPicker } from './ui/DomainPicker';
 import { saveOrDownloadFile, showDownloadToast } from '../utils/nativeDownload';
 import { streamQuery } from '../services/sseClient';
-import { Citation, Message, MessageTelemetry, AuditClaim, HistoryEntry, FigureData, ChartData } from '../types';
+import {
+  Citation,
+  Message,
+  MessageTelemetry,
+  AuditClaim,
+  HistoryEntry,
+  FigureData,
+  ChartData,
+  FollowUpCard,
+  RecencyFilter,
+  SourceTierFilter,
+} from '../types';
 import { API_BASE_URL } from '../services/config';
 import { exportPdfApi, ExportPdfPayload } from '../services/api';
-import { useSettingsContext } from '../context/SettingsContext';
+import { useSettingsStore } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { addHistoryEntry, getHistory, addToCollection, isInCollection } from '../services/storage';
+import { exportAllBibtex, exportAllRis, exportLatexArticle } from '../utils/citations';
+import { getResearchPulse, recordQueryCompleted } from '../utils/researchPulse';
+import { triggerLightHaptic } from '../utils/haptics';
 
 const TOPIC_PILLS = [
   {
@@ -134,25 +154,51 @@ function getFollowUpQuestions(query: string, content: string, telemetry?: Messag
   ];
 }
 
+function getFollowUpCards(query: string, content: string, telemetry?: MessageTelemetry): FollowUpCard[] {
+  if (Array.isArray(telemetry?.followup_cards) && telemetry!.followup_cards!.length > 0) {
+    return telemetry!.followup_cards!.slice(0, 3);
+  }
+  const questions = getFollowUpQuestions(query, content, telemetry);
+  const intents: Array<{ intent: FollowUpCard['intent']; label: string }> = [
+    { intent: 'deep_dive', label: 'Deep Dive' },
+    { intent: 'counter_view', label: 'Counter-View' },
+    { intent: 'applied', label: 'Applied' },
+  ];
+  return questions.slice(0, 3).map((q, idx) => ({
+    intent: intents[idx]?.intent || 'deep_dive',
+    label: intents[idx]?.label || 'Deep Dive',
+    question: q,
+  }));
+}
+
+const STREAM_STEPS = [
+  { id: 'routing', label: 'Planning' },
+  { id: 'retrieving', label: 'Retrieving' },
+  { id: 'streaming', label: 'Synthesizing' },
+  { id: 'auditing', label: 'Verifying' },
+] as const;
+
 /**
- * Sleek Single-Line Verification Pill:
- * Shows verification status, confidence score, source count, and active tier(s) in a single pill.
- * Expands smoothly with a spring cubic-bezier transition only when clicked.
+ * Kinetic Research Stage Pill:
+ * - While streaming: smooth animated stage indicator (`Planning` -> `Retrieving [N]` -> `Synthesizing` -> `Verifying`)
+ *   with live retrieved source chips fading in cleanly.
+ * - When complete: collapses cleanly into a single verification summary pill expandable on click.
  */
 function ResearchTraceBar({
   telemetry,
   isStreaming,
-  citationsCount = 0,
+  citations = [],
   hasError = false,
 }: {
   telemetry?: MessageTelemetry;
   isStreaming?: boolean;
-  citationsCount?: number;
+  citations?: Citation[];
   hasError?: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const stage = telemetry?.stage;
   const tiers = telemetry?.retrieval?.tiers || [];
+  const citationsCount = citations.length;
 
   const entailmentScore = telemetry?.audit?.entailment_score ?? telemetry?.audit?.confidence;
   const verificationStatus =
@@ -163,18 +209,71 @@ function ResearchTraceBar({
       ? 'partial'
       : 'unverified');
 
+  const activeStageIdx =
+    stage === 'auditing' ? 3 : stage === 'streaming' ? 2 : stage === 'retrieving' ? 1 : 0;
+
+  if (isStreaming && !hasError) {
+    return (
+      <div className="space-y-2 select-none w-full">
+        <div className="inline-flex flex-wrap items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--aria-accent)]/30 bg-slate-50 dark:bg-[#09090B] text-[11px] font-mono transition-all duration-300">
+          {STREAM_STEPS.map((step, idx) => {
+            const isCurrent = idx === activeStageIdx;
+            const isDone = idx < activeStageIdx;
+            return (
+              <React.Fragment key={step.id}>
+                <span
+                  className={`inline-flex items-center gap-1.5 transition-all duration-200 ${
+                    isCurrent
+                      ? 'text-[var(--aria-accent)] font-semibold'
+                      : isDone
+                      ? 'text-emerald-400'
+                      : 'text-slate-400 dark:text-[#52525B]'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                      isCurrent
+                        ? 'bg-[var(--aria-accent)] animate-pulse'
+                        : isDone
+                        ? 'bg-emerald-400'
+                        : 'bg-slate-300 dark:bg-[#27272A]'
+                    }`}
+                  />
+                  <span>
+                    {step.id === 'retrieving' && citationsCount > 0
+                      ? `Retrieving (${citationsCount})`
+                      : step.label}
+                  </span>
+                </span>
+                {idx < STREAM_STEPS.length - 1 && (
+                  <span className="text-slate-300 dark:text-white/15">→</span>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {/* Live fading retrieved source chips */}
+        {citationsCount > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {citations.slice(0, 5).map((c, idx) => (
+              <span
+                key={c.id}
+                style={{ ['--stagger-i' as any]: idx }}
+                className="stagger-card inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.07] text-[10px] font-mono text-slate-600 dark:text-[#8B8B8E] max-w-[190px]"
+              >
+                <span className="text-[var(--aria-accent)] font-semibold">[{c.id + 1}]</span>
+                <span className="truncate">{c.venue || c.title || c.tier}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const statusLabel = hasError
     ? 'Failed'
-    : isStreaming
-    ? stage === 'routing'
-      ? 'Planning'
-      : stage === 'retrieving'
-      ? 'Retrieving'
-      : stage === 'streaming'
-      ? 'Synthesizing'
-      : stage === 'auditing'
-      ? 'Verifying'
-      : 'Analyzing'
     : verificationStatus === 'verified'
     ? 'Verified'
     : verificationStatus === 'partial'
@@ -203,8 +302,6 @@ function ResearchTraceBar({
         >
           {hasError ? (
             <AlertCircle size={12} className="text-red-400 shrink-0" />
-          ) : isStreaming ? (
-            <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA] animate-pulse shrink-0" />
           ) : verificationStatus === 'verified' ? (
             <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
           ) : (
@@ -215,8 +312,6 @@ function ResearchTraceBar({
             className={`font-semibold ${
               hasError
                 ? 'text-red-400'
-                : isStreaming
-                ? 'text-[#60A5FA]'
                 : verificationStatus === 'verified'
                 ? 'text-emerald-500 dark:text-emerald-400'
                 : 'text-amber-500 dark:text-amber-400'
@@ -225,12 +320,10 @@ function ResearchTraceBar({
             {statusLabel}
           </span>
 
-          {scorePct && !isStreaming && !hasError && (
+          {scorePct && !hasError && (
             <>
               <span className="text-slate-300 dark:text-white/15">·</span>
-              <span className="text-slate-800 dark:text-zinc-200 font-semibold tabular-nums">
-                {scorePct}
-              </span>
+              <span className="text-slate-800 dark:text-zinc-200 font-semibold tabular-nums">{scorePct}</span>
             </>
           )}
 
@@ -261,7 +354,7 @@ function ResearchTraceBar({
           <div className="p-3 bg-slate-50/80 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.07] rounded-[8px] space-y-2 text-[11px] font-mono mt-1">
             <div className="flex items-center justify-between text-slate-600 dark:text-[#8B8B8E]">
               <span>Active Retrieval Tiers</span>
-              <span className="text-[#60A5FA] font-semibold">{activeTierLabel}</span>
+              <span className="text-[var(--aria-accent)] font-semibold">{activeTierLabel}</span>
             </div>
             <div className="flex items-center justify-between text-slate-600 dark:text-[#8B8B8E]">
               <span>Pipeline Stage</span>
@@ -550,14 +643,18 @@ interface MessageItemProps {
   isSaved: boolean;
   isExportingPdf: boolean;
   isExportingBib?: boolean;
+  isExportingTex?: boolean;
+  isExportingRis?: boolean;
   isExportingMd?: boolean;
   isBackendReachable: boolean;
   isMockActive: boolean;
   feedbackStatus?: string;
-  onCitationClick: (citation: Citation) => void;
+  onCitationClick: (citation: Citation, claim?: AuditClaim) => void;
   onExecuteQuery: (query: string) => void;
   onCopy: (id: string, content: string) => void;
   onDownloadBibtex: (citations?: Citation[], msg?: Message) => void;
+  onDownloadLatex: (citations?: Citation[], msg?: Message) => void;
+  onDownloadRis: (citations?: Citation[], msg?: Message) => void;
   onDownloadMarkdown: (msg: Message) => void;
   onDownloadPdf: (msg: Message) => void;
   onSaveToCollection: (msg: Message) => void;
@@ -571,6 +668,8 @@ const MessageItem = React.memo(
     isSaved,
     isExportingPdf,
     isExportingBib = false,
+    isExportingTex = false,
+    isExportingRis = false,
     isExportingMd = false,
     isBackendReachable,
     isMockActive,
@@ -579,6 +678,8 @@ const MessageItem = React.memo(
     onExecuteQuery,
     onCopy,
     onDownloadBibtex,
+    onDownloadLatex,
+    onDownloadRis,
     onDownloadMarkdown,
     onDownloadPdf,
     onSaveToCollection,
@@ -599,12 +700,12 @@ const MessageItem = React.memo(
     return (
       <div className="space-y-4">
         <div className="p-3.5 sm:p-6 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.07] rounded-[8px] space-y-4 w-full shadow-sm dark:shadow-none">
-          {/* Header Verification Strip with Inline Collapsible Research Trace */}
+          {/* Header Verification Strip with Kinetic Stage Stepper / Collapsible Summary Pill */}
           <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-white/[0.07]">
             <ResearchTraceBar
               telemetry={msg.telemetry}
               isStreaming={msg.isStreaming}
-              citationsCount={msg.citations?.length || 0}
+              citations={msg.citations || []}
               hasError={Boolean(msg.error)}
             />
           </div>
@@ -659,106 +760,121 @@ const MessageItem = React.memo(
             <TopicChart chart={msg.chart || msg.telemetry?.chart} />
           )}
 
-          {/* Contextual Follow-Up Questions */}
+          {/* Interactive Curiosity Pathways (Deep Dive / Counter-View / Applied) */}
           {!msg.isStreaming && msg.content && (
-            <div className="pt-3 border-t border-slate-200 dark:border-white/[0.05] space-y-2">
+            <div className="pt-3 border-t border-slate-200 dark:border-white/[0.05] space-y-2.5">
               <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-600 dark:text-[#71717A]">
-                <Sparkles size={11} className="text-[#60A5FA]" />
-                <span>Follow-up Research Questions</span>
+                <Sparkles size={11} className="text-[var(--aria-accent)]" />
+                <span>Curiosity Pathways</span>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {getFollowUpQuestions(msg.query || '', msg.content, msg.telemetry).map((fq, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => onExecuteQuery(fq)}
-                    className="text-left px-3 py-1.5 bg-slate-50 dark:bg-[#09090B] hover:bg-slate-100 dark:hover:bg-[#18181E] border border-slate-200 dark:border-white/[0.07] hover:border-slate-300 dark:hover:border-white/[0.14] rounded-[6px] text-[12px] text-slate-800 dark:text-[#EDEDED] flex items-center gap-1.5 active:scale-[0.98] transition-all cursor-pointer group"
-                  >
-                    <span className="line-clamp-1">{fq}</span>
-                    <ArrowUpRight size={11} className="text-slate-400 dark:text-[#71717A] group-hover:text-blue-600 dark:group-hover:text-[#60A5FA] shrink-0 transition-colors" />
-                  </button>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                {getFollowUpCards(msg.query || '', msg.content, msg.telemetry).map((card, idx) => {
+                  const Icon =
+                    card.intent === 'counter_view'
+                      ? Scale
+                      : card.intent === 'applied'
+                      ? Compass
+                      : Layers;
+                  const intentAccent =
+                    card.intent === 'counter_view'
+                      ? 'text-amber-400'
+                      : card.intent === 'applied'
+                      ? 'text-emerald-400'
+                      : 'text-[var(--aria-accent)]';
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => onExecuteQuery(card.question)}
+                      className="text-left p-2.5 bg-slate-50 dark:bg-[#09090B] hover:bg-slate-100 dark:hover:bg-[#18181E] border border-slate-200 dark:border-white/[0.07] hover:border-slate-300 dark:hover:border-white/[0.15] rounded-[7px] space-y-1.5 transition-all duration-200 hover:translate-x-[3px] active:scale-[0.985] cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className={`inline-flex items-center gap-1 font-semibold uppercase tracking-wider ${intentAccent}`}>
+                          <Icon size={11} />
+                          <span>{card.label}</span>
+                        </span>
+                        <ArrowUpRight size={11} className="text-slate-400 dark:text-[#71717A] group-hover:text-[var(--aria-accent)] transition-colors" />
+                      </div>
+                      <p className="text-[12px] text-slate-800 dark:text-[#EDEDED] leading-snug line-clamp-2">
+                        {card.question}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {/* Action Bar */}
+          {/* Action Bar + Academic Export Pack */}
           {!msg.isStreaming && msg.content && (
             <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-white/[0.07]">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => onCopy(msg.id, msg.content)}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.96] transition-all cursor-pointer"
                 >
-                  {isCopied ? <Check size={13} className="text-[#60A5FA]" /> : <Copy size={13} />}
+                  {isCopied ? <Check size={13} className="text-emerald-400 morph-pop" /> : <Copy size={13} />}
                   <span>{isCopied ? 'Copied' : 'Copy'}</span>
                 </button>
 
                 <button
                   onClick={() => onDownloadBibtex(msg.citations, msg)}
                   disabled={isExportingBib || !msg.citations || msg.citations.length === 0}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
-                  title="Export BibTeX"
+                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-all cursor-pointer"
+                  title="Export BibTeX (.bib)"
                 >
-                  {isExportingBib ? (
-                    <>
-                      <Loader2 size={12} className="animate-spin text-[#60A5FA]" />
-                      <span>Exporting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Download size={13} />
-                      <span>.BIB</span>
-                    </>
-                  )}
+                  {isExportingBib ? <Loader2 size={12} className="animate-spin text-[var(--aria-accent)]" /> : <Download size={12} />}
+                  <span>.BIB</span>
+                </button>
+
+                <button
+                  onClick={() => onDownloadLatex(msg.citations, msg)}
+                  disabled={isExportingTex || !msg.citations || msg.citations.length === 0}
+                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-all cursor-pointer"
+                  title="Export Overleaf LaTeX (.tex)"
+                >
+                  {isExportingTex ? <Loader2 size={12} className="animate-spin text-[var(--aria-accent)]" /> : <FileCode2 size={12} />}
+                  <span>.TEX</span>
+                </button>
+
+                <button
+                  onClick={() => onDownloadRis(msg.citations, msg)}
+                  disabled={isExportingRis || !msg.citations || msg.citations.length === 0}
+                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-all cursor-pointer"
+                  title="Export RIS for Zotero / Mendeley (.ris)"
+                >
+                  {isExportingRis ? <Loader2 size={12} className="animate-spin text-[var(--aria-accent)]" /> : <Download size={12} />}
+                  <span>.RIS</span>
                 </button>
 
                 <button
                   onClick={() => onDownloadMarkdown(msg)}
                   disabled={isExportingMd}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
+                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-all cursor-pointer"
                   title="Export Markdown (.md)"
                 >
-                  {isExportingMd ? (
-                    <>
-                      <Loader2 size={12} className="animate-spin text-[#60A5FA]" />
-                      <span>Exporting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <FileText size={13} />
-                      <span>.MD</span>
-                    </>
-                  )}
+                  {isExportingMd ? <Loader2 size={12} className="animate-spin text-[var(--aria-accent)]" /> : <FileText size={12} />}
+                  <span>.MD</span>
                 </button>
 
                 <button
                   onClick={() => onDownloadPdf(msg)}
                   disabled={isExportingPdf}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.98] transition-all cursor-pointer"
-                  title="Export PDF Report"
+                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-[var(--aria-accent)] dark:hover:text-[var(--aria-accent)] disabled:opacity-40 active:scale-[0.96] transition-all cursor-pointer"
+                  title="Export Publication PDF"
                 >
-                  {isExportingPdf ? (
-                    <>
-                      <Loader2 size={12} className="animate-spin text-[#60A5FA]" />
-                      <span>Exporting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <FileText size={13} />
-                      <span>PDF</span>
-                    </>
-                  )}
+                  {isExportingPdf ? <Loader2 size={12} className="animate-spin text-[var(--aria-accent)]" /> : <FileText size={12} />}
+                  <span>PDF</span>
                 </button>
 
                 <button
                   onClick={() => onSaveToCollection(msg)}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.96] transition-all cursor-pointer"
                   title="Save to Collection"
                 >
                   <Bookmark
                     size={13}
-                    className={isSaved ? 'text-[#60A5FA] fill-[#60A5FA]' : ''}
+                    className={isSaved ? 'text-[var(--aria-accent)] fill-[var(--aria-accent)] morph-pop' : ''}
                   />
                   <span>{isSaved ? 'Saved' : 'Save'}</span>
                 </button>
@@ -803,6 +919,8 @@ const MessageItem = React.memo(
       prev.isSaved === next.isSaved &&
       prev.isExportingPdf === next.isExportingPdf &&
       prev.isExportingBib === next.isExportingBib &&
+      prev.isExportingTex === next.isExportingTex &&
+      prev.isExportingRis === next.isExportingRis &&
       prev.isExportingMd === next.isExportingMd &&
       prev.isBackendReachable === next.isBackendReachable &&
       prev.isMockActive === next.isMockActive &&
@@ -812,7 +930,7 @@ const MessageItem = React.memo(
 );
 
 interface ThreadViewProps {
-  onCitationClick: (citation: Citation) => void;
+  onCitationClick: (citation: Citation, claim?: AuditClaim) => void;
   isFocusMode: boolean;
   onToggleFocus: () => void;
   onQueryStateChange?: (hasQuery: boolean) => void;
@@ -829,6 +947,7 @@ interface ThreadViewProps {
   isInspectorOpen?: boolean;
   onToggleInspector?: () => void;
   onQueryErrorChange?: (hasError: boolean) => void;
+  onOpenShortcuts?: () => void;
 }
 
 export default function ThreadView({
@@ -849,6 +968,7 @@ export default function ThreadView({
   isInspectorOpen = false,
   onToggleInspector,
   onQueryErrorChange,
+  onOpenShortcuts,
 }: ThreadViewProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const emptyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -862,18 +982,37 @@ export default function ThreadView({
   const [isBackendReachable, setIsBackendReachable] = useState<boolean>(false);
   const [isExportingPdf, setIsExportingPdf] = useState<Record<string, boolean>>({});
   const [isExportingBib, setIsExportingBib] = useState<Record<string, boolean>>({});
+  const [isExportingTex, setIsExportingTex] = useState<Record<string, boolean>>({});
+  const [isExportingRis, setIsExportingRis] = useState<Record<string, boolean>>({});
   const [isExportingMd, setIsExportingMd] = useState<Record<string, boolean>>({});
   const [recentHistory, setRecentHistory] = useState<HistoryEntry[]>([]);
+  const [pulse, setPulse] = useState(() => getResearchPulse());
 
-  const { settings } = useSettingsContext();
+  const { settings } = useSettingsStore();
   const { accessToken } = useAuth();
   const [selectedTopic, setSelectedTopic] = useState<string>(() => settings.defaultDomain || 'auto');
+  const [sourceTier, setSourceTier] = useState<SourceTierFilter>(() => settings.defaultSourceTier || 'all');
+  const [recency, setRecency] = useState<RecencyFilter>(() => settings.defaultRecency || 'all');
 
   useEffect(() => {
-    if (settings.defaultDomain) {
-      setSelectedTopic(settings.defaultDomain);
-    }
+    if (settings.defaultDomain) setSelectedTopic(settings.defaultDomain);
   }, [settings.defaultDomain]);
+  useEffect(() => {
+    if (settings.defaultSourceTier) setSourceTier(settings.defaultSourceTier);
+  }, [settings.defaultSourceTier]);
+  useEffect(() => {
+    if (settings.defaultRecency) setRecency(settings.defaultRecency);
+  }, [settings.defaultRecency]);
+
+  // Listen for global '/' & Cmd+K focus composer events
+  useEffect(() => {
+    const handleFocusComposer = () => {
+      const target = textareaRef.current || emptyTextareaRef.current;
+      target?.focus();
+    };
+    window.addEventListener('aria:focus-composer', handleFocusComposer);
+    return () => window.removeEventListener('aria:focus-composer', handleFocusComposer);
+  }, []);
 
   useEffect(() => {
     try {
@@ -896,12 +1035,16 @@ export default function ThreadView({
         sources: msg.citations || [],
         figures: msg.figures || msg.telemetry?.figures || [],
         chart: msg.chart || msg.telemetry?.chart || null,
-        full_ledger: true,
+        full_ledger: settings.includeLedgerInPdf,
         clickable_urls: true,
+        pdf_style: settings.pdfLayoutStyle,
       };
       const blob = await exportPdfApi(payload, 90000, accessToken || undefined);
       const safeQuery = (msg.query || 'aria-research-paper').trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_');
-      await saveOrDownloadFile(blob, `${safeQuery}.pdf`, 'application/pdf');
+      await saveOrDownloadFile(blob, `${safeQuery}.pdf`, 'application/pdf', {
+        autoOpen: settings.autoOpenAfterExport,
+      });
+      triggerLightHaptic(settings.nativeHaptics);
     } catch (err: any) {
       console.error('Download PDF failed:', err);
       showDownloadToast(`PDF Export Error: ${err?.message || 'Network error'}`, true);
@@ -1214,6 +1357,9 @@ export default function ThreadView({
           if (Array.isArray(evt.followup_questions) && evt.followup_questions.length > 0) {
             updatedTelemetry.followup_questions = evt.followup_questions;
           }
+          if (Array.isArray(evt.followup_cards) && evt.followup_cards.length > 0) {
+            updatedTelemetry.followup_cards = evt.followup_cards;
+          }
           currentTelemetry = updatedTelemetry;
           return {
             ...msg,
@@ -1351,7 +1497,10 @@ export default function ThreadView({
         await streamQuery({
           query: queryText.trim(),
           topic: selectedTopic !== 'auto' ? selectedTopic : undefined,
-          compareMode: false,
+          compareMode: settings.defaultMode === 'deep_compare',
+          sourceTier,
+          recency,
+          strictAcademic: settings.entailmentStrictness === 'strict',
           signal: abortController.signal,
           mockFixtureKey: mockKey,
           customHeaders: streamHeaders,
@@ -1464,6 +1613,10 @@ export default function ThreadView({
                     .slice(0, 220),
                   confidence: finalConfidenceRef.current,
                 });
+                const verifiedCount = (currentTelemetry.audit?.claims || []).filter(
+                  (c: any) => typeof c === 'object' && (c.status === 'supported' || c.verdict === 'supported')
+                ).length;
+                setPulse(recordQueryCompleted(verifiedCount));
               } catch {
                 // storage quiet ignore
               }
@@ -1535,25 +1688,63 @@ export default function ThreadView({
     const msgKey = msg?.id || 'all';
     try {
       setIsExportingBib((prev) => ({ ...prev, [msgKey]: true }));
-      const bibContent = citations
-        .map((cit) => {
-          const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
-          const key = (authorsStr.split(' ')[0] || 'source').replace(/[^a-zA-Z]/g, '') + (cit.year || '2026');
-          return `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${authorsStr || 'Unknown'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
-        })
-        .join('\n\n');
-
+      const bibContent = exportAllBibtex(citations);
       const blob = new Blob([bibContent], { type: 'text/plain;charset=utf-8' });
-      if (!blob || blob.size === 0) {
-        throw new Error('Failed to generate BibTeX content');
-      }
-      const safeQuery = msg?.query ? (msg.query).trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_') : 'aria-citations';
-      await saveOrDownloadFile(blob, `${safeQuery}.bib`, 'text/plain');
+      const safeQuery = msg?.query ? msg.query.trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_') : 'aria-citations';
+      await saveOrDownloadFile(blob, `${safeQuery}.bib`, 'text/plain', {
+        autoOpen: settings.autoOpenAfterExport,
+      });
+      triggerLightHaptic(settings.nativeHaptics);
     } catch (err: any) {
-      console.error('Download BibTeX failed:', err);
       showDownloadToast(`BibTeX Export Error: ${err?.message || 'Export error'}`, true);
     } finally {
       setIsExportingBib((prev) => ({ ...prev, [msgKey]: false }));
+    }
+  };
+
+  const handleDownloadLatex = async (citations: Citation[] = [], msg?: Message) => {
+    if (!citations || citations.length === 0) {
+      showDownloadToast('No citations available to export.', true);
+      return;
+    }
+    const msgKey = msg?.id || 'all';
+    try {
+      setIsExportingTex((prev) => ({ ...prev, [msgKey]: true }));
+      const texContent = exportLatexArticle({
+        query: msg?.query || 'ARIA Research Synthesis',
+        content: msg?.content || '',
+        citations,
+      });
+      const safeQuery = msg?.query ? msg.query.trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_') : 'aria-article';
+      await saveOrDownloadFile(new Blob([texContent], { type: 'application/x-tex;charset=utf-8' }), `${safeQuery}.tex`, 'application/x-tex', {
+        autoOpen: settings.autoOpenAfterExport,
+      });
+      triggerLightHaptic(settings.nativeHaptics);
+    } catch (err: any) {
+      showDownloadToast(`LaTeX Export Error: ${err?.message || 'Export error'}`, true);
+    } finally {
+      setIsExportingTex((prev) => ({ ...prev, [msgKey]: false }));
+    }
+  };
+
+  const handleDownloadRis = async (citations: Citation[] = [], msg?: Message) => {
+    if (!citations || citations.length === 0) {
+      showDownloadToast('No citations available to export.', true);
+      return;
+    }
+    const msgKey = msg?.id || 'all';
+    try {
+      setIsExportingRis((prev) => ({ ...prev, [msgKey]: true }));
+      const risContent = exportAllRis(citations);
+      const safeQuery = msg?.query ? msg.query.trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_') : 'aria-citations';
+      await saveOrDownloadFile(new Blob([risContent], { type: 'application/x-research-info-systems;charset=utf-8' }), `${safeQuery}.ris`, 'application/x-research-info-systems', {
+        autoOpen: settings.autoOpenAfterExport,
+      });
+      triggerLightHaptic(settings.nativeHaptics);
+    } catch (err: any) {
+      showDownloadToast(`RIS Export Error: ${err?.message || 'Export error'}`, true);
+    } finally {
+      setIsExportingRis((prev) => ({ ...prev, [msgKey]: false }));
     }
   };
 
@@ -1569,7 +1760,10 @@ export default function ThreadView({
         throw new Error('Empty markdown content');
       }
       const safeQuery = (msg.query || 'aria-synthesis').trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_');
-      await saveOrDownloadFile(blob, `${safeQuery}.md`, 'text/markdown');
+      await saveOrDownloadFile(blob, `${safeQuery}.md`, 'text/markdown', {
+        autoOpen: settings.autoOpenAfterExport,
+      });
+      triggerLightHaptic(settings.nativeHaptics);
     } catch (err: any) {
       console.error('Download Markdown failed:', err);
       showDownloadToast(`Markdown Export Error: ${err?.message || 'Export error'}`, true);
@@ -1645,6 +1839,18 @@ export default function ThreadView({
             </button>
           )}
 
+          {onOpenShortcuts && (
+            <button
+              onClick={onOpenShortcuts}
+              className="hidden md:inline-flex items-center gap-1 px-2 py-1 text-[11px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#111115] border border-transparent hover:border-white/[0.08] transition-colors cursor-pointer"
+              title="Keyboard Shortcuts (?)"
+              aria-label="Keyboard Shortcuts"
+            >
+              <HelpCircle size={13} />
+              <span>?</span>
+            </button>
+          )}
+
           <button
             onClick={onToggleFocus}
             className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#111115] transition-colors cursor-pointer active:scale-[0.98]"
@@ -1679,6 +1885,22 @@ export default function ThreadView({
         {messages.length === 0 && (
           <div className="flex-1 min-h-[70vh] flex flex-col items-center justify-center py-8 animate-fade-slide">
             <div className="w-full max-w-2xl text-center space-y-2 mb-6">
+              {settings.showResearchPulse && pulse.queriesCount > 0 && (
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-[#111115] border border-slate-200 dark:border-white/[0.08] text-[11px] font-mono text-slate-600 dark:text-[#8B8B8E] mb-1 animate-fade-slide">
+                  <Flame size={12} className="text-[var(--aria-accent)]" />
+                  <span className="tabular-nums text-slate-900 dark:text-[#EDEDED] font-medium">
+                    {pulse.currentDayStreak}-day streak
+                  </span>
+                  <span className="text-slate-300 dark:text-white/15">·</span>
+                  <span className="tabular-nums">{pulse.verifiedClaimsRead} claims verified</span>
+                  {pulse.sourcesExplored > 0 && (
+                    <>
+                      <span className="hidden sm:inline text-slate-300 dark:text-white/15">·</span>
+                      <span className="hidden sm:inline tabular-nums">{pulse.sourcesExplored} sources inspected</span>
+                    </>
+                  )}
+                </div>
+              )}
               <h1 className="text-[19px] sm:text-[24px] font-medium tracking-[-0.02em] text-slate-900 dark:text-zinc-100 font-sans">
                 What would you like to research?
               </h1>
@@ -1713,16 +1935,47 @@ export default function ThreadView({
                 aria-label="Research query"
               />
 
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-white/[0.05] mt-1">
-                {/* Sleek custom Obsidian DomainPicker */}
-                <DomainPicker
-                  value={selectedTopic}
-                  onChange={setSelectedTopic}
-                  direction="down"
-                />
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.05] mt-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <DomainPicker
+                    value={selectedTopic}
+                    onChange={setSelectedTopic}
+                    direction="down"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setSourceTier((prev) => (prev === 'all' ? 'peer_reviewed' : 'all'))}
+                    className={`px-2 py-1 rounded-lg border text-[11px] font-mono transition-all cursor-pointer ${
+                      sourceTier === 'peer_reviewed'
+                        ? 'border-[var(--aria-accent)] bg-[var(--aria-accent)]/12 text-[var(--aria-accent)] font-semibold'
+                        : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-zinc-200'
+                    }`}
+                    title="Toggle between All Verified Sources and Peer-Reviewed Academic Literature Only"
+                  >
+                    {sourceTier === 'peer_reviewed' ? 'Peer-Reviewed' : 'All Sources'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRecency((prev) => (prev === 'all' ? '5y' : prev === '5y' ? '2y' : 'all'))
+                    }
+                    className={`px-2 py-1 rounded-lg border text-[11px] font-mono transition-all cursor-pointer ${
+                      recency !== 'all'
+                        ? 'border-[var(--aria-accent)] bg-[var(--aria-accent)]/12 text-[var(--aria-accent)] font-semibold'
+                        : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-zinc-200'
+                    }`}
+                    title="Cycle publication recency cutoff: All Time -> Last 5 Years -> Last 2 Years"
+                  >
+                    {recency === '2y' ? 'Last 2 Yrs' : recency === '5y' ? 'Last 5 Yrs' : 'All Time'}
+                  </button>
+                </div>
 
                 <div className="flex items-center gap-2 ml-auto">
-                  <span className="hidden sm:inline text-[11px] text-slate-500 dark:text-zinc-500 font-sans">Enter ↵</span>
+                  <span className="hidden md:inline text-[11px] text-slate-500 dark:text-zinc-500 font-mono">
+                    / focus · ? shortcuts
+                  </span>
                   <SearchSubmitButton
                     disabled={!emptyInput.trim() || isLoading}
                     isLoading={isLoading}
@@ -1788,6 +2041,8 @@ export default function ThreadView({
             isSaved={Boolean(savedCollectionIds[msg.id] || isInCollection(msg.query || ''))}
             isExportingPdf={Boolean(isExportingPdf[msg.id])}
             isExportingBib={Boolean(isExportingBib[msg.id])}
+            isExportingTex={Boolean(isExportingTex[msg.id])}
+            isExportingRis={Boolean(isExportingRis[msg.id])}
             isExportingMd={Boolean(isExportingMd[msg.id])}
             isBackendReachable={isBackendReachable}
             isMockActive={isMockActive}
@@ -1796,6 +2051,8 @@ export default function ThreadView({
             onExecuteQuery={executeQuery}
             onCopy={handleCopy}
             onDownloadBibtex={handleDownloadBibtex}
+            onDownloadLatex={handleDownloadLatex}
+            onDownloadRis={handleDownloadRis}
             onDownloadMarkdown={handleDownloadMarkdown}
             onDownloadPdf={handleDownloadPdf}
             onSaveToCollection={handleSaveToCollection}
@@ -1810,15 +2067,42 @@ export default function ThreadView({
         <div className="p-3 bg-slate-50/95 dark:bg-[#050811] border-t border-slate-200 dark:border-white/[0.06] shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
           <form
             onSubmit={handleSubmit}
-            className="flex items-center gap-2 max-w-4xl mx-auto bg-white dark:bg-[#0B0F1A] border border-slate-200 dark:border-white/[0.08] focus-within:border-slate-400 dark:focus-within:border-white/[0.18] rounded-2xl p-2 transition-all duration-150 shadow-sm dark:shadow-none"
+            className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2 max-w-4xl mx-auto bg-white dark:bg-[#0B0F1A] border border-slate-200 dark:border-white/[0.08] focus-within:border-slate-400 dark:focus-within:border-white/[0.18] rounded-2xl p-2 transition-all duration-150 shadow-sm dark:shadow-none"
           >
-            {/* Sleek custom Obsidian DomainPicker */}
-            <DomainPicker
-              value={selectedTopic}
-              onChange={setSelectedTopic}
-              direction="up"
-              className="shrink-0"
-            />
+            <div className="flex items-center gap-1 shrink-0">
+              <DomainPicker
+                value={selectedTopic}
+                onChange={setSelectedTopic}
+                direction="up"
+                className="shrink-0"
+              />
+              <button
+                type="button"
+                onClick={() => setSourceTier((prev) => (prev === 'all' ? 'peer_reviewed' : 'all'))}
+                className={`px-1.5 py-1 rounded-lg border text-[10px] font-mono transition-all cursor-pointer ${
+                  sourceTier === 'peer_reviewed'
+                    ? 'border-[var(--aria-accent)] bg-[var(--aria-accent)]/12 text-[var(--aria-accent)] font-semibold'
+                    : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-zinc-200'
+                }`}
+                title="Peer-Reviewed Only toggle"
+              >
+                {sourceTier === 'peer_reviewed' ? 'Peer-Rev' : 'All'}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setRecency((prev) => (prev === 'all' ? '5y' : prev === '5y' ? '2y' : 'all'))
+                }
+                className={`px-1.5 py-1 rounded-lg border text-[10px] font-mono transition-all cursor-pointer ${
+                  recency !== 'all'
+                    ? 'border-[var(--aria-accent)] bg-[var(--aria-accent)]/12 text-[var(--aria-accent)] font-semibold'
+                    : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-zinc-200'
+                }`}
+                title="Recency window: All Time / Last 5 Years / Last 2 Years"
+              >
+                {recency === '2y' ? '2Y' : recency === '5y' ? '5Y' : 'All'}
+              </button>
+            </div>
 
             <textarea
               ref={textareaRef}

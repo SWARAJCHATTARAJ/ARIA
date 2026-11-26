@@ -4,12 +4,18 @@ import { supabase } from '../lib/supabase';
 export interface QueryRequestPayload {
   query: string;
   compare_mode?: boolean;
+  source_tier?: 'all' | 'peer_reviewed';
+  recency?: 'all' | '5y' | '2y';
+  strict_academic?: boolean;
   thread_id?: string;
 }
 
 export interface QueryApiOptions {
   query: string;
   compareMode?: boolean;
+  sourceTier?: 'all' | 'peer_reviewed';
+  recency?: 'all' | '5y' | '2y';
+  strictAcademic?: boolean;
   signal?: AbortSignal;
   headers?: Record<string, string>;
 }
@@ -21,6 +27,9 @@ export interface QueryApiOptions {
 export async function queryApi({
   query,
   compareMode = false,
+  sourceTier = 'all',
+  recency = 'all',
+  strictAcademic = false,
   signal,
   headers: customHeaders,
 }: QueryApiOptions): Promise<Response> {
@@ -58,6 +67,9 @@ export async function queryApi({
     body: JSON.stringify({
       query,
       compare_mode: compareMode,
+      source_tier: sourceTier,
+      recency,
+      strict_academic: strictAcademic,
     }),
     signal,
   });
@@ -75,6 +87,7 @@ export interface ExportPdfPayload {
   canonical_topic?: string;
   full_ledger?: boolean;
   clickable_urls?: boolean;
+  pdf_style?: 'academic' | 'executive';
 }
 
 /**
@@ -175,6 +188,7 @@ export async function exportPdfApi(
     canonical_topic: payload.canonical_topic,
     full_ledger: payload.full_ledger ?? true,
     clickable_urls: payload.clickable_urls ?? true,
+    pdf_style: payload.pdf_style ?? 'academic',
   };
 
   const controller = new AbortController();

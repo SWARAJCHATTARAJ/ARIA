@@ -4,14 +4,36 @@ export type ReviewStatus = 'verified' | 'draft' | 'scholarly' | 'preprint' | 'un
 
 export type ClaimStatus = 'supported' | 'partially_supported' | 'unsupported' | 'uncited' | 'audit_incomplete';
 
+export type SourceTierFilter = 'all' | 'peer_reviewed';
+export type RecencyFilter = 'all' | '5y' | '2y';
+export type CitationStyle = 'apa7' | 'ieee' | 'chicago' | 'bibtex';
+export type EntailmentStrictness = 'standard' | 'strict';
+export type ResearchModePref = 'synthesis' | 'deep_compare';
+export type ThemePreset = 'cyber-cyan' | 'emerald-biolab' | 'obsidian-gold' | 'solaris-paper';
+export type SurfaceMode = 'system' | 'dark' | 'light';
+export type FontFamilyPref = 'serif' | 'sans';
+export type FontScalePref = 'compact' | 'default' | 'large';
+export type PdfLayoutStyle = 'academic' | 'executive';
+
+export type FollowUpIntent = 'deep_dive' | 'counter_view' | 'applied';
+
+export interface FollowUpCard {
+  intent: FollowUpIntent;
+  label: string;
+  question: string;
+}
+
 export interface AuditClaim {
   claim_id: number | string;
   text: string;
   citation_ids?: number[];
+  source_index?: number | null;
   evidence?: string;
+  evidence_quote?: string | null;
   note?: string;
   supported?: boolean;
   status: ClaimStatus;
+  verdict?: 'supported' | 'partial' | 'unverified';
   coverage?: number;
   start?: number;
   end?: number;
@@ -166,6 +188,7 @@ export interface MessageTelemetry {
   figures?: FigureData[];
   chart?: ChartData;
   followup_questions?: string[];
+  followup_cards?: FollowUpCard[];
   query?: string;
 }
 

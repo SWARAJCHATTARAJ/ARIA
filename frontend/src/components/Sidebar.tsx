@@ -96,7 +96,7 @@ export default function Sidebar({
               <span>Search</span>
             </span>
             <kbd className="px-1.5 py-0.5 bg-[#111115] border border-white/[0.07] text-[10px] font-mono rounded-[4px] text-[#71717A]">
-              ⌘K
+              ⌘P
             </kbd>
           </button>
         )}

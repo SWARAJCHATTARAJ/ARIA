@@ -67,6 +67,10 @@ export function removeFromCollection(id: string): void {
   writeList(COLLECTION_KEY, getCollections().filter((c) => c.id !== id));
 }
 
+export function clearCollections(): void {
+  writeList(COLLECTION_KEY, []);
+}
+
 export function isInCollection(query: string): boolean {
   return getCollections().some((c) => c.query === query);
 }

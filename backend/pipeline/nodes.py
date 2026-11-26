@@ -117,19 +117,40 @@ _DEEP_STRUCTURE = (
 )
 
 
-def build_synthesis_prompt(topic: Optional[str] = None) -> str:
+def build_synthesis_prompt(
+    topic: Optional[str] = None,
+    strict_academic: bool = False,
+    source_tier: str = "all",
+    recency: str = "all",
+) -> str:
     """
     Composes the full synthesis system prompt from the identity/security base,
     the domain-adaptive structure, and the shared grounding/citation rules.
     Used by BOTH the streaming /api/query path and synthesize_answer.
     """
-    domain_clause = ""
+    clauses: List[str] = []
     if topic and topic.lower() != "auto":
-        domain_clause = (
-            f"\n\nDOMAIN SCOPE: {topic.upper()}.\n"
+        clauses.append(
+            f"DOMAIN SCOPE: {topic.upper()}.\n"
             f"Ensure terminology, headings, mechanisms, and comparative evidence are strictly grounded within {topic}."
         )
-    return f"{_IDENTITY_SECURITY}\n{_DEEP_STRUCTURE}{domain_clause}\n\n{_CITATION_RULES}"
+    if source_tier == "peer_reviewed":
+        clauses.append(
+            "SOURCE POLICY: Peer-Reviewed & Scholarly Literature Only. Ground every empirical statement "
+            "exclusively in the retrieved scholarly studies, citing authors/venues precisely when stated."
+        )
+    if recency in ("5y", "2y"):
+        win = "last 2 years" if recency == "2y" else "last 5 years"
+        clauses.append(f"RECENCY WINDOW: Emphasize findings published within the {win} cleanly without extrapolating older baselines.")
+    if strict_academic:
+        clauses.append(
+            "STRICT ACADEMIC MODE ENABLED:\n"
+            "- Never fill evidentiary gaps with speculation, generalizations, or unstated assumptions.\n"
+            "- Every factual sentence must be directly and verifiably traceable to the cited [[c:N]] source text.\n"
+            "- If retrieved sources do not quantify a parameter or address a sub-question, state the exact scope boundary explicitly."
+        )
+    extra = ("\n\n" + "\n\n".join(clauses)) if clauses else ""
+    return f"{_IDENTITY_SECURITY}\n{_DEEP_STRUCTURE}{extra}\n\n{_CITATION_RULES}"
 
 def normalize_unicode_and_math(t: str) -> str:
     """
@@ -734,6 +755,10 @@ async def retrieve_cascade(state: AgentState) -> dict:
         return _rag_chunks, _scores
 
     # 3. LIVE Tier Fetcher
+    source_tier = state.get("source_tier") or "all"
+    recency = state.get("recency") or "all"
+    peer_reviewed_only = (source_tier == "peer_reviewed")
+
     async def _fetch_live():
         _live_chunks = []
         try:
@@ -741,20 +766,22 @@ async def retrieve_cascade(state: AgentState) -> dict:
                 active_query,
                 wikipedia_title=wiki_title,
                 canonical_topic=canonical_topic,
-                topic=state.get("topic")
+                topic=state.get("topic"),
+                source_tier=source_tier,
+                recency=recency,
             )
             if free_sources:
                 for s in free_sources:
                     s["tier"] = "LIVE"
                     st = s.get("source_type")
-                    if st in ("openalex", "crossref", "semantic_scholar"):
+                    if st in ("openalex", "crossref", "semantic_scholar", "pubmed"):
                         s["review_status"] = "scholarly"
                     elif st == "arxiv":
                         s["review_status"] = "preprint"
                     elif "review_status" not in s or not s["review_status"]:
                         s["review_status"] = "unreviewed_web"
                 _live_chunks.extend(free_sources)
-            else:
+            elif not peer_reviewed_only:
                 _live_chunks.append({
                     "tier": "LIVE",
                     "source_type": "duckduckgo",
@@ -767,32 +794,41 @@ async def retrieve_cascade(state: AgentState) -> dict:
             logger.error(f"External multi-source search failed: {e}")
         return _live_chunks
 
-    # Run OKF, RAG, and LIVE concurrently with a strict 12.0-second timeout per tier
-    okf_task = asyncio.wait_for(_fetch_okf(), timeout=12.0)
-    rag_task = asyncio.wait_for(_fetch_rag(), timeout=12.0)
-    live_task = asyncio.wait_for(_fetch_live(), timeout=12.0)
-
-    okf_res, rag_res, live_res = await asyncio.gather(
-        okf_task, rag_task, live_task, return_exceptions=True
-    )
-
-    okf_chunks, okf_paths = ([], [])
-    if not isinstance(okf_res, Exception):
-        okf_chunks, okf_paths = okf_res
+    # Run OKF, RAG, and LIVE concurrently (skip OKF & RAG general notes when Peer-Reviewed Only is active)
+    if peer_reviewed_only:
+        okf_chunks, okf_paths = ([], [])
+        rag_chunks, r_scores = ([], [])
+        try:
+            live_chunks = await asyncio.wait_for(_fetch_live(), timeout=12.0)
+        except Exception as live_err:
+            live_chunks = []
+            logger.warning(f"LIVE tier retrieval error or timeout: {live_err}")
     else:
-        logger.warning(f"OKF tier retrieval error or timeout: {okf_res}")
+        okf_task = asyncio.wait_for(_fetch_okf(), timeout=12.0)
+        rag_task = asyncio.wait_for(_fetch_rag(), timeout=12.0)
+        live_task = asyncio.wait_for(_fetch_live(), timeout=12.0)
 
-    rag_chunks, r_scores = ([], [])
-    if not isinstance(rag_res, Exception):
-        rag_chunks, r_scores = rag_res
-    else:
-        logger.warning(f"RAG tier retrieval error or timeout: {rag_res}")
+        okf_res, rag_res, live_res = await asyncio.gather(
+            okf_task, rag_task, live_task, return_exceptions=True
+        )
 
-    live_chunks = []
-    if not isinstance(live_res, Exception):
-        live_chunks = live_res
-    else:
-        logger.warning(f"LIVE tier retrieval error or timeout: {live_res}")
+        okf_chunks, okf_paths = ([], [])
+        if not isinstance(okf_res, Exception):
+            okf_chunks, okf_paths = okf_res
+        else:
+            logger.warning(f"OKF tier retrieval error or timeout: {okf_res}")
+
+        rag_chunks, r_scores = ([], [])
+        if not isinstance(rag_res, Exception):
+            rag_chunks, r_scores = rag_res
+        else:
+            logger.warning(f"RAG tier retrieval error or timeout: {rag_res}")
+
+        live_chunks = []
+        if not isinstance(live_res, Exception):
+            live_chunks = live_res
+        else:
+            logger.warning(f"LIVE tier retrieval error or timeout: {live_res}")
 
     logger.info(f"[CASCADE] OKF={len(okf_chunks)}, RAG={len(rag_chunks)}, LIVE={len(live_chunks)}")
 
@@ -2316,14 +2352,43 @@ async def run_claim_audit(answer_final: str, chunks: list, tracker: Optional[Any
                 )
             note = f"Audit flagged: {'; '.join(reasons)}."
             
+        evidence = "; ".join(valid_quotes) if valid_quotes else ""
+        # Exact substring alignment in the primary cited source snippet for Click-to-Proof highlighting
+        raw_primary_snippet = cited_sources[0]["snippet"] if cited_sources else ""
+        evidence_quote = ""
+        for q_cand in valid_quotes + ([best_source_sent] if best_source_sent else []):
+            qc = (q_cand or "").strip()
+            if len(qc) < 12 or not raw_primary_snippet:
+                continue
+            if qc in raw_primary_snippet:
+                evidence_quote = qc
+                break
+            m_ci = re.search(re.escape(qc), raw_primary_snippet, flags=re.IGNORECASE)
+            if m_ci:
+                evidence_quote = raw_primary_snippet[m_ci.start():m_ci.end()]
+                break
+        if not evidence_quote and valid_quotes:
+            evidence_quote = valid_quotes[0]
+
+        verdict = (
+            "supported"
+            if status == "supported"
+            else "partial"
+            if status == "partially_supported"
+            else "unverified"
+        )
+
         verified_claims.append({
             "claim_id": idx,
             "text": clean_text,
             "citation_ids": cids,
-            "evidence": evidence,
+            "source_index": cids[0] if cids else None,
+            "evidence": evidence or evidence_quote,
+            "evidence_quote": evidence_quote or evidence,
             "note": note,
             "supported": supported,
             "status": status,
+            "verdict": verdict,
             "coverage": 0.0 if status in ("unsupported", "uncited") else round(coverage, 3),
             "start": start,
             "end": end
@@ -2619,6 +2684,16 @@ async def audit_answer(state: AgentState) -> dict:
                 c["status"] = "audit_incomplete"
 
     updates["audited_claims"] = list(verified_claims)
+    strict_academic = bool(state.get("strict_academic", False))
+    if strict_academic:
+        # In Strict Academic mode, tighten low-coverage partial claims to unsupported/withheld
+        for c in verified_claims:
+            if c.get("status") == "partially_supported" and c.get("coverage", 0.0) < 0.60:
+                c["status"] = "unsupported"
+                c["verdict"] = "unverified"
+                c["supported"] = False
+                c["note"] = f"Strict Academic Mode withheld low-support assertion ({c.get('coverage', 0.0):.0%} < 60%)."
+
     # Post-repair Sentence Deletion: Remove failing sentences (status uncited, unsupported, or quote coverage < 0.30)
     answer_final, verified_claims, removed_claims = delete_claim_spans(answer_final, verified_claims)
     updates["removed_claims"] = removed_claims
@@ -2650,6 +2725,7 @@ async def audit_answer(state: AgentState) -> dict:
     tiers_fired = state.get("tiers_fired", [])
     source_weights = {
         "arxiv": 0.95,
+        "pubmed": 0.94,
         "openalex": 0.92,
         "crossref": 0.92,
         "semantic_scholar": 0.90,
@@ -2888,15 +2964,17 @@ async def expand_to_full_research_paper(
     return expanded_text, claims, confidence
 
 
-def generate_followup_questions(
+def generate_followup_cards(
     query: str,
     answer_final: str,
     claims: Optional[List[Dict[str, Any]]] = None,
     canonical_topic: Optional[str] = None,
-) -> List[str]:
+) -> List[Dict[str, str]]:
     """
-    Generates 3 real, topic-specific follow-up research questions directly grounded in
-    entities, concepts, institutions, and findings present in the synthesized answer & claims.
+    Generates 3 structured, strictly topic-specific follow-up exploration cards tagged by intent:
+      1. deep_dive ('Deep Dive'): mechanisms, proofs, or primary history
+      2. counter_view ('Counter-View'): limitations, debates, or edge cases
+      3. applied ('Applied'): real-world impact, benchmarks, or case studies
     Never plugs section headings into generic templates.
     """
     if not answer_final or not answer_final.strip():
@@ -2933,26 +3011,25 @@ def generate_followup_questions(
             seen_norm.add(pl)
             candidates.append(p)
 
-    # 1. Multi-word capitalized phrases inside sentences (proper nouns, institutions, historical eras, algorithms)
     for m in re.finditer(r'(?<![.!?]\s)\b([A-Z][a-zA-Z0-9-]+(?:\s+(?:of|and|for|the)?\s*[A-Z][a-zA-Z0-9-]+){1,3})\b', prose):
         _add_entity(m.group(1))
-
-    # 2. Acronyms and hyphenated scientific/domain terms
     for m in re.finditer(r'\b([A-Z]{2,}[0-9-]*|[a-zA-Z]+-[a-zA-Z0-9-]+)\b', prose):
         tok = m.group(1)
         if tok.lower() not in {"table", "figure", "section", "aria", "okf", "rag", "live"}:
             _add_entity(tok)
-
-    # 3. Single mid-sentence capitalized proper nouns
     for m in re.finditer(r'(?<=[a-z,]\s)\b([A-Z][a-z]{3,})\b', prose):
         _add_entity(m.group(1))
 
-    # 4. Quantitative / comparative sentences from verified claims for grounded question angles
-    claim_texts = [
-        strip_claim_text(str(c.get("text", "")))
-        for c in (claims or [])
-        if isinstance(c, dict) and c.get("status") in ("supported", "partially_supported") and c.get("text")
-    ]
+    # Mine salient focus phrases from verified claims if entity candidates are sparse
+    if claims and len(candidates) < 3:
+        for c in claims:
+            if isinstance(c, dict) and c.get("status") in ("supported", "partially_supported") and c.get("text"):
+                ct = strip_claim_text(str(c["text"]))
+                words = [w for w in re.findall(r'\b[a-zA-Z0-9-]{4,}\b', ct) if w.lower() not in STOPWORDS and w.lower() not in subject_tokens]
+                if len(words) >= 2:
+                    _add_entity(" ".join(words[:2]))
+                if len(candidates) >= 3:
+                    break
 
     lower_blob = f"{query} {canonical_topic or ''} {prose[:1200]}".lower()
     is_geo_history = any(k in lower_blob for k in (
@@ -2966,75 +3043,45 @@ def generate_followup_questions(
         "algorithm", "complexity", "tree", "graph", "hash", "consensus", "transformer", "neural", "database", "latency"
     ))
 
-    questions: List[str] = []
     subj_label = subject if subject else "this subject"
+    e1 = candidates[0] if len(candidates) >= 1 else None
+    e2 = candidates[1] if len(candidates) >= 2 else e1
+    e3 = candidates[2] if len(candidates) >= 3 else (e2 or e1)
 
-    if len(candidates) >= 1:
-        e1 = candidates[0]
-        if is_geo_history:
-            questions.append(f"How did {e1} shape the historical and institutional development of {subj_label}?")
-        elif is_bio_med:
-            questions.append(f"What molecular mechanisms govern the role of {e1} in {subj_label}?")
-        elif is_cs_math:
-            questions.append(f"How does {e1} affect asymptotic complexity and practical performance in {subj_label}?")
-        else:
-            questions.append(f"What specific evidence explains how {e1} influences {subj_label}?")
+    if is_geo_history:
+        q_deep = f"How did {e1} shape the primary historical and constitutional development of {subj_label}?" if e1 else f"What foundational historical and constitutional reforms shaped {subj_label}?"
+        q_counter = f"What demographic, regional, or economic tensions remain unresolved around {e2} in {subj_label}?" if e2 else f"Which structural limitations and contested narratives surround modern {subj_label}?"
+        q_applied = f"How do contemporary macroeconomic indicators measure the real-world impact of {e3} in {subj_label}?" if e3 else f"What empirical indicators reflect {subj_label}'s institutional impact today?"
+    elif is_bio_med:
+        q_deep = f"What causal molecular mechanisms govern {e1} within {subj_label}?" if e1 else f"What primary cellular and molecular mechanisms govern {subj_label}?"
+        q_counter = f"What off-target effects, edge cases, or experimental failures limit {e2} in {subj_label}?" if e2 else f"What methodological limitations and adverse edge cases constrain {subj_label}?"
+        q_applied = f"What clinical trials or benchmark validation studies measure real-world outcomes for {e3}?" if e3 else f"How do current translational and clinical benchmarks validate {subj_label}?"
+    elif is_cs_math:
+        q_deep = f"What formal invariants, proofs, or mechanisms explain how {e1} operates in {subj_label}?" if e1 else f"What formal theoretical proofs and structural invariants underpin {subj_label}?"
+        q_counter = f"Under what adversarial workloads or boundary conditions does {e2} degrade in {subj_label}?" if e2 else f"What complexity trade-offs and edge-case failure modes limit {subj_label}?"
+        q_applied = f"How do production benchmarks and system deployments evaluate {e3} in {subj_label}?" if e3 else f"What empirical production benchmarks quantify the impact of {subj_label}?"
+    else:
+        q_deep = f"What underlying mechanisms or primary history explain {e1} within {subj_label}?" if e1 else f"What core mechanisms and primary evidence underpin {subj_label}?"
+        q_counter = f"What empirical caveats, edge cases, or scholarly debates challenge {e2} in {subj_label}?" if e2 else f"What methodological constraints or competing interpretations exist around {subj_label}?"
+        q_applied = f"What measurable real-world case studies or benchmarks demonstrate {e3} in {subj_label}?" if e3 else f"What documented case studies and empirical benchmarks quantify {subj_label}'s impact?"
 
-    if len(candidates) >= 2:
-        e2 = candidates[1]
-        if is_geo_history:
-            questions.append(f"What primary economic or demographic factors link {e2} to contemporary {subj_label}?")
-        elif is_bio_med:
-            questions.append(f"What experimental limitations or off-target effects are associated with {e2}?")
-        elif is_cs_math:
-            questions.append(f"What trade-offs distinguish {e2} from alternative approaches in {subj_label}?")
-        else:
-            questions.append(f"How do empirical measurements characterize {e2} within {subj_label}?")
+    return [
+        {"intent": "deep_dive", "label": "Deep Dive", "question": q_deep},
+        {"intent": "counter_view", "label": "Counter-View", "question": q_counter},
+        {"intent": "applied", "label": "Applied", "question": q_applied},
+    ]
 
-    if len(candidates) >= 3:
-        e3 = candidates[2]
-        if is_geo_history:
-            questions.append(f"How have recent policy or structural shifts impacted {e3} in {subj_label}?")
-        elif is_bio_med:
-            questions.append(f"How do current delivery or validation studies address {e3}?")
-        elif is_cs_math:
-            questions.append(f"Under what workload constraints does {e3} outperform baseline methods?")
-        else:
-            questions.append(f"What comparative evidence evaluates {e3} across different contexts of {subj_label}?")
 
-    # Fill any remaining slots up to 3 using grounded claim topics (never section headings)
-    if len(questions) < 3 and claim_texts:
-        for ct in claim_texts:
-            if len(questions) >= 3:
-                break
-            words = [w for w in re.findall(r'\b[a-zA-Z0-9-]{4,}\b', ct) if w.lower() not in STOPWORDS and w.lower() not in subject_tokens]
-            if len(words) >= 2:
-                focus = " ".join(words[:3])
-                q_cand = f"What primary sources further quantify {focus} in {subj_label}?"
-                if q_cand not in questions:
-                    questions.append(q_cand)
-
-    if len(questions) < 3:
-        fallbacks = (
-            [
-                f"What historical turning points most strongly shaped {subj_label}'s modern governance?",
-                f"Which demographic and macroeconomic indicators define {subj_label}'s current trajectory?",
-                f"How do regional and international factors influence {subj_label} today?",
-            ]
-            if is_geo_history
-            else [
-                f"What quantitative evidence supports the primary findings on {subj_label}?",
-                f"What key constraints or trade-offs emerge in real-world applications of {subj_label}?",
-                f"How have recent peer-reviewed studies expanded our understanding of {subj_label}?",
-            ]
-        )
-        for fb in fallbacks:
-            if len(questions) >= 3:
-                break
-            if fb not in questions:
-                questions.append(fb)
-
-    return questions[:3]
+def generate_followup_questions(
+    query: str,
+    answer_final: str,
+    claims: Optional[List[Dict[str, Any]]] = None,
+    canonical_topic: Optional[str] = None,
+) -> List[str]:
+    """
+    Backward-compatible string-list wrapper around generate_followup_cards().
+    """
+    return [c["question"] for c in generate_followup_cards(query, answer_final, claims, canonical_topic)]
 
 
 def is_identity_query(query: str) -> bool:

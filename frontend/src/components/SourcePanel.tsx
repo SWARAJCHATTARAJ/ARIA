@@ -12,12 +12,22 @@ import {
   ChevronDown,
   Loader2,
   BarChart2,
+  FileCode2,
 } from 'lucide-react';
-import { Citation, MessageTelemetry, AuditClaim, ClaimStatus } from '../types';
+import { Citation, CitationStyle, MessageTelemetry, AuditClaim, ClaimStatus } from '../types';
 import { saveOrDownloadFile, showDownloadToast } from '../utils/nativeDownload';
 import { exportPdfApi, ExportPdfPayload } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useSettingsStore } from '../context/SettingsContext';
 import { sanitizeHref } from './MarkdownRenderer';
+import {
+  exportAllBibtex,
+  exportAllRis,
+  exportLatexArticle,
+  formatCitation,
+  resolveCitationUrl,
+} from '../utils/citations';
+import { triggerLightHaptic } from '../utils/haptics';
 
 interface SourcePanelProps {
   onClose: () => void;
@@ -25,7 +35,8 @@ interface SourcePanelProps {
   citations?: Citation[];
   telemetry?: MessageTelemetry;
   selectedCitationId?: number | null;
-  onSelectCitation?: (id: number | null) => void;
+  highlightedEvidenceQuote?: string | null;
+  onSelectCitation?: (id: number | null, evidenceQuote?: string | null) => void;
   isMockActive?: boolean;
   onExportPdf?: () => void;
   hasError?: boolean;
@@ -35,12 +46,43 @@ type InspectorTab = 'sources' | 'audit' | 'figures';
 
 function formatSourceAuthors(authors: Citation['authors'], venue?: string | null): string {
   if (Array.isArray(authors)) {
-    const clean = authors.map((a) => String(a).trim()).filter(Boolean);
+    const clean = authors.map((a) => String(a).trim()).filter((a) => a && a.toLowerCase() !== 'unknown');
     if (clean.length > 0) return clean.slice(0, 3).join(', ') + (clean.length > 3 ? ' et al.' : '');
   } else if (typeof authors === 'string' && authors.trim() && authors.trim().toLowerCase() !== 'unknown') {
     return authors.trim();
   }
   return venue?.trim() || 'Editorial Reference';
+}
+
+function renderHighlightedSnippet(snippet: string, quote?: string | null, pulseActive?: boolean): React.ReactNode {
+  if (!quote || !quote.trim()) return snippet;
+  const cleanQuote = quote.trim();
+  const idx = snippet.toLowerCase().indexOf(cleanQuote.toLowerCase());
+  if (idx === -1) {
+    // Fallback: match the first substantial clause (>= 24 chars) inside snippet
+    const clause = cleanQuote.slice(0, Math.min(cleanQuote.length, 64));
+    const cIdx = clause.length >= 20 ? snippet.toLowerCase().indexOf(clause.toLowerCase()) : -1;
+    if (cIdx === -1) return snippet;
+    const endIdx = Math.min(snippet.length, cIdx + cleanQuote.length);
+    return (
+      <>
+        {snippet.slice(0, cIdx)}
+        <mark className={pulseActive ? 'evidence-quote-pulse' : 'bg-[#60A5FA]/15 text-inherit rounded px-0.5'}>
+          {snippet.slice(cIdx, endIdx)}
+        </mark>
+        {snippet.slice(endIdx)}
+      </>
+    );
+  }
+  return (
+    <>
+      {snippet.slice(0, idx)}
+      <mark className={pulseActive ? 'evidence-quote-pulse' : 'bg-[#60A5FA]/15 text-inherit rounded px-0.5'}>
+        {snippet.slice(idx, idx + cleanQuote.length)}
+      </mark>
+      {snippet.slice(idx + cleanQuote.length)}
+    </>
+  );
 }
 
 export default function SourcePanel({
@@ -49,21 +91,31 @@ export default function SourcePanel({
   citations = [],
   telemetry,
   selectedCitationId = null,
+  highlightedEvidenceQuote = null,
   onSelectCitation,
   onExportPdf,
   hasError = false,
 }: SourcePanelProps) {
   const { accessToken } = useAuth();
+  const { settings } = useSettingsStore();
   const cardRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const [activeTab, setActiveTab] = useState<InspectorTab>('sources');
+  const [citationStyle, setCitationStyle] = useState<CitationStyle>(settings.defaultCitationStyle || 'apa7');
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [copiedAllBib, setCopiedAllBib] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingBib, setIsExportingBib] = useState(false);
+  const [isExportingTex, setIsExportingTex] = useState(false);
+  const [isExportingRis, setIsExportingRis] = useState(false);
   const [tierFilter, setTierFilter] = useState<'ALL' | 'OKF' | 'RAG' | 'LIVE'>('ALL');
   const [expandedSnippets, setExpandedSnippets] = useState<Record<number, boolean>>({});
+  const [pulseCitationId, setPulseCitationId] = useState<number | null>(null);
   const [failedFigures, setFailedFigures] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setCitationStyle(settings.defaultCitationStyle || 'apa7');
+  }, [settings.defaultCitationStyle]);
 
   const citationMap = useMemo(() => {
     const map = new Map<number, Citation>();
@@ -76,91 +128,6 @@ export default function SourcePanel({
     return citationMap.get(selectedCitationId) || null;
   }, [selectedCitationId, citationMap]);
 
-  useEffect(() => {
-    if (selectedCitationId !== null) {
-      setActiveTab('sources');
-      window.setTimeout(() => {
-        cardRefs.current[selectedCitationId]?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest',
-        });
-      }, 60);
-    }
-  }, [selectedCitationId]);
-
-  const handleCopyBibtex = (cit: Citation, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
-    const key = (authorsStr.split(' ')[0] || 'source').replace(/[^a-zA-Z]/g, '') + (cit.year || '2026');
-    const bib = `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${authorsStr || cit.venue || 'Editorial Source'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
-    navigator.clipboard.writeText(bib);
-    setCopiedId(cit.id);
-    window.setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handleDownloadAllBibtex = async () => {
-    if (!citations || citations.length === 0) {
-      showDownloadToast('No citations available to export.', true);
-      return;
-    }
-    try {
-      setIsExportingBib(true);
-      const bibContent = citations
-        .map((cit) => {
-          const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
-          const key = (authorsStr.split(' ')[0] || 'source').replace(/[^a-zA-Z]/g, '') + (cit.year || '2026');
-          return `@article{${key},\n  title={${cit.title || 'Untitled'}},\n  author={${authorsStr || cit.venue || 'Editorial Source'}},\n  journal={${cit.venue || 'Web'}},\n  year={${cit.year || '2026'}}${cit.doi ? `,\n  doi={${cit.doi}}` : ''}${cit.url ? `,\n  url={${cit.url}}` : ''}\n}`;
-        })
-        .join('\n\n');
-
-      const blob = new Blob([bibContent], { type: 'text/plain;charset=utf-8' });
-      await saveOrDownloadFile(blob, 'aria-research-citations.bib', 'text/plain');
-      setCopiedAllBib(true);
-      window.setTimeout(() => setCopiedAllBib(false), 2000);
-    } catch (err: any) {
-      console.error('Inspector BibTeX export error:', err);
-      showDownloadToast(`BibTeX Export Error: ${err?.message || 'Export error'}`, true);
-    } finally {
-      setIsExportingBib(false);
-    }
-  };
-
-  const handleExportPdf = async () => {
-    if (onExportPdf) {
-      onExportPdf();
-      return;
-    }
-    if (!citations || citations.length === 0) {
-      showDownloadToast('No citations available to export.', true);
-      return;
-    }
-    try {
-      setIsExportingPdf(true);
-      const queryLabel = telemetry?.query || 'Research Overview';
-      const payload: ExportPdfPayload = {
-        query: queryLabel,
-        answer_final: telemetry?.audit?.answer_final || 'Verified Research Synthesis',
-        confidence: telemetry?.audit?.entailment_score ?? telemetry?.audit?.confidence ?? 0.85,
-        tiers: telemetry?.retrieval?.tiers || ['LIVE'],
-        claims: telemetry?.audit?.claims || [],
-        sources: citations,
-        figures: telemetry?.figures || [],
-        chart: telemetry?.chart || null,
-        full_ledger: true,
-        clickable_urls: true,
-      };
-
-      const blob = await exportPdfApi(payload, 90000, accessToken || undefined);
-      const safeName = queryLabel.trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_') || 'aria-research-paper';
-      await saveOrDownloadFile(blob, `${safeName}.pdf`, 'application/pdf');
-    } catch (err: any) {
-      console.error('Inspector PDF export error:', err);
-      showDownloadToast(`PDF Export Error: ${err?.message || 'Network error'}`, true);
-    } finally {
-      setIsExportingPdf(false);
-    }
-  };
-
   const stage = telemetry?.stage;
   const audit = telemetry?.audit;
   const rawConfidence =
@@ -169,15 +136,13 @@ export default function SourcePanel({
     (telemetry as any)?.entailment_score ??
     (telemetry as any)?.audit_confidence;
   const rawClaims = audit?.claims ?? (telemetry as any)?.audit_claims ?? [];
-  const verificationStatus =
-    audit?.verification_status ?? (telemetry as any)?.verification_status;
+  const verificationStatus = audit?.verification_status ?? (telemetry as any)?.verification_status;
 
   const hasAuditResults =
     (typeof rawConfidence === 'number' && rawConfidence > 0) ||
     (Array.isArray(rawClaims) && rawClaims.length > 0) ||
     Boolean(audit?.answer_final);
   const isActualError = hasError && !hasAuditResults && citations.length === 0;
-  // Never stay stuck on Pending once stage is 'complete' or audit results have landed
   const isPendingStage =
     !isActualError &&
     !hasAuditResults &&
@@ -209,6 +174,132 @@ export default function SourcePanel({
       return claim;
     });
   }, [rawClaims]);
+
+  // Lookup best supporting quote per citation ID for Click-to-Proof highlighting
+  const quoteByCitationId = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const c of normalizedClaims) {
+      const q = c.evidence_quote || c.evidence;
+      if (!q) continue;
+      for (const cid of c.citation_ids || []) {
+        if (!map.has(cid)) map.set(cid, q);
+      }
+    }
+    return map;
+  }, [normalizedClaims]);
+
+  // Click-to-Proof sync: switch to Sources tab, smooth scroll, expand excerpt, pulse quote for 1.6s
+  useEffect(() => {
+    if (selectedCitationId === null) return;
+    setActiveTab('sources');
+    setExpandedSnippets((prev) => ({ ...prev, [selectedCitationId]: true }));
+    setPulseCitationId(selectedCitationId);
+
+    const scrollTimer = window.setTimeout(() => {
+      cardRefs.current[selectedCitationId]?.scrollIntoView({
+        behavior: settings.reducedMotion ? 'auto' : 'smooth',
+        block: 'center',
+      });
+    }, 65);
+    const pulseTimer = window.setTimeout(() => {
+      setPulseCitationId((curr) => (curr === selectedCitationId ? null : curr));
+    }, 1650);
+
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(pulseTimer);
+    };
+  }, [selectedCitationId, highlightedEvidenceQuote, settings.reducedMotion]);
+
+  const handleCopyFormatted = (cit: Citation, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const formatted = formatCitation(cit, citationStyle, cit.id + 1);
+    navigator.clipboard.writeText(formatted);
+    triggerLightHaptic(settings.nativeHaptics);
+    setCopiedId(cit.id);
+    window.setTimeout(() => setCopiedId(null), 1800);
+  };
+
+  const handleDownloadPackFile = async (ext: 'bib' | 'tex' | 'ris') => {
+    if (!citations || citations.length === 0) {
+      showDownloadToast('No citations available to export.', true);
+      return;
+    }
+    const baseName = (telemetry?.query || 'aria-research').trim().slice(0, 28).replace(/[^a-zA-Z0-9_-]/g, '_') || 'aria-research';
+    try {
+      if (ext === 'bib') {
+        setIsExportingBib(true);
+        const content = exportAllBibtex(citations);
+        await saveOrDownloadFile(new Blob([content], { type: 'text/plain;charset=utf-8' }), `${baseName}.bib`, 'text/plain', {
+          autoOpen: settings.autoOpenAfterExport,
+        });
+        setCopiedAllBib(true);
+        window.setTimeout(() => setCopiedAllBib(false), 1800);
+      } else if (ext === 'ris') {
+        setIsExportingRis(true);
+        const content = exportAllRis(citations);
+        await saveOrDownloadFile(new Blob([content], { type: 'application/x-research-info-systems;charset=utf-8' }), `${baseName}.ris`, 'application/x-research-info-systems', {
+          autoOpen: settings.autoOpenAfterExport,
+        });
+      } else {
+        setIsExportingTex(true);
+        const texContent = exportLatexArticle({
+          query: telemetry?.query || 'Research Synthesis',
+          content: telemetry?.audit?.answer_final || '',
+          citations,
+        });
+        await saveOrDownloadFile(new Blob([texContent], { type: 'application/x-tex;charset=utf-8' }), `${baseName}.tex`, 'application/x-tex', {
+          autoOpen: settings.autoOpenAfterExport,
+        });
+      }
+      triggerLightHaptic(settings.nativeHaptics);
+    } catch (err: any) {
+      showDownloadToast(`.${ext.toUpperCase()} Export Error: ${err?.message || 'Export error'}`, true);
+    } finally {
+      setIsExportingBib(false);
+      setIsExportingRis(false);
+      setIsExportingTex(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (onExportPdf) {
+      onExportPdf();
+      return;
+    }
+    if (!citations || citations.length === 0) {
+      showDownloadToast('No citations available to export.', true);
+      return;
+    }
+    try {
+      setIsExportingPdf(true);
+      const queryLabel = telemetry?.query || 'Research Overview';
+      const payload: ExportPdfPayload = {
+        query: queryLabel,
+        answer_final: telemetry?.audit?.answer_final || 'Verified Research Synthesis',
+        confidence: telemetry?.audit?.entailment_score ?? telemetry?.audit?.confidence ?? 0.85,
+        tiers: telemetry?.retrieval?.tiers || ['LIVE'],
+        claims: telemetry?.audit?.claims || [],
+        sources: citations,
+        figures: telemetry?.figures || [],
+        chart: telemetry?.chart || null,
+        full_ledger: settings.includeLedgerInPdf,
+        clickable_urls: true,
+        pdf_style: settings.pdfLayoutStyle,
+      };
+
+      const blob = await exportPdfApi(payload, 90000, accessToken || undefined);
+      const safeName = queryLabel.trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_') || 'aria-research-paper';
+      await saveOrDownloadFile(blob, `${safeName}.pdf`, 'application/pdf', {
+        autoOpen: settings.autoOpenAfterExport,
+      });
+      triggerLightHaptic(settings.nativeHaptics);
+    } catch (err: any) {
+      showDownloadToast(`PDF Export Error: ${err?.message || 'Network error'}`, true);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
 
   const claimsSupportedCount = normalizedClaims.filter((c) => c.status === 'supported').length;
   const claimsTotalCount = normalizedClaims.length;
@@ -280,59 +371,70 @@ export default function SourcePanel({
   return (
     <div className="h-full flex flex-col bg-white dark:bg-[#111115] text-slate-900 dark:text-[#EDEDED] select-text overflow-hidden">
       {/* Single-Row Aligned Header */}
-      <div className="px-3.5 py-2.5 border-b border-slate-200 dark:border-white/[0.07] flex items-center justify-between gap-2 shrink-0 bg-slate-50 dark:bg-[#0C0C0F] pt-[max(0.625rem,env(safe-area-inset-top,0px))]">
+      <div className="px-3 py-2.5 border-b border-slate-200 dark:border-white/[0.07] flex items-center justify-between gap-1.5 shrink-0 bg-slate-50 dark:bg-[#0C0C0F] pt-[max(0.625rem,env(safe-area-inset-top,0px))]">
         <div className="flex items-center gap-1.5 min-w-0">
-          <BookOpen size={14} className="text-[#60A5FA] shrink-0" />
-          <h2 className="text-[12.5px] font-semibold text-slate-900 dark:text-[#EDEDED] tracking-[-0.02em] font-mono whitespace-nowrap">
-            Research Inspector
+          <BookOpen size={14} className="text-[var(--aria-accent)] shrink-0" />
+          <h2 className="text-[12px] font-semibold text-slate-900 dark:text-[#EDEDED] tracking-[-0.02em] font-mono whitespace-nowrap">
+            Inspector
           </h2>
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-[#18181E] border border-slate-200 dark:border-white/[0.07] text-slate-600 dark:text-[#8B8B8E] tabular-nums whitespace-nowrap shrink-0">
             {citations.length} {citations.length === 1 ? 'Source' : 'Sources'}
           </span>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0 whitespace-nowrap">
+        <div className="flex items-center gap-0.5 shrink-0 whitespace-nowrap">
           {citations.length > 0 && (
-            <button
-              type="button"
-              onClick={handleDownloadAllBibtex}
-              disabled={isExportingBib}
-              className="px-1.5 py-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.97] transition-all text-[10.5px] font-mono inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
-              title="Download all citations (.bib)"
-            >
-              {isExportingBib ? (
-                <Loader2 size={12} className="animate-spin text-[#60A5FA]" />
-              ) : copiedAllBib ? (
-                <Check size={12} className="text-[#60A5FA]" />
-              ) : (
-                <Download size={12} />
-              )}
-              <span>.BIB</span>
-            </button>
-          )}
+            <>
+              <button
+                type="button"
+                onClick={() => void handleDownloadPackFile('bib')}
+                disabled={isExportingBib}
+                className="px-1.5 py-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-all text-[10px] font-mono inline-flex items-center gap-0.5 cursor-pointer"
+                title="Download BibTeX (.bib)"
+              >
+                {copiedAllBib ? <Check size={11} className="text-emerald-400 morph-pop" /> : <Download size={11} />}
+                <span>.BIB</span>
+              </button>
 
-          {citations.length > 0 && (
-            <button
-              type="button"
-              onClick={handleExportPdf}
-              disabled={isExportingPdf}
-              className="px-1.5 py-1 text-slate-600 hover:text-[#60A5FA] dark:text-[#8B8B8E] dark:hover:text-[#60A5FA] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.97] transition-all text-[10.5px] font-mono inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
-              title="Generate publication PDF"
-            >
-              {isExportingPdf ? (
-                <Loader2 size={12} className="animate-spin text-[#60A5FA]" />
-              ) : (
-                <FileText size={12} />
-              )}
-              <span>PDF</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => void handleDownloadPackFile('ris')}
+                disabled={isExportingRis}
+                className="px-1.5 py-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-all text-[10px] font-mono inline-flex items-center cursor-pointer"
+                title="Export RIS (Zotero / Mendeley)"
+              >
+                <span>.RIS</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleDownloadPackFile('tex')}
+                disabled={isExportingTex}
+                className="px-1.5 py-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-all text-[10px] font-mono inline-flex items-center gap-0.5 cursor-pointer"
+                title="Export Overleaf-ready LaTeX (.tex)"
+              >
+                <FileCode2 size={11} />
+                <span>.TEX</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                disabled={isExportingPdf}
+                className="px-1.5 py-1 text-slate-600 hover:text-[var(--aria-accent)] dark:text-[#8B8B8E] dark:hover:text-[var(--aria-accent)] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-all text-[10px] font-mono inline-flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
+                title="Export PDF report"
+              >
+                {isExportingPdf ? <Loader2 size={11} className="animate-spin text-[var(--aria-accent)]" /> : <FileText size={11} />}
+                <span>PDF</span>
+              </button>
+            </>
           )}
 
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.97] transition-all cursor-pointer"
-            title="Close Inspector (Ctrl+] / ⌘])"
+            className="p-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-all cursor-pointer"
+            title="Close Inspector (Esc)"
             aria-label="Close Inspector"
           >
             <X size={15} />
@@ -367,7 +469,7 @@ export default function SourcePanel({
                     <span
                       className={`text-[9.5px] px-1 rounded tabular-nums ${
                         isActive
-                          ? 'bg-[#60A5FA]/15 text-[#2563EB] dark:text-[#60A5FA]'
+                          ? 'bg-[var(--aria-accent)]/15 text-[var(--aria-accent)]'
                           : 'bg-black/5 dark:bg-white/[0.05] text-slate-500 dark:text-[#71717A]'
                       }`}
                     >
@@ -388,7 +490,7 @@ export default function SourcePanel({
             <ShieldCheck size={28} className="text-slate-400 dark:text-[#71717A] stroke-[1.5]" />
             <p className="text-[13px] font-medium text-slate-900 dark:text-[#EDEDED]">Inspector Standby</p>
             <p className="text-[11px] text-slate-500 dark:text-[#71717A] max-w-xs font-mono leading-relaxed">
-              Submit any research inquiry to inspect retrieved primary citations, claim entailment audits, and publication figures.
+              Submit any inquiry or click an inline citation [n] to inspect exact supporting proof sentences.
             </p>
           </div>
         ) : (
@@ -396,72 +498,88 @@ export default function SourcePanel({
             {/* TAB 1: SOURCES */}
             {activeTab === 'sources' && (
               <div className="space-y-3">
-                {selectedCitation && (
-                  <div className="p-3 bg-slate-50 dark:bg-[#09090B] border border-blue-400/50 dark:border-[#60A5FA]/40 rounded-[8px] space-y-2 ring-1 ring-blue-400/20 dark:ring-[#60A5FA]/15 animate-fade-slide">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-white/[0.05]">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-[#60A5FA] font-semibold">
-                          Focused Source
-                        </span>
-                        <span className="text-[11px] font-mono font-bold text-slate-900 dark:text-[#EDEDED] tabular-nums">
-                          [{selectedCitation.id + 1}]
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => onSelectCitation && onSelectCitation(null)}
-                        className="text-[10px] font-mono text-slate-500 hover:text-slate-900 dark:text-[#71717A] dark:hover:text-[#EDEDED] cursor-pointer"
-                      >
-                        Clear
-                      </button>
+                {/* Quick Citation Style Switcher + Tier Filter */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-[#71717A]">
+                      Copy Style
+                    </span>
+                    <div className="flex items-center gap-1 text-[10px] font-mono">
+                      {(
+                        [
+                          { id: 'apa7', label: 'APA 7' },
+                          { id: 'ieee', label: 'IEEE' },
+                          { id: 'chicago', label: 'Chicago' },
+                          { id: 'bibtex', label: 'BibTeX' },
+                        ] as Array<{ id: CitationStyle; label: string }>
+                      ).map((st) => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setCitationStyle(st.id)}
+                          className={`px-1.5 py-0.5 rounded-[4px] border transition-colors cursor-pointer ${
+                            citationStyle === st.id
+                              ? 'border-[var(--aria-accent)] text-[var(--aria-accent)] bg-[var(--aria-accent)]/10 font-semibold'
+                              : 'border-slate-200 dark:border-white/[0.07] text-slate-500 dark:text-[#71717A] hover:text-slate-900 dark:hover:text-[#EDEDED]'
+                          }`}
+                        >
+                          {st.label}
+                        </button>
+                      ))}
                     </div>
-                    <p className="text-[12px] font-medium text-slate-900 dark:text-[#EDEDED] leading-snug">
-                      {selectedCitation.title}
-                    </p>
-                    {selectedCitation.snippet && (
-                      <div className="p-2.5 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05] rounded-[5px] text-[11.5px] font-sans text-slate-800 dark:text-zinc-300 leading-relaxed border-l-2 border-l-[#60A5FA]">
-                        {selectedCitation.snippet}
-                      </div>
-                    )}
                   </div>
-                )}
 
-                {/* Tier Filter Header */}
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[10.5px] font-mono font-semibold text-slate-600 dark:text-[#8B8B8E] uppercase tracking-wider">
-                    Primary Citations
-                  </h3>
-                  <div className="flex items-center gap-1 text-[10px] font-mono">
-                    {(['ALL', 'OKF', 'RAG', 'LIVE'] as const).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setTierFilter(t)}
-                        className={`px-1.5 py-0.5 rounded-[4px] border transition-all cursor-pointer ${
-                          tierFilter === t
-                            ? 'border-[#60A5FA] text-[#60A5FA] bg-[#60A5FA]/10 font-semibold'
-                            : 'border-slate-200 dark:border-white/[0.07] text-slate-600 dark:text-[#71717A] hover:text-slate-900 dark:hover:text-[#EDEDED]'
-                        }`}
-                      >
-                        {t}
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[10.5px] font-mono font-semibold text-slate-600 dark:text-[#8B8B8E] uppercase tracking-wider">
+                      Primary Citations
+                    </h3>
+                    <div className="flex items-center gap-1 text-[10px] font-mono">
+                      {(['ALL', 'OKF', 'RAG', 'LIVE'] as const).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setTierFilter(t)}
+                          className={`px-1.5 py-0.5 rounded-[4px] border transition-all cursor-pointer ${
+                            tierFilter === t
+                              ? 'border-[var(--aria-accent)] text-[var(--aria-accent)] bg-[var(--aria-accent)]/10 font-semibold'
+                              : 'border-slate-200 dark:border-white/[0.07] text-slate-600 dark:text-[#71717A] hover:text-slate-900 dark:hover:text-[#EDEDED]'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
+
+                {/* Focused Proof Banner when user clicks inline [n] */}
+                {selectedCitation && (
+                  <div className="p-2.5 bg-slate-50 dark:bg-[#09090B] border border-[var(--aria-accent)]/40 rounded-[7px] flex items-center justify-between gap-2 text-[10.5px] font-mono animate-fade-slide">
+                    <span className="text-[var(--aria-accent)] font-semibold truncate">
+                      Synced proof for Source [{selectedCitation.id + 1}]
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onSelectCitation && onSelectCitation(null, null)}
+                      className="text-slate-500 hover:text-slate-900 dark:text-[#71717A] dark:hover:text-[#EDEDED] cursor-pointer shrink-0"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
 
                 {/* Source Cards */}
                 <div className="space-y-2.5">
                   {filteredCitations.map((cit, idx) => {
                     const isSelected = selectedCitationId === cit.id;
                     const isExpanded = Boolean(expandedSnippets[cit.id]);
+                    const isPulsing = pulseCitationId === cit.id;
+                    const activeQuote = isSelected
+                      ? highlightedEvidenceQuote || quoteByCitationId.get(cit.id)
+                      : quoteByCitationId.get(cit.id);
                     const tierColor =
                       cit.tier === 'OKF' ? '#60A5FA' : cit.tier === 'RAG' ? '#A78BFA' : '#F59E0B';
-                    const rawUrl = cit.doi
-                      ? cit.doi.startsWith('http')
-                        ? cit.doi
-                        : `https://doi.org/${cit.doi}`
-                      : cit.url || (cit.arxiv_id ? `https://arxiv.org/abs/${cit.arxiv_id}` : '');
-                    const targetUrl = sanitizeHref(rawUrl);
+                    const targetUrl = sanitizeHref(resolveCitationUrl(cit));
                     const authorDisplay = formatSourceAuthors(cit.authors, cit.venue);
                     const showVenueSeparately = cit.venue && !authorDisplay.includes(cit.venue);
 
@@ -470,11 +588,11 @@ export default function SourcePanel({
                         key={cit.id}
                         id={`citation-card-${cit.id}`}
                         ref={(el) => (cardRefs.current[cit.id] = el)}
-                        onClick={() => onSelectCitation && onSelectCitation(cit.id)}
+                        onClick={() => onSelectCitation && onSelectCitation(cit.id, quoteByCitationId.get(cit.id))}
                         style={{ ['--stagger-i' as any]: idx }}
-                        className={`stagger-card p-3 bg-slate-50/70 dark:bg-[#09090B] border rounded-[8px] space-y-2 cursor-pointer transition-all ${
+                        className={`stagger-card p-3 bg-slate-50/70 dark:bg-[#09090B] border rounded-[8px] space-y-2 cursor-pointer transition-all duration-200 ${
                           isSelected
-                            ? 'border-[#60A5FA] ring-1 ring-[#60A5FA]/20'
+                            ? 'border-[var(--aria-accent)] ring-1 ring-[var(--aria-accent)]/25'
                             : 'border-slate-200 dark:border-white/[0.07] hover:border-slate-300 dark:hover:border-white/[0.15]'
                         }`}
                       >
@@ -503,11 +621,21 @@ export default function SourcePanel({
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
-                              onClick={(e) => handleCopyBibtex(cit, e)}
-                              className="p-1 text-slate-500 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded hover:bg-slate-200 dark:hover:bg-[#18181E] transition-all"
-                              title="Copy BibTeX citation"
+                              onClick={(e) => handleCopyFormatted(cit, e)}
+                              className="px-1.5 py-0.5 text-[10px] font-mono text-slate-500 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded hover:bg-slate-200 dark:hover:bg-[#18181E] transition-all inline-flex items-center gap-1 cursor-pointer"
+                              title={`Copy ${citationStyle.toUpperCase()} citation`}
                             >
-                              {copiedId === cit.id ? <Check size={11} className="text-[#60A5FA]" /> : <Copy size={11} />}
+                              {copiedId === cit.id ? (
+                                <>
+                                  <Check size={10} className="text-emerald-400 morph-pop" />
+                                  <span className="text-emerald-400">Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={10} />
+                                  <span>{citationStyle.toUpperCase()}</span>
+                                </>
+                              )}
                             </button>
                             {targetUrl && (
                               <a
@@ -515,7 +643,7 @@ export default function SourcePanel({
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
-                                className="p-1 text-slate-500 hover:text-[#60A5FA] dark:text-[#8B8B8E] dark:hover:text-[#60A5FA] rounded hover:bg-slate-200 dark:hover:bg-[#18181E] transition-all"
+                                className="p-1 text-slate-500 hover:text-[var(--aria-accent)] dark:text-[#8B8B8E] dark:hover:text-[var(--aria-accent)] rounded hover:bg-slate-200 dark:hover:bg-[#18181E] transition-all"
                                 title="Open source URL"
                               >
                                 <ExternalLink size={11} />
@@ -537,11 +665,11 @@ export default function SourcePanel({
                         {cit.snippet && (
                           <div className="space-y-1">
                             <div
-                              className={`p-2.5 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05] rounded-[6px] text-[11.5px] font-sans text-slate-700 dark:text-[#A1A1AA] leading-[1.5] border-l-2 border-l-[#60A5FA]/40 ${
+                              className={`p-2.5 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05] rounded-[6px] text-[11.5px] font-sans text-slate-700 dark:text-[#A1A1AA] leading-[1.55] border-l-2 border-l-[var(--aria-accent)]/50 ${
                                 isExpanded ? '' : 'line-clamp-3'
                               }`}
                             >
-                              {cit.snippet}
+                              {renderHighlightedSnippet(cit.snippet, activeQuote, isPulsing)}
                             </div>
                             {cit.snippet.length > 160 && (
                               <button
@@ -550,7 +678,7 @@ export default function SourcePanel({
                                   e.stopPropagation();
                                   setExpandedSnippets((prev) => ({ ...prev, [cit.id]: !prev[cit.id] }));
                                 }}
-                                className="inline-flex items-center gap-1 text-[10px] font-mono text-[#60A5FA] hover:underline cursor-pointer"
+                                className="inline-flex items-center gap-1 text-[10px] font-mono text-[var(--aria-accent)] hover:underline cursor-pointer"
                               >
                                 <span>{isExpanded ? 'Show less' : 'Read excerpt'}</span>
                                 <ChevronDown size={10} className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
@@ -568,17 +696,14 @@ export default function SourcePanel({
             {/* TAB 2: AUDIT */}
             {activeTab === 'audit' && (
               <div className="space-y-4">
-                {/* Verification Summary Card */}
                 <div className="p-3.5 bg-slate-50 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.07] rounded-[8px] space-y-2.5">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/[0.05] text-[11.5px] font-mono">
                     <span className="text-slate-600 dark:text-[#8B8B8E]">Retrieval Architecture</span>
-                    <span className="text-[#60A5FA] font-semibold whitespace-nowrap">Tri-Tier Cascade</span>
+                    <span className="text-[var(--aria-accent)] font-semibold whitespace-nowrap">Tri-Tier Cascade</span>
                   </div>
                   <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/[0.05] text-[11.5px] font-mono">
                     <span className="text-slate-600 dark:text-[#8B8B8E]">Claim Verification</span>
-                    <span className={`tabular-nums ${claimVerificationClass}`}>
-                      {claimVerificationText}
-                    </span>
+                    <span className={`tabular-nums ${claimVerificationClass}`}>{claimVerificationText}</span>
                   </div>
                   <div className="flex items-center justify-between text-[11.5px] font-mono">
                     <span className="text-slate-600 dark:text-[#8B8B8E]">Deterministic Entailment</span>
@@ -593,14 +718,11 @@ export default function SourcePanel({
                           />
                         </div>
                       )}
-                      <span className={entailmentScoreClass}>
-                        {entailmentScoreText}
-                      </span>
+                      <span className={entailmentScoreClass}>{entailmentScoreText}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Interactive Claim-by-Claim Entailment List */}
                 {normalizedClaims.length > 0 ? (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -634,13 +756,11 @@ export default function SourcePanel({
                           style={{ ['--stagger-i' as any]: idx }}
                           className="stagger-card p-3 bg-slate-50/70 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.07] rounded-[8px] space-y-2"
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-start gap-2 min-w-0">
-                              <span className={`w-2 h-2 rounded-full ${dotClass} shrink-0 mt-1.5`} />
-                              <p className="text-[11.5px] text-slate-800 dark:text-[#EDEDED] leading-relaxed">
-                                {claim.text}
-                              </p>
-                            </div>
+                          <div className="flex items-start gap-2 min-w-0">
+                            <span className={`w-2 h-2 rounded-full ${dotClass} shrink-0 mt-1.5`} />
+                            <p className="text-[11.5px] text-slate-800 dark:text-[#EDEDED] leading-relaxed">
+                              {claim.text}
+                            </p>
                           </div>
 
                           <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/70 dark:border-white/[0.05]">
@@ -657,8 +777,11 @@ export default function SourcePanel({
                                   <button
                                     key={cid}
                                     type="button"
-                                    onClick={() => onSelectCitation && onSelectCitation(cid)}
-                                    className="px-1.5 py-0.2 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.08] text-[9.5px] font-mono rounded hover:border-[#60A5FA] text-[#60A5FA] tabular-nums cursor-pointer"
+                                    onClick={() =>
+                                      onSelectCitation &&
+                                      onSelectCitation(cid, claim.evidence_quote || claim.evidence)
+                                    }
+                                    className="px-1.5 py-0.2 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.08] text-[9.5px] font-mono rounded hover:border-[var(--aria-accent)] text-[var(--aria-accent)] tabular-nums cursor-pointer"
                                   >
                                     [{cid + 1}]
                                   </button>
@@ -678,9 +801,9 @@ export default function SourcePanel({
                             </div>
                           </div>
 
-                          {claim.evidence && (
+                          {(claim.evidence_quote || claim.evidence) && (
                             <p className="text-[10.5px] font-sans text-slate-600 dark:text-[#8B8B8E] italic leading-snug line-clamp-2 pl-2 border-l border-slate-300 dark:border-white/[0.1]">
-                              &ldquo;{claim.evidence}&rdquo;
+                              &ldquo;{claim.evidence_quote || claim.evidence}&rdquo;
                             </p>
                           )}
                         </div>
@@ -744,7 +867,7 @@ export default function SourcePanel({
                                 href={figUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-[#60A5FA] hover:underline inline-flex items-center gap-1 shrink-0"
+                                className="text-[var(--aria-accent)] hover:underline inline-flex items-center gap-1 shrink-0"
                               >
                                 <span>Record</span>
                                 <ExternalLink size={10} />
@@ -758,7 +881,7 @@ export default function SourcePanel({
                     {chart && (
                       <div className="p-3 bg-slate-50/70 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.08] rounded-[8px] space-y-1.5">
                         <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-900 dark:text-[#EDEDED]">
-                          <BarChart2 size={13} className="text-[#60A5FA]" />
+                          <BarChart2 size={13} className="text-[var(--aria-accent)]" />
                           <span>{chart.title}</span>
                         </div>
                         {chart.caption && (

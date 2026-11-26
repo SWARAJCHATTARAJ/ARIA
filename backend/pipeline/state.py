@@ -12,6 +12,9 @@ class AgentState(TypedDict):
     thread_id: Optional[str]
     user_id: Optional[str]
     compare_mode: bool
+    source_tier: Optional[str]
+    recency: Optional[str]
+    strict_academic: Optional[bool]
 
     # History
     chat_history: Annotated[List[Dict[str, Any]], append_to_list]

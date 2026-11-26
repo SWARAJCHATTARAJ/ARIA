@@ -701,9 +701,11 @@ class AcademicTwoColumnPaper:
         full_ledger: bool = True,
         clickable_urls: bool = True,
         figures: Optional[List[Dict[str, Any]]] = None,
-        chart: Optional[Dict[str, Any]] = None
+        chart: Optional[Dict[str, Any]] = None,
+        pdf_style: str = "academic"
     ):
         self.doc = fitz.open()
+        self.pdf_style = "executive" if str(pdf_style).lower() == "executive" else "academic"
         self.figures = figures or []
         self.chart = chart
         self.query = sanitize_academic_text((query or "Research Overview").strip())
@@ -901,8 +903,10 @@ class AcademicTwoColumnPaper:
 
     # -------------------------------------------------------------- page head
     def render_page1_header(self):
+        is_exec = (self.pdf_style == "executive")
         # 1. Top Working-Paper Running Rule (Sans-Serif pairing)
-        header_text = f"ARIA v2 AUTONOMOUS VERIFICATION PREPRINT  |  TIER: {self.tier_str.upper()}  |  CONFIDENCE: {self.conf_pct}  |  {self.date_str.upper()}"
+        masthead_label = "ARIA v2 EXECUTIVE RESEARCH BRIEF" if is_exec else "ARIA v2 AUTONOMOUS VERIFICATION PREPRINT"
+        header_text = f"{masthead_label}  |  TIER: {self.tier_str.upper()}  |  CONFIDENCE: {self.conf_pct}  |  {self.date_str.upper()}"
         self.page.insert_text(
             fitz.Point(self.MARGIN_L, 28),
             header_text,
@@ -912,35 +916,44 @@ class AcademicTwoColumnPaper:
         )
         self.page.draw_line(fitz.Point(self.MARGIN_L, 35), fitz.Point(self.MARGIN_R, 35), color=(0.15, 0.25, 0.45), width=0.8)
 
-        # 2. Centered Formal Academic Title (DejaVu Serif Bold)
-        title_lines = self.wrap_line(self.academic_title, max_w=465.0, fontname="tibo", fontsize=15.5)
-        cur_y = 60.0
+        # 2. Title (Left-aligned in Executive Brief, Centered in Academic Paper)
+        title_size = 14.5 if is_exec else 15.5
+        title_max_w = self.COL_W if is_exec else 465.0
+        title_lines = self.wrap_line(self.academic_title, max_w=title_max_w, fontname="tibo", fontsize=title_size)
+        cur_y = 58.0 if is_exec else 60.0
         for tl in title_lines:
-            t_len = get_text_width(tl, fontname="tibo", fontsize=15.5)
-            x_pos = (self.PAGE_W - t_len) / 2.0
-            self.page.insert_text(fitz.Point(x_pos, cur_y), tl, fontname=FONT_MAP.get("tibo", "tibo"), fontsize=15.5, color=(0.06, 0.09, 0.14))
-            cur_y += 19.0
+            if is_exec:
+                x_pos = self.MARGIN_L
+            else:
+                t_len = get_text_width(tl, fontname="tibo", fontsize=title_size)
+                x_pos = (self.PAGE_W - t_len) / 2.0
+            self.page.insert_text(fitz.Point(x_pos, cur_y), tl, fontname=FONT_MAP.get("tibo", "tibo"), fontsize=title_size, color=(0.06, 0.09, 0.14))
+            cur_y += 18.0 if is_exec else 19.0
 
-        # 3. Centered Author & Affiliation Block
+        # 3. Author & Affiliation Block
         cur_y += 4.0
-        a1 = "ARIA v2 Autonomous Research & Evidence Synthesis Engine"
-        t1_len = get_text_width(a1, fontname="helv", fontsize=9.2)
-        self.page.insert_text(fitz.Point((self.PAGE_W - t1_len) / 2.0, cur_y), a1, fontname=FONT_MAP.get("helv", "tiro"), fontsize=9.2, color=(0.20, 0.25, 0.32))
-        cur_y += 12.5
+        a1 = "ARIA v2 Executive Intelligence & Evidence Brief" if is_exec else "ARIA v2 Autonomous Research & Evidence Synthesis Engine"
+        if is_exec:
+            self.page.insert_text(fitz.Point(self.MARGIN_L, cur_y), a1, fontname=FONT_MAP.get("helv", "tiro"), fontsize=8.8, color=(0.25, 0.30, 0.38))
+            cur_y += 14.0
+        else:
+            t1_len = get_text_width(a1, fontname="helv", fontsize=9.2)
+            self.page.insert_text(fitz.Point((self.PAGE_W - t1_len) / 2.0, cur_y), a1, fontname=FONT_MAP.get("helv", "tiro"), fontsize=9.2, color=(0.20, 0.25, 0.32))
+            cur_y += 12.5
 
-        a2 = "Multi-Tier Retrieval & Deterministic Claim Entailment Ledger"
-        t2_len = get_text_width(a2, fontname="tiit", fontsize=8.2)
-        self.page.insert_text(fitz.Point((self.PAGE_W - t2_len) / 2.0, cur_y), a2, fontname=FONT_MAP.get("tiit", "tiit"), fontsize=8.2, color=(0.40, 0.45, 0.52))
-        cur_y += 16.0
+            a2 = "Multi-Tier Retrieval & Deterministic Claim Entailment Ledger"
+            t2_len = get_text_width(a2, fontname="tiit", fontsize=8.2)
+            self.page.insert_text(fitz.Point((self.PAGE_W - t2_len) / 2.0, cur_y), a2, fontname=FONT_MAP.get("tiit", "tiit"), fontsize=8.2, color=(0.40, 0.45, 0.52))
+            cur_y += 16.0
 
-        # 4. Styled Executive Abstract Callout Box
+        # 4. Styled Executive Summary / Abstract Callout Box
         abs_l = self.MARGIN_L
         abs_w = self.COL_W
         inner_l = abs_l + 12.0
         inner_w = abs_w - 22.0
 
         abs_body = self.build_dynamic_abstract()
-        abs_lead = "Abstract — "
+        abs_lead = "Executive Brief — " if is_exec else "Abstract — "
         abs_full = abs_lead + abs_body
         abs_lines = self.wrap_line(abs_full, max_w=inner_w, fontname="tiro", fontsize=8.5)
 
@@ -1627,10 +1640,10 @@ class AcademicTwoColumnPaper:
     def _render_audit_ledger_table(self):
         """
         Renders the Verification Audit Ledger as a clean, compact Appendix table
-        after Section VI. References.
+        after Section VI. References when full_ledger is enabled.
         Columns: Claim ID | Audited Research Claim | Verdict | Conf. | Source
         """
-        if not self.claims:
+        if not self.full_ledger or not self.claims:
             return
 
         # Start Appendix on a fresh column or page for clean IEEE separation
@@ -2120,7 +2133,8 @@ def generate_research_pdf(
     full_ledger: bool = True,
     clickable_urls: bool = True,
     figures: Optional[List[Dict[str, Any]]] = None,
-    chart: Optional[Dict[str, Any]] = None
+    chart: Optional[Dict[str, Any]] = None,
+    pdf_style: str = "academic",
 ) -> bytes:
     paper = AcademicTwoColumnPaper(
         query=query,
@@ -2135,6 +2149,7 @@ def generate_research_pdf(
         full_ledger=full_ledger,
         clickable_urls=clickable_urls,
         figures=figures,
-        chart=chart
+        chart=chart,
+        pdf_style=pdf_style,
     )
     return paper.generate()
