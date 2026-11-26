@@ -76,7 +76,7 @@ Most AI tools generate fluent answers first and treat accuracy as an afterthough
 | **Publication-Grade Exports** | Export formatted **Academic Paper** or **Executive Brief** PDFs (PyMuPDF + Unicode/LaTeX math + optional Claim Verification Ledger + Matplotlib plots), Overleaf-ready **`.tex`**, Zotero **`.ris`**, **`.bib`**, **`.md`**, and one-click **APA 7 / IEEE / Chicago / BibTeX** citations. |
 | **Curiosity Pathways** | Every report ends with 3 topic-grounded exploration cards—**Deep Dive**, **Counter-View**, and **Applied**—turning answers into structured research loops. |
 | **Cross-Platform Native UX** | One unified codebase powering **Web**, **Windows `.exe`** (Tauri v2), and **Android `.apk`** (Capacitor 8 + custom `DirectDownloadPlugin` via `MediaStore.Downloads` into `Downloads/ARIA/`). |
-| **Zero-Friction Access** | Instant anonymous guest workspace with in-app **Supabase Email/Password** or **GitHub OAuth** PKCE upgrade—no forced login walls. |
+| **Authenticated Access** | Mandatory workspace authentication powered by **Supabase Email/Password** (with password recovery) and **GitHub OAuth PKCE**, plus in-settings permanent account deletion. |
 | **4 Curated Themes** | Switch seamlessly between **Cyber Cyan**, **Emerald Biolab**, **Obsidian Gold**, and **Solaris Paper** across Dark, Light, and System surfaces with Serif/Sans typography options. |
 
 ---
@@ -93,7 +93,7 @@ flowchart LR
 
     subgraph Edge ["Secure Edge & Auth"]
         CF["Nginx / TLS Edge"]
-        AUTH["Supabase JWT + Guest Fallback"]
+        AUTH["Supabase JWT Auth Guard"]
     end
 
     subgraph Engine ["ARIA Research Engine (FastAPI + SSE)"]
@@ -215,7 +215,7 @@ ARIA/
 ├── frontend/
 │   └── src/
 │       ├── components/          # ThreadView, 3-tab Research Inspector, 4-section SettingsView, Modals
-│       ├── context/             # AuthContext (Supabase PKCE/Guest) & unified SettingsContext (useSettingsStore)
+│       ├── context/             # AuthContext (Supabase PKCE) & unified SettingsContext (useSettingsStore)
 │       ├── services/            # Hardened API client, SSE watchdog parser, storage
 │       └── utils/               # Citation formatters (APA 7/IEEE/Chicago/.tex/.ris/.bib), native downloader, haptics, pulse
 ├── android/                     # Capacitor 8 Android project + DirectDownloadPlugin.java

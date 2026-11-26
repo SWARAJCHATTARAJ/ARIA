@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { API_BASE_URL } from '../services/config';
+import { useAuth } from '../context/AuthContext';
 import { OkfGraphData } from '../types';
 import { getHistory, deleteHistoryEntry, clearHistory, getCollections, removeFromCollection } from '../services/storage';
 
@@ -213,6 +214,7 @@ export function CollectionsView() {
 // OKF SPACE: interactive /api/okf/graph explorer
 // =====================================================================
 export function OkfSpaceView() {
+  const { accessToken } = useAuth();
   const [graph, setGraph] = useState<OkfGraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -224,7 +226,11 @@ export function OkfSpaceView() {
     let mounted = true;
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE_URL}/api/okf/graph`)
+    const headers: Record<string, string> = {};
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    fetch(`${API_BASE_URL}/api/okf/graph`, { headers })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((json: OkfGraphData) => {
         if (mounted) setGraph(json);
@@ -238,7 +244,7 @@ export function OkfSpaceView() {
     return () => {
       mounted = false;
     };
-  }, [reloadKey]);
+  }, [reloadKey, accessToken]);
 
   const nodes = useMemo(() => {
     if (!graph) return [];

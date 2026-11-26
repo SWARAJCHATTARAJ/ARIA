@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { API_BASE_URL } from '../services/config';
 
 export const isTauriRuntime =
   typeof window !== 'undefined' &&
@@ -10,49 +11,49 @@ export const isCapacitorRuntime =
   Boolean((window as any).Capacitor?.isNativePlatform?.());
 export const isNativeRuntime = isTauriRuntime || isCapacitorRuntime;
 
+export const PASSWORD_RESET_REDIRECT_URL = 'https://aria.swarajchattaraj.tech/reset-password';
+
 export interface AuthUserProfile {
   id: string;
   name: string;
   username: string;
   email?: string;
   avatarUrl: string;
-  provider: 'github' | 'email' | 'guest';
+  provider: 'github' | 'email';
+}
+
+interface DeleteAccountResult {
+  error: Error | null;
+  statusCode?: number;
 }
 
 interface AuthContextType {
   user: AuthUserProfile | null;
   session: Session | null;
   accessToken: string | null;
+  authIssuedAtSeconds: number | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  isAuthModalOpen: boolean;
-  openAuthModal: () => void;
-  closeAuthModal: () => void;
-  signInInstantResearcher: () => void;
+  isPasswordRecovery: boolean;
+  accountNotice: string | null;
+  clearAccountNotice: () => void;
+  clearPasswordRecovery: () => void;
   signInWithGitHub: () => Promise<{ error: Error | null }>;
   signInWithPassword: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUpWithPassword: (email: string, password: string) => Promise<{ error: Error | null; needsEmailConfirmation?: boolean }>;
-  signInWithEmail: (email: string) => Promise<{ error: Error | null }>;
+  requestPasswordReset: (email: string) => Promise<{ error: Error | null }>;
+  updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
+  deleteAccount: (params: { confirmText: string; password?: string }) => Promise<DeleteAccountResult>;
   signOut: () => Promise<void>;
 }
-
-const AUTH_GUEST_KEY = 'aria-guest-session-v1';
-
-export const GUEST_PROFILE: AuthUserProfile = {
-  id: 'guest',
-  name: 'Guest Researcher',
-  username: 'guest',
-  email: 'guest@aria.local',
-  avatarUrl: '',
-  provider: 'guest',
-};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 function mapSupabaseUser(sbUser: User): AuthUserProfile {
   const meta = sbUser.user_metadata || {};
-  const isGitHub = sbUser.app_metadata?.provider === 'github' || Boolean(meta.user_name);
-  
+  const providerRaw = String(sbUser.app_metadata?.provider || '').toLowerCase();
+  const isGitHub = providerRaw === 'github' || (providerRaw !== 'email' && Boolean(meta.user_name));
+
   return {
     id: sbUser.id,
     name: meta.full_name || meta.name || meta.user_name || (sbUser.email ? sbUser.email.split('@')[0] : 'Researcher'),
@@ -63,54 +64,156 @@ function mapSupabaseUser(sbUser: User): AuthUserProfile {
   };
 }
 
+function decodeJwtIssuedAt(token: string | null): number | null {
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const decoded = JSON.parse(atob(padded));
+    return typeof decoded?.iat === 'number' ? decoded.iat : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearLegacyGuestStorage(): void {
+  try {
+    localStorage.removeItem('aria-guest-session-v1');
+    localStorage.removeItem('aria_guest');
+  } catch {
+    // ignore storage errors
+  }
+}
+
+async function purgeAllAriaClientData(): Promise<void> {
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('aria') || key.startsWith('sb-'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // ignore
+  }
+
+  try {
+    sessionStorage.clear();
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (typeof indexedDB !== 'undefined' && typeof (indexedDB as any).databases === 'function') {
+      const dbs = await (indexedDB as any).databases();
+      if (Array.isArray(dbs)) {
+        await Promise.all(
+          dbs
+            .filter((db: any) => db?.name && String(db.name).toLowerCase().includes('aria'))
+            .map(
+              (db: any) =>
+                new Promise<void>((resolve) => {
+                  try {
+                    const req = indexedDB.deleteDatabase(db.name);
+                    req.onsuccess = () => resolve();
+                    req.onerror = () => resolve();
+                    req.onblocked = () => resolve();
+                  } catch {
+                    resolve();
+                  }
+                })
+            )
+        );
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (typeof caches !== 'undefined') {
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map((name) => caches.delete(name)));
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function urlIndicatesPasswordRecovery(): boolean {
+  if (typeof window === 'undefined') return false;
+  const pathnameMatches = window.location.pathname === '/reset-password';
+  const hashLower = window.location.hash.toLowerCase();
+  const searchParams = new URLSearchParams(window.location.search);
+  return (
+    pathnameMatches ||
+    hashLower.includes('type=recovery') ||
+    searchParams.get('type') === 'recovery'
+  );
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(() =>
+    urlIndicatesPasswordRecovery()
+  );
+  const [accountNotice, setAccountNotice] = useState<string | null>(null);
 
-  const openAuthModal = () => setIsAuthModalOpen(true);
-  const closeAuthModal = () => setIsAuthModalOpen(false);
-
-  const signInInstantResearcher = () => {
-    try {
-      localStorage.setItem(AUTH_GUEST_KEY, 'true');
-    } catch {
-      // ignore
+  const clearAccountNotice = () => setAccountNotice(null);
+  const clearPasswordRecovery = () => {
+    setIsPasswordRecovery(false);
+    if (typeof window !== 'undefined' && window.location.pathname === '/reset-password') {
+      try {
+        window.history.replaceState(null, '', '/');
+      } catch {
+        // ignore
+      }
     }
-    setUser(GUEST_PROFILE);
-    setSession(null);
-    setAccessToken(null);
-    setIsAuthModalOpen(false);
   };
 
   useEffect(() => {
     let mounted = true;
+    clearLegacyGuestStorage();
 
     async function initAuth() {
       if (!supabase) {
         if (mounted) {
-          const isGuest = localStorage.getItem(AUTH_GUEST_KEY) === 'true';
-          if (isGuest) setUser(GUEST_PROFILE);
+          setSession(null);
+          setAccessToken(null);
+          setUser(null);
           setIsLoading(false);
         }
         return;
       }
 
       try {
-        // If redirect URL contains tokens in the hash fragment (magic link / OAuth callback)
+        const isRecoveryUrl = urlIndicatesPasswordRecovery();
+        if (isRecoveryUrl && mounted) {
+          setIsPasswordRecovery(true);
+        }
+
+        // Handle hash fragment tokens (e.g., OAuth implicit redirect or password recovery link)
         if (typeof window !== 'undefined' && window.location.hash.includes('access_token=')) {
           const params = new URLSearchParams(window.location.hash.substring(1));
           const access_token = params.get('access_token');
           const refresh_token = params.get('refresh_token');
+          const hashType = params.get('type');
+          if (hashType === 'recovery' && mounted) {
+            setIsPasswordRecovery(true);
+          }
           if (access_token && refresh_token) {
             const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
             if (!error && data?.session?.user && mounted) {
               setSession(data.session);
               setAccessToken(data.session.access_token);
               setUser(mapSupabaseUser(data.session.user));
-              setIsAuthModalOpen(false);
               setIsLoading(false);
               try {
                 window.history.replaceState(null, '', window.location.pathname);
@@ -118,6 +221,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // ignore
               }
               return;
+            }
+          }
+        }
+
+        // Handle PKCE ?code= query parameter cleanly (including /reset-password?code=...)
+        if (typeof window !== 'undefined') {
+          const searchParams = new URLSearchParams(window.location.search);
+          const pkceCode = searchParams.get('code');
+          if (pkceCode) {
+            try {
+              const { data: exchangeData } = await supabase.auth.exchangeCodeForSession(pkceCode);
+              if (exchangeData?.session?.user && mounted) {
+                setSession(exchangeData.session);
+                setAccessToken(exchangeData.session.access_token);
+                setUser(mapSupabaseUser(exchangeData.session.user));
+                if (isRecoveryUrl) {
+                  setIsPasswordRecovery(true);
+                }
+                setIsLoading(false);
+                try {
+                  window.history.replaceState(null, '', window.location.pathname);
+                } catch {
+                  // ignore
+                }
+                return;
+              }
+            } catch {
+              // Code may have already been exchanged automatically by detectSessionInUrl
             }
           }
         }
@@ -131,8 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else {
             setSession(null);
             setAccessToken(null);
-            const isGuest = localStorage.getItem(AUTH_GUEST_KEY) === 'true';
-            setUser(isGuest ? GUEST_PROFILE : null);
+            setUser(null);
           }
           setIsLoading(false);
         }
@@ -141,8 +271,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (mounted) {
           setSession(null);
           setAccessToken(null);
-          const isGuest = localStorage.getItem(AUTH_GUEST_KEY) === 'true';
-          setUser(isGuest ? GUEST_PROFILE : null);
+          setUser(null);
           setIsLoading(false);
         }
       }
@@ -156,18 +285,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener('hashchange', handleHashChange);
 
     if (supabase) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
         if (!mounted) return;
+        if (event === 'PASSWORD_RECOVERY') {
+          setIsPasswordRecovery(true);
+        }
         if (currentSession?.user) {
           setSession(currentSession);
           setAccessToken(currentSession.access_token);
           setUser(mapSupabaseUser(currentSession.user));
-          setIsAuthModalOpen(false);
         } else {
           setSession(null);
           setAccessToken(null);
-          const isGuest = localStorage.getItem(AUTH_GUEST_KEY) === 'true';
-          setUser(isGuest ? GUEST_PROFILE : null);
+          setUser(null);
         }
         setIsLoading(false);
       });
@@ -242,7 +372,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(data.session);
         setAccessToken(data.session.access_token);
         setUser(mapSupabaseUser(data.session.user));
-        setIsAuthModalOpen(false);
+        setIsPasswordRecovery(false);
+        setAccountNotice(null);
       }
 
       return { error: null };
@@ -264,8 +395,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
         throw new Error('Please enter a valid email address.');
       }
-      if (!password || password.length < 6) {
-        throw new Error('Password must be at least 6 characters long.');
+      if (!password || password.length < 8) {
+        throw new Error('Password must be at least 8 characters long.');
       }
 
       const redirectUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
@@ -282,8 +413,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const lower = msg.toLowerCase();
         if (lower.includes('already registered') || lower.includes('already exists')) {
           msg = 'An account with this email already exists. Please sign in instead.';
-        } else if (lower.includes('weak password') || lower.includes('least 6 characters')) {
-          msg = 'Password is too weak. Please use at least 6 characters.';
+        } else if (lower.includes('weak password') || lower.includes('least')) {
+          msg = 'Password is too weak. Please use at least 8 characters.';
         }
         throw new Error(msg);
       }
@@ -296,7 +427,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(data.session);
         setAccessToken(data.session.access_token);
         setUser(mapSupabaseUser(data.session.user));
-        setIsAuthModalOpen(false);
         return { error: null, needsEmailConfirmation: false };
       }
 
@@ -306,24 +436,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signInWithEmail = async (email: string): Promise<{ error: Error | null }> => {
+  const requestPasswordReset = async (email: string): Promise<{ error: Error | null }> => {
     if (!supabase) {
       return { error: new Error('Supabase client is not configured.') };
     }
 
-    try {
-      const trimmed = email.trim();
-      if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-        throw new Error('Please enter a valid email address.');
-      }
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      return { error: new Error('Please enter a valid email address.') };
+    }
 
-      const { error } = await supabase.auth.signInWithOtp({
-        email: trimmed,
-        options: {
-          emailRedirectTo: window.location.origin,
-        },
+    try {
+      await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: PASSWORD_RESET_REDIRECT_URL,
       });
+      // Always treat server response uniformly to prevent account enumeration
+      return { error: null };
+    } catch {
+      return { error: null };
+    }
+  };
+
+  const updatePassword = async (newPassword: string): Promise<{ error: Error | null }> => {
+    if (!supabase) {
+      return { error: new Error('Supabase client is not configured.') };
+    }
+    if (!newPassword || newPassword.length < 8) {
+      return { error: new Error('Password must be at least 8 characters long.') };
+    }
+
+    try {
+      const { data, error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
+      if (data?.user) {
+        setUser(mapSupabaseUser(data.user));
+      }
+      const { data: refreshed } = await supabase.auth.getSession();
+      if (refreshed?.session) {
+        setSession(refreshed.session);
+        setAccessToken(refreshed.session.access_token);
+      }
       return { error: null };
     } catch (err: any) {
       return { error: err instanceof Error ? err : new Error(String(err)) };
@@ -338,16 +490,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('Error during signOut:', err);
     } finally {
-      // Unconditionally wipe session state
       setSession(null);
       setAccessToken(null);
       setUser(null);
+      setIsPasswordRecovery(false);
+      clearLegacyGuestStorage();
+    }
+  };
+
+  const deleteAccount = async ({
+    confirmText,
+    password,
+  }: {
+    confirmText: string;
+    password?: string;
+  }): Promise<DeleteAccountResult> => {
+    let token = accessToken;
+    if (!token && supabase) {
       try {
-        localStorage.removeItem('aria-guest-session-v1');
-        localStorage.removeItem('aria_guest');
+        const { data: { session: fresh } } = await supabase.auth.getSession();
+        token = fresh?.access_token ?? null;
       } catch {
-        // ignore
+        token = null;
       }
+    }
+
+    if (!token) {
+      return { error: new Error('Authentication required. Please sign in again.'), statusCode: 401 };
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/account`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          confirm_text: confirmText.trim(),
+          ...(password ? { password } : {}),
+        }),
+      });
+
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return {
+          error: new Error(body?.detail || `Account deletion failed (HTTP ${res.status}).`),
+          statusCode: res.status,
+        };
+      }
+
+      await signOut();
+      await purgeAllAriaClientData();
+      setAccountNotice('Your ARIA account and all associated data have been permanently deleted.');
+      return { error: null, statusCode: 200 };
+    } catch (err: any) {
+      return {
+        error: err instanceof Error ? err : new Error('Failed to reach server for account deletion.'),
+      };
     }
   };
 
@@ -357,16 +557,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         session,
         accessToken,
+        authIssuedAtSeconds: decodeJwtIssuedAt(accessToken),
         isAuthenticated: Boolean(user),
         isLoading,
-        isAuthModalOpen,
-        openAuthModal,
-        closeAuthModal,
-        signInInstantResearcher,
+        isPasswordRecovery,
+        accountNotice,
+        clearAccountNotice,
+        clearPasswordRecovery,
         signInWithGitHub,
         signInWithPassword,
         signUpWithPassword,
-        signInWithEmail,
+        requestPasswordReset,
+        updatePassword,
+        deleteAccount,
         signOut,
       }}
     >

@@ -2,7 +2,7 @@ import os
 import time
 import uuid
 import datetime
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 from fastapi import Request, HTTPException, status
 import httpx
 from jose import jwt, JWTError
@@ -18,10 +18,6 @@ ALLOWED_VERDICTS = {"positive", "negative", "flagged", "accurate", "inaccurate",
 # Per-user rate limiting storage (in-memory sliding window keyed by Supabase user UUID)
 _user_query_history: Dict[str, List[float]] = {}
 _user_feedback_history: Dict[str, List[float]] = {}
-
-# Backward-compatibility storage for IP rate limits
-_ip_query_history: Dict[str, List[float]] = {}
-_ip_feedback_history: Dict[str, List[float]] = {}
 _ip_general_history: Dict[str, List[float]] = {}
 
 # Daily global query count: (date_str, count)
@@ -29,17 +25,15 @@ _daily_counter = {"date": datetime.datetime.now(datetime.timezone.utc).strftime(
 
 MAX_USER_QUERIES_PER_HOUR = 10
 MAX_USER_FEEDBACK_PER_HOUR = 30
-MAX_QUERIES_PER_HOUR = 5  # For anonymous IP rate limiting
 MAX_BODY_SIZE_BYTES = 8192  # 8 KB
 MAX_QUERY_LENGTH = 500
 MAX_STREAM_DURATION_SECONDS = 180.0
 
+
 def get_client_ip(request: Request) -> str:
     """
-    Extracts the client IP address securely.
-    Behind Caddy, the direct peer is 127.0.0.1 or ::1.
-    Use X-Forwarded-For ONLY when the direct peer is 127.0.0.1 or ::1.
-    If the direct peer is any other address, ignore X-Forwarded-For and use direct peer.
+    Extracts the client IP address securely behind trusted local proxy (Caddy/Nginx).
+    Uses X-Forwarded-For ONLY when the direct peer is 127.0.0.1 / ::1 / localhost.
     """
     direct_peer = request.client.host if request.client else "127.0.0.1"
     if direct_peer in ("127.0.0.1", "::1", "localhost"):
@@ -50,81 +44,153 @@ def get_client_ip(request: Request) -> str:
                 return forwarded_ip
     return direct_peer
 
-async def verify_supabase_jwt(token: str) -> Optional[Dict]:
+
+async def verify_supabase_jwt(token: str) -> Dict[str, Any]:
     """
-    Verifies Supabase JWT signature and expiry.
+    Strictly verifies Supabase JWT signature and expiry.
     1. If SUPABASE_JWT_SECRET is configured, verifies signature & expiry locally.
-    2. Otherwise, verifies token by calling Supabase Auth API (/auth/v1/user).
-    Returns user payload dictionary if valid, raises HTTPException(401) if invalid or expired.
+    2. Otherwise, verifies token via Supabase Auth API (/auth/v1/user).
+    Raises HTTPException(401) whenever the token is missing, malformed, or expired.
     """
-    if not token:
+    if not token or token.lower() in ("null", "undefined", "guest", "anonymous"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication token required. Please sign in."
+            detail="Authentication required. Please sign in.",
         )
-        
-    # Check locally if JWT secret is available
-    SUPABASE_JWT_SECRET = getattr(settings, "supabase_jwt_secret", "") or os.environ.get("SUPABASE_JWT_SECRET", "")
-    if SUPABASE_JWT_SECRET and SUPABASE_JWT_SECRET != "default":
+
+    supabase_jwt_secret = getattr(settings, "supabase_jwt_secret", "") or os.environ.get("SUPABASE_JWT_SECRET", "")
+    if supabase_jwt_secret and supabase_jwt_secret != "default":
         try:
             payload = jwt.decode(
                 token,
-                SUPABASE_JWT_SECRET,
+                supabase_jwt_secret,
                 algorithms=["HS256", "RS256"],
-                options={"verify_signature": True}
+                options={"verify_signature": True, "verify_aud": False},
             )
-            return payload
+            if payload and (payload.get("id") or payload.get("sub")):
+                return payload
         except JWTError as e:
             logger.warning(f"JWT verification failed: {e}")
             if not (settings.supabase_url and settings.supabase_url != "default"):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid or expired authentication token."
+                    detail="Invalid or expired authentication token.",
                 )
         except Exception as e:
             logger.warning(f"JWT verification error: {e}")
             if not (settings.supabase_url and settings.supabase_url != "default"):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid or expired authentication token."
+                    detail="Invalid or expired authentication token.",
                 )
 
-    # Supabase Auth endpoint verification
     if settings.supabase_url and settings.supabase_url != "default":
         try:
             verify_url = f"{settings.supabase_url.rstrip('/')}/auth/v1/user"
             headers = {
                 "Authorization": f"Bearer {token}",
-                "apikey": settings.supabase_service_role_key
+                "apikey": settings.supabase_service_role_key,
             }
             async with httpx.AsyncClient(timeout=4.0) as client:
                 resp = await client.get(verify_url, headers=headers)
                 if resp.status_code == 200:
-                    return resp.json()
-                else:
-                    logger.warning(f"Supabase auth check returned {resp.status_code}")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid or expired authentication token."
-                    )
+                    data = resp.json()
+                    if isinstance(data, dict) and "iat" not in data:
+                        try:
+                            claims = jwt.get_unverified_claims(token)
+                            if "iat" in claims:
+                                data["iat"] = claims["iat"]
+                        except Exception:
+                            pass
+                    return data
+                logger.warning(f"Supabase auth check returned {resp.status_code}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired authentication token.",
+                )
         except HTTPException:
             raise
         except Exception as e:
             logger.warning(f"Error checking token with Supabase auth: {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication verification failed."
+                detail="Authentication verification failed.",
             )
 
-    return None
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication service unavailable or token invalid.",
+    )
+
+
+def extract_bearer_token(request: Request) -> str:
+    """Extracts Bearer JWT from Authorization header or raises HTTP 401."""
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header or not auth_header.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please sign in.",
+        )
+    token = auth_header[7:].strip()
+    if not token or token.lower() in ("null", "undefined", "guest", "anonymous"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please sign in.",
+        )
+    return token
+
+
+async def require_authenticated_user(request: Request) -> Dict[str, Any]:
+    """
+    Validates the Bearer JWT on every protected route and guarantees a verified user_id.
+    Always rejects unauthenticated requests cleanly with HTTP 401 Unauthorized.
+    """
+    token = extract_bearer_token(request)
+    payload = await verify_supabase_jwt(token)
+    user_id = payload.get("id") or payload.get("sub") if isinstance(payload, dict) else None
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user session.",
+        )
+    payload["verified_user_id"] = str(user_id)
+    payload["raw_token"] = token
+    return payload
+
+
+async def verify_supabase_user_password(email: str, password: str) -> bool:
+    """
+    Re-verifies an email/password account credential directly against Supabase Auth
+    before permitting destructive actions such as permanent account deletion.
+    """
+    if not email or not password or not settings.supabase_url or settings.supabase_url == "default":
+        return False
+    token_url = f"{settings.supabase_url.rstrip('/')}/auth/v1/token?grant_type=password"
+    api_key = settings.supabase_service_role_key
+    headers = {
+        "apikey": api_key,
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                token_url,
+                headers=headers,
+                json={"email": email, "password": password},
+            )
+            return resp.status_code == 200
+    except Exception as e:
+        logger.warning(f"Credential re-verification error: {type(e).__name__}")
+        return False
+
 
 from utils.token_tracker import token_rate_limiter
+
 
 def check_user_rate_limit(user_id: str, is_feedback: bool = False) -> Tuple[bool, int, str]:
     """
     Checks per-user rate limit (10 queries/hr per user, 30 feedback/hr per user)
     plus the global daily token capacity cap.
-    Returns: (is_allowed, retry_after_seconds, error_message)
     """
     if not user_id or not isinstance(user_id, str):
         return False, 3600, "Valid user authentication is required."
@@ -134,11 +200,9 @@ def check_user_rate_limit(user_id: str, is_feedback: bool = False) -> Tuple[bool
     history_store = _user_feedback_history if is_feedback else _user_query_history
     max_allowed = MAX_USER_FEEDBACK_PER_HOUR if is_feedback else MAX_USER_QUERIES_PER_HOUR
 
-    # Clean up timestamps older than 1 hour for this user
     timestamps = [t for t in history_store.get(user_id, []) if t > one_hour_ago]
     history_store[user_id] = timestamps
 
-    # 1. Per-user limit check (10 queries per hour)
     if len(timestamps) >= max_allowed:
         oldest_in_window = timestamps[0]
         retry_after = max(1, int(3600 - (now - oldest_in_window)))
@@ -146,13 +210,13 @@ def check_user_rate_limit(user_id: str, is_feedback: bool = False) -> Tuple[bool
         msg = f"Rate limit exceeded: Limit is {max_allowed} {action} per hour per user. Try again in {retry_after}s."
         return False, retry_after, msg
 
-    # 2. Daily global token capacity check (only for queries, not feedback)
     if not is_feedback:
         allowed, retry_after, daily_msg = token_rate_limiter.check_daily_cap(settings.groq_writer_model)
         if not allowed:
             return False, retry_after, daily_msg
 
     return True, 0, ""
+
 
 def record_user_request(user_id: str, is_feedback: bool = False) -> None:
     """Records an authenticated user's request timestamp and increments daily counter."""
@@ -164,58 +228,10 @@ def record_user_request(user_id: str, is_feedback: bool = False) -> None:
     if not is_feedback:
         _daily_counter["count"] += 1
 
-def check_anonymous_rate_limit(client_ip: str, is_feedback: bool = False) -> Tuple[bool, int, str]:
-    """
-    Checks per-IP limit of 5 queries per hour plus global DAILY_TOKEN_CAP.
-    Returns: (is_allowed, retry_after_seconds, error_message)
-    """
-    if client_ip in ("127.0.0.1", "::1", "localhost"):
-        return True, 0, ""
-
-    now = time.time()
-    one_hour_ago = now - 3600.0
-    history_store = _ip_feedback_history if is_feedback else _ip_query_history
-
-    # Clean up entries older than 1 hour for this IP
-    timestamps = [t for t in history_store.get(client_ip, []) if t > one_hour_ago]
-    history_store[client_ip] = timestamps
-
-    # 1. Per-IP limit check (5 queries per hour)
-    if len(timestamps) >= MAX_QUERIES_PER_HOUR:
-        oldest_in_window = timestamps[0]
-        retry_after = max(1, int(3600 - (now - oldest_in_window)))
-        msg = f"Rate limit exceeded: Limit is {MAX_QUERIES_PER_HOUR} requests per hour. Try again in {retry_after}s."
-        return False, retry_after, msg
-
-    # 2. Daily query cap & token capacity check (only for queries, not feedback)
-    if not is_feedback:
-        DAILY_QUERY_CAP = 100
-        if _daily_counter.get("count", 0) >= DAILY_QUERY_CAP:
-            now_dt = datetime.datetime.now(datetime.timezone.utc)
-            tomorrow = datetime.datetime(now_dt.year, now_dt.month, now_dt.day, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=1)
-            retry_after = max(1, int((tomorrow - now_dt).total_seconds()))
-            msg = f"Rate limit exceeded: Daily query cap of {DAILY_QUERY_CAP} reached. Try again tomorrow in {retry_after}s."
-            return False, retry_after, msg
-
-        allowed, retry_after, daily_msg = token_rate_limiter.check_daily_cap(settings.groq_writer_model)
-        if not allowed:
-            return False, retry_after, daily_msg
-
-    return True, 0, ""
-
-def record_anonymous_request(client_ip: str, is_feedback: bool = False) -> None:
-    """Records an anonymous request timestamp and increments daily counter."""
-    now = time.time()
-    history_store = _ip_feedback_history if is_feedback else _ip_query_history
-    history_store.setdefault(client_ip, []).append(now)
-    if not is_feedback:
-        _daily_counter["count"] += 1
-
 
 def check_general_ip_rate_limit(client_ip: str, max_per_minute: int = 40) -> Tuple[bool, int, str]:
     """
     Sliding-window per-IP rate limiter for API endpoints (/api/export/pdf, /api/keys/test, etc.).
-    Returns (is_allowed, retry_after_seconds, error_message).
     """
     now = time.time()
     window_start = now - 60.0
@@ -228,6 +244,7 @@ def check_general_ip_rate_limit(client_ip: str, max_per_minute: int = 40) -> Tup
     _ip_general_history[client_ip] = timestamps
     return True, 0, ""
 
+
 def validate_uuid(val: Optional[str], field_name: str = "thread_id") -> None:
     """Validates that a string is a valid UUID."""
     if val:
@@ -236,5 +253,5 @@ def validate_uuid(val: Optional[str], field_name: str = "thread_id") -> None:
         except (ValueError, AttributeError, TypeError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{field_name} must be a valid UUID."
+                detail=f"{field_name} must be a valid UUID.",
             )

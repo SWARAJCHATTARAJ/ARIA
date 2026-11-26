@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional
 import datetime
+from utils.api_security import require_authenticated_user
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -18,7 +19,8 @@ class ExportRequest(BaseModel):
     format: str # 'bibtex' or 'ris'
 
 @router.post("/")
-def generate_export(req: ExportRequest):
+async def generate_export(req: ExportRequest, request: Request):
+    await require_authenticated_user(request)
     if req.format.lower() == 'bibtex':
         return {"content": generate_bibtex(req.citations)}
     elif req.format.lower() == 'ris':

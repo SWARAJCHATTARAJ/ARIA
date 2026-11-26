@@ -111,9 +111,8 @@ export async function streamQuery({
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
   };
 
-  // If no session token is present, send anonymous fallback header
-  if (!token && !requestHeaders['Authorization'] && !requestHeaders['authorization']) {
-    requestHeaders['X-Anonymous-User'] = 'true';
+  if (!requestHeaders['Authorization'] && !requestHeaders['authorization']) {
+    throw new Error('Authentication required. Please sign in to run research queries.');
   }
 
   // Inject user BYOK Groq API Key Pool from settings if present

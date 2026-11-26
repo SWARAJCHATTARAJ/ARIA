@@ -381,8 +381,8 @@ async def log_query_run(
         return
 
     # Check for valid UUID user_id (required by query_logs schema NOT NULL and foreign key)
-    if not user_id or str(user_id).startswith("guest_"):
-        logger.debug("Skipping query_logs insertion for anonymous/guest session.")
+    if not user_id:
+        logger.debug("Skipping query_logs insertion without authenticated user_id.")
         return
 
     try:
@@ -447,3 +447,47 @@ async def insert_feedback(feedback_data: Dict[str, Any]) -> bool:
     except Exception as e:
         logger.error(f"Error inserting feedback to Supabase: {e}")
         return False
+
+
+async def permanently_delete_user_account(user_id: str) -> Dict[str, Any]:
+    """
+    Permanently deletes all user-owned rows from Supabase PostgreSQL tables and then
+    deletes the auth user via the Supabase Auth Admin API using SUPABASE_SERVICE_ROLE_KEY.
+    Never exposes secrets or tokens.
+    """
+    if not user_id:
+        raise ValueError("user_id is required for account deletion.")
+    try:
+        uuid.UUID(str(user_id))
+    except (ValueError, TypeError) as exc:
+        raise ValueError("user_id must be a valid UUID.") from exc
+
+    if not settings.supabase_url or settings.supabase_url == "default" or not settings.supabase_service_role_key or settings.supabase_service_role_key == "default":
+        raise RuntimeError("Supabase service configuration is incomplete.")
+
+    base_url = settings.supabase_url.rstrip("/")
+    headers = get_supabase_headers()
+
+    user_scoped_tables = [
+        ("api_keys", "user_id"),
+        ("query_logs", "user_id"),
+        ("threads", "user_id"),
+        ("collections", "user_id"),
+        ("okf_docs", "user_id"),
+        ("profiles", "id"),
+    ]
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for table, col in user_scoped_tables:
+            del_url = f"{base_url}/rest/v1/{table}"
+            resp = await client.delete(del_url, headers=headers, params={col: f"eq.{user_id}"})
+            if resp.status_code not in (200, 204, 404):
+                logger.warning(f"Table cleanup warning for {table} (user={str(user_id)[:8]}): HTTP {resp.status_code}")
+
+        admin_url = f"{base_url}/auth/v1/admin/users/{user_id}"
+        admin_resp = await client.delete(admin_url, headers=headers)
+        if admin_resp.status_code not in (200, 204):
+            logger.error(f"Supabase Admin user delete failed (user={str(user_id)[:8]}): HTTP {admin_resp.status_code}")
+            raise RuntimeError(f"Auth provider deletion failed with status {admin_resp.status_code}.")
+
+    return {"deleted": True}

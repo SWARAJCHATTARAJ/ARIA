@@ -57,8 +57,8 @@ export async function queryApi({
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
   };
 
-  if (!token && !headers['Authorization'] && !headers['authorization']) {
-    headers['X-Anonymous-User'] = 'true';
+  if (!headers['Authorization'] && !headers['authorization']) {
+    throw new Error('Authentication required. Please sign in.');
   }
 
   return fetch(url, {

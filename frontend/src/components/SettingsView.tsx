@@ -21,6 +21,9 @@ import {
   Smartphone,
   Monitor,
   Sliders,
+  Lock,
+  AlertCircle,
+  X,
 } from 'lucide-react';
 import { useSettingsStore } from '../context/SettingsContext';
 import { useAuth, isCapacitorRuntime, isTauriRuntime } from '../context/AuthContext';
@@ -119,7 +122,7 @@ export default function SettingsView() {
     toggleApiKey,
     updateApiKeyStatus,
   } = useSettingsStore();
-  const { user, signOut, signInWithGitHub, openAuthModal } = useAuth();
+  const { user, accessToken, authIssuedAtSeconds, signOut, signInWithGitHub, deleteAccount } = useAuth();
 
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('research');
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
@@ -127,6 +130,29 @@ export default function SettingsView() {
   const [historyCount, setHistoryCount] = useState(() => getHistory().length);
   const [cleared, setCleared] = useState(false);
   const [pulse, setPulse] = useState(() => getResearchPulse());
+
+  // Permanent Account Deletion modal state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [confirmDeleteText, setConfirmDeleteText] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [isReauthingGitHub, setIsReauthingGitHub] = useState(false);
+  const [nowUnixSec, setNowUnixSec] = useState(() => Math.floor(Date.now() / 1000));
+
+  useEffect(() => {
+    if (!isDeleteModalOpen) return;
+    setNowUnixSec(Math.floor(Date.now() / 1000));
+    const id = window.setInterval(() => {
+      setNowUnixSec(Math.floor(Date.now() / 1000));
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [isDeleteModalOpen]);
+
+  const isOAuthSessionFresh =
+    user?.provider === 'github' &&
+    authIssuedAtSeconds !== null &&
+    nowUnixSec - authIssuedAtSeconds <= 300;
 
   // BYOK Groq key state
   const [newKey, setNewKey] = useState('');
@@ -195,9 +221,13 @@ export default function SettingsView() {
   const handleTestKey = async (id: string, keyVal: string) => {
     setTestingKeyId(id);
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
       const res = await fetch(`${API_BASE_URL}/api/keys/test`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ api_key: keyVal }),
       });
       const data = await res.json();
@@ -757,34 +787,16 @@ export default function SettingsView() {
                ========================================================= */}
             {activeSection === 'account' && (
               <>
-                {/* Account & Guest-to-GitHub Upgrade */}
+                {/* Authenticated Researcher Account */}
                 <section className="p-5 bg-[#111115] border border-white/[0.07] rounded-[8px] space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/[0.05]">
                     <div>
                       <h2 className="text-[15px] font-semibold text-[#EDEDED]">Researcher Account &amp; Cloud Sync</h2>
                       <p className="text-[12px] text-[#8B8B8E] mt-0.5">
-                        Local threads and bookmarks stay preserved in this workspace when linking an account.
+                        Authenticated Supabase workspace synced across Web, Windows, and Android.
                       </p>
                     </div>
-                    {user?.provider === 'guest' ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void signInWithGitHub()}
-                          className="btn-primary text-[11.5px] py-1.5 px-3"
-                        >
-                          <Github size={13} />
-                          <span>Sign in with GitHub</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openAuthModal()}
-                          className="btn-secondary text-[11.5px] py-1.5 px-3"
-                        >
-                          Email
-                        </button>
-                      </div>
-                    ) : user ? (
+                    {user && (
                       <button
                         type="button"
                         onClick={() => signOut()}
@@ -793,7 +805,7 @@ export default function SettingsView() {
                         <LogOut size={13} />
                         <span>Sign Out</span>
                       </button>
-                    ) : null}
+                    )}
                   </div>
 
                   {user && (
@@ -1028,11 +1040,201 @@ export default function SettingsView() {
                     </div>
                   </div>
                 </section>
+
+                {/* Danger Zone: Permanent Account Deletion */}
+                <section className="p-5 bg-[#120A0C] border border-red-500/30 rounded-[8px] space-y-3.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-red-500/15">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle size={15} className="text-red-400" />
+                        <h2 className="text-[15px] font-semibold text-red-300">Danger Zone</h2>
+                      </div>
+                      <p className="text-[12px] text-[#A1A1AA] mt-0.5">
+                        Permanently delete your ARIA account, Supabase Auth identity, saved threads, collections, and API keys. This action cannot be undone.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeletePassword('');
+                        setConfirmDeleteText('');
+                        setDeleteError(null);
+                        setIsDeleteModalOpen(true);
+                      }}
+                      className="px-3.5 py-2 rounded-[6px] bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-300 text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                    >
+                      <Trash2 size={13} />
+                      <span>Delete Account Permanently</span>
+                    </button>
+                  </div>
+                </section>
               </>
             )}
           </div>
         </div>
       </div>
+
+      {/* Permanent Account Deletion Re-Authentication Modal */}
+      {isDeleteModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Delete Account Permanently"
+          onClick={() => !isDeletingAccount && setIsDeleteModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md p-6 bg-[#0E0E12] border border-red-500/35 rounded-[10px] shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-white/[0.08]">
+              <div className="flex items-center gap-2 text-red-400">
+                <AlertTriangle size={16} />
+                <h3 className="text-[15px] font-semibold text-[#EDEDED]">Delete Account Permanently</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isDeletingAccount && setIsDeleteModalOpen(false)}
+                className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] rounded hover:bg-[#18181E] cursor-pointer"
+                aria-label="Close modal"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <p className="text-[12.5px] text-[#A1A1AA] leading-relaxed">
+              This will immediately and permanently remove your profile, query history logs, saved collections, OKF documents, stored API keys, local device data, and Supabase Auth identity.
+            </p>
+
+            {deleteError && (
+              <div className="p-3 bg-[#15090B] border border-red-500/40 text-[12px] text-red-400 rounded-[6px] flex items-start gap-2">
+                <AlertCircle size={14} className="shrink-0 mt-0.5 text-red-400" />
+                <span className="leading-snug">{deleteError}</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setDeleteError(null);
+                if (confirmDeleteText.trim() !== 'DELETE') {
+                  setDeleteError('Please type DELETE exactly to confirm.');
+                  return;
+                }
+                if (user?.provider === 'email' && !deletePassword) {
+                  setDeleteError('Please enter your current password to verify ownership.');
+                  return;
+                }
+                setIsDeletingAccount(true);
+                const result = await deleteAccount({
+                  confirmText: confirmDeleteText.trim(),
+                  password: user?.provider === 'email' ? deletePassword : undefined,
+                });
+                setIsDeletingAccount(false);
+                if (result.error) {
+                  setDeleteError(result.error.message);
+                } else {
+                  setIsDeleteModalOpen(false);
+                  showDownloadToast('Your ARIA account has been permanently deleted.');
+                }
+              }}
+              className="space-y-3.5"
+            >
+              {user?.provider === 'email' ? (
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-[#8B8B8E] uppercase tracking-wider">
+                    Current Password Required
+                  </label>
+                  <div className="relative">
+                    <Lock size={14} className="absolute left-3 top-3 text-[#71717A]" />
+                    <input
+                      type="password"
+                      value={deletePassword}
+                      onChange={(e) => setDeletePassword(e.target.value)}
+                      placeholder="Enter your current password"
+                      disabled={isDeletingAccount}
+                      autoComplete="current-password"
+                      className="w-full bg-[#111115] pl-9 pr-3 py-2 text-[13px] text-[#EDEDED] placeholder-[#71717A] border border-white/[0.1] focus:border-red-500/60 focus:outline-none rounded-[6px] font-mono"
+                      aria-label="Current password"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 rounded-[6px] bg-[#111115] border border-white/[0.08] space-y-2.5">
+                  {isOAuthSessionFresh ? (
+                    <div className="flex items-center gap-2 text-[12px] text-emerald-400">
+                      <CheckCircle2 size={14} className="shrink-0" />
+                      <span>Recent GitHub authentication verified (within 5 minutes).</span>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-[11.5px] text-amber-300 leading-relaxed">
+                        For security, GitHub sessions older than 5 minutes require fresh re-authentication before permanent deletion.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={isReauthingGitHub || isDeletingAccount}
+                        onClick={async () => {
+                          setIsReauthingGitHub(true);
+                          setDeleteError(null);
+                          const { error } = await signInWithGitHub();
+                          if (error) {
+                            setDeleteError(error.message);
+                            setIsReauthingGitHub(false);
+                          }
+                        }}
+                        className="w-full py-2 px-3 rounded-[6px] bg-[#18181E] hover:bg-[#22222A] border border-white/[0.14] text-[12px] font-medium text-[#EDEDED] flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Github size={13} />
+                        <span>{isReauthingGitHub ? 'Redirecting to GitHub...' : 'Re-authenticate with GitHub'}</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-mono text-[#8B8B8E] uppercase tracking-wider">
+                  Type <span className="text-red-400 font-semibold">DELETE</span> to confirm
+                </label>
+                <input
+                  type="text"
+                  value={confirmDeleteText}
+                  onChange={(e) => setConfirmDeleteText(e.target.value)}
+                  placeholder="DELETE"
+                  disabled={isDeletingAccount}
+                  className="w-full bg-[#111115] px-3 py-2 text-[13px] text-[#EDEDED] placeholder-[#52525B] border border-white/[0.1] focus:border-red-500/60 focus:outline-none rounded-[6px] font-mono"
+                  aria-label="Type DELETE to confirm"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  disabled={isDeletingAccount}
+                  className="px-3.5 py-2 rounded-[6px] bg-[#18181E] hover:bg-[#22222A] text-[12px] text-[#EDEDED] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    isDeletingAccount ||
+                    confirmDeleteText.trim() !== 'DELETE' ||
+                    (user?.provider === 'email' && !deletePassword) ||
+                    (user?.provider !== 'email' && !isOAuthSessionFresh)
+                  }
+                  className="px-4 py-2 rounded-[6px] bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-[12px] font-medium text-white flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 size={13} />
+                  <span>{isDeletingAccount ? 'Deleting Account...' : 'Confirm Permanent Deletion'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

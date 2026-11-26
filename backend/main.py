@@ -18,11 +18,10 @@ from config import settings
 from routers import export, okf
 from utils.api_security import (
     get_client_ip,
-    verify_supabase_jwt,
+    require_authenticated_user,
+    verify_supabase_user_password,
     check_user_rate_limit,
     record_user_request,
-    check_anonymous_rate_limit,
-    record_anonymous_request,
     check_general_ip_rate_limit,
     validate_uuid,
     ALLOWED_VERDICTS,
@@ -151,15 +150,83 @@ class FeedbackRequest(BaseModel):
     tiers: Optional[List[str]] = Field(default=None, max_length=10)
     route_engine: Optional[str] = None
 
+class DeleteAccountRequest(BaseModel):
+    confirm_text: str = Field(..., min_length=1, max_length=32)
+    password: Optional[str] = Field(default=None, max_length=256)
+
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "version": "2.0.0"}
+
+@app.delete("/api/account")
+async def delete_account_endpoint(req: DeleteAccountRequest, request: Request):
+    """
+    Permanently deletes the authenticated user's ARIA records and Supabase Auth identity
+    after strict re-authentication (password verification or fresh <=5m OAuth session)
+    and exact confirmation phrase 'DELETE'.
+    """
+    user_payload = await require_authenticated_user(request)
+    user_id = user_payload["verified_user_id"]
+    email = user_payload.get("email") or (user_payload.get("user_metadata") or {}).get("email")
+
+    if (req.confirm_text or "").strip() != "DELETE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Confirmation phrase must match "DELETE" exactly.',
+        )
+
+    app_meta = user_payload.get("app_metadata") or {}
+    provider = str(app_meta.get("provider") or "").lower()
+    providers = [str(p).lower() for p in (app_meta.get("providers") or []) if p]
+    is_email_only = provider == "email" and (not providers or providers == ["email"])
+
+    if req.password is not None and req.password != "":
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verified email address is unavailable for password confirmation.",
+            )
+        is_valid_password = await verify_supabase_user_password(str(email), req.password)
+        if not is_valid_password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid current password.",
+            )
+    else:
+        if is_email_only:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is required to permanently delete an email/password account.",
+            )
+        iat = user_payload.get("iat")
+        try:
+            iat_ts = float(iat) if iat is not None else None
+        except (TypeError, ValueError):
+            iat_ts = None
+        if iat_ts is None or (time.time() - iat_ts) > 300:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Recent authentication required. Please re-authenticate before deleting your account.",
+            )
+
+    from utils.supabase_client import permanently_delete_user_account
+    try:
+        await permanently_delete_user_account(user_id)
+    except Exception as exc:
+        logger.error(f"Account deletion failed for user {str(user_id)[:8]}: {type(exc).__name__}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user account cleanly.",
+        )
+    return {"deleted": True}
 
 @app.post("/api/keys/test")
 async def test_key_endpoint(req: KeyTestRequest, request: Request):
     """
     Validates a user-provided Groq API key and measures round-trip latency.
+    Requires authenticated Supabase JWT.
     """
+    await require_authenticated_user(request)
     from utils.key_manager import test_groq_api_key
     res = await test_groq_api_key(req.api_key)
     if res.get("status") != "valid":
@@ -174,12 +241,29 @@ async def test_key_endpoint(req: KeyTestRequest, request: Request):
 async def query_pipeline(req: QueryRequest, request: Request):
     """
     Main endpoint for ARIA query pipeline.
-    Requires Supabase JWT, or enforces per-IP 5/hr limit + DAILY_QUERY_CAP for anonymous demo use.
-    Enforces 8 KB body size, 500 char query length, UUID thread_id, and 90s stream limit.
+    Strictly requires a valid Supabase Bearer JWT and enforces per-user rate limits,
+    8 KB body size, 500 char query length, UUID thread_id, and 90s stream limit.
     """
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-    # 1. Validation
+    # 1. Mandatory Authentication & Per-User Rate Limiting
+    user_payload = await require_authenticated_user(request)
+    user_id = user_payload["verified_user_id"]
+    allowed, retry_after, limit_msg = check_user_rate_limit(user_id, is_feedback=False)
+    if not allowed:
+        return Response(
+            content=limit_msg,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            media_type="text/plain",
+            headers={
+                "Retry-After": str(retry_after),
+                "X-Content-Type-Options": "nosniff",
+                "X-Request-ID": request_id
+            }
+        )
+    record_user_request(user_id, is_feedback=False)
+
+    # 2. Validation
     if not req.query or not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
     if len(req.query.strip()) > MAX_QUERY_LENGTH:
@@ -188,57 +272,6 @@ async def query_pipeline(req: QueryRequest, request: Request):
             detail=f"Query length exceeds {MAX_QUERY_LENGTH} characters limit (received {len(req.query.strip())})."
         )
     validate_uuid(req.thread_id, "thread_id")
-
-    # 2. Authentication & Rate Limiting (Authenticated User or Anonymous/Guest Fallback)
-    auth_header = request.headers.get("authorization", "")
-    token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
-    client_ip = get_client_ip(request)
-
-    # Check if request explicitly signals anonymous / guest mode or lacks a Bearer token
-    is_guest = (
-        not token or
-        token.lower() in ("null", "undefined", "guest", "anonymous") or
-        request.headers.get("x-anonymous-user", "").lower() in ("true", "1") or
-        request.headers.get("x-guest", "").lower() in ("true", "1")
-    )
-
-    if not is_guest and token:
-        user_payload = await verify_supabase_jwt(token)
-        user_id = user_payload.get("id") or user_payload.get("sub")
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid user session."
-            )
-        allowed, retry_after, limit_msg = check_user_rate_limit(user_id, is_feedback=False)
-        if not allowed:
-            return Response(
-                content=limit_msg,
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                media_type="text/plain",
-                headers={
-                    "Retry-After": str(retry_after),
-                    "X-Content-Type-Options": "nosniff",
-                    "X-Request-ID": request_id
-                }
-            )
-        record_user_request(user_id, is_feedback=False)
-    else:
-        # Anonymous / Guest request fallback (Per-IP 5/hr rate limit + global daily cap)
-        user_id = f"guest_{client_ip}"
-        allowed, retry_after, limit_msg = check_anonymous_rate_limit(client_ip, is_feedback=False)
-        if not allowed:
-            return Response(
-                content=limit_msg,
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                media_type="text/plain",
-                headers={
-                    "Retry-After": str(retry_after),
-                    "X-Content-Type-Options": "nosniff",
-                    "X-Request-ID": request_id
-                }
-            )
-        record_anonymous_request(client_ip, is_feedback=False)
 
     # 3. Session memory configuration
     from utils.token_tracker import TokenTracker, token_rate_limiter
@@ -762,6 +795,7 @@ async def test_queue_endpoint(request: Request):
     Test-only endpoint that goes through global_query_queue and sleeps 5 s.
     Emits SSE events: 'queued' (if waiting), 'start', 'completed', 'done'.
     """
+    await require_authenticated_user(request)
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
     from utils.query_queue import global_query_queue
 
@@ -811,16 +845,16 @@ async def test_queue_endpoint(request: Request):
 async def submit_feedback(req: FeedbackRequest, request: Request):
     """
     Stores feedback into Supabase feedback table.
-    Enforces same validation and limits:
-    - 8 KB body size
-    - Supabase JWT or anonymous 5/hr rate limit
-    - UUID thread_id
-    - Verdict enum validation
-    - String length limits
+    Enforces strict Supabase Bearer JWT authentication and per-user rate limits,
+    8 KB body size, UUID thread_id, Verdict enum validation, and length limits.
     """
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
-    # 1. Parameter Validation
+    # 1. Mandatory Authentication & Rate Limiting
+    user_payload = await require_authenticated_user(request)
+    user_id = user_payload["verified_user_id"]
+
+    # 2. Parameter Validation
     validate_uuid(req.thread_id, "thread_id")
     if not req.message_id or len(req.message_id) > 100:
         raise HTTPException(status_code=400, detail="message_id must be between 1 and 100 characters.")
@@ -836,23 +870,6 @@ async def submit_feedback(req: FeedbackRequest, request: Request):
         raise HTTPException(status_code=400, detail=f"query exceeds {MAX_QUERY_LENGTH} characters.")
     if req.route_engine and len(req.route_engine.strip()) > 50:
         raise HTTPException(status_code=400, detail="route_engine exceeds 50 characters.")
-
-    # 2. Mandatory Authentication & Rate Limiting
-    auth_header = request.headers.get("authorization", "")
-    token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required. Please sign in to submit feedback."
-        )
-
-    user_payload = await verify_supabase_jwt(token)
-    user_id = user_payload.get("id") or user_payload.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user session."
-        )
 
     allowed, retry_after, limit_msg = check_user_rate_limit(user_id, is_feedback=True)
     if not allowed:
@@ -977,7 +994,7 @@ async def _reformulate_for_visual(query: str) -> Dict[str, Any]:
 
 
 @app.get("/api/visual-card")
-async def get_visual_card(query: str):
+async def get_visual_card(query: str, request: Request):
     """
     Given a query or technical concept, resolves it to the disambiguated canonical
     academic subject, queries Wikipedia for a verified technical diagram/thumbnail,
@@ -988,6 +1005,7 @@ async def get_visual_card(query: str):
     If no strictly verified image passes, returns found: False / image_url: None so
     the frontend falls back to the Live Interactive Citation & Entailment Topology Graph.
     """
+    await require_authenticated_user(request)
     empty = {"found": False, "image_url": None}
     if not query or not query.strip():
         return empty
@@ -1129,20 +1147,12 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
     on errors so CORS headers are attached, preventing opaque WebView 'Failed to fetch'.
     """
     try:
-        auth_header = request.headers.get("authorization", "")
-        token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else None
-        if not token:
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"detail": "Authentication required. Please sign in to export PDF reports."}
-            )
         try:
-            await verify_supabase_jwt(token)
-        except Exception as auth_err:
-            logger.warning(f"PDF export auth verification failed: {auth_err}")
+            await require_authenticated_user(request)
+        except HTTPException as auth_exc:
             return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"detail": "Invalid or expired session. Please sign in again."}
+                status_code=auth_exc.status_code,
+                content={"detail": auth_exc.detail or "Authentication required. Please sign in to export PDF reports."}
             )
 
         from utils.pdf_generator import generate_research_pdf
@@ -1262,10 +1272,11 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
 
 
 @app.get("/api/okf/graph")
-async def get_okf_graph():
+async def get_okf_graph(request: Request):
     """
     Parses OKF markdown files in data/okf and returns nodes and directional related edges.
     """
+    await require_authenticated_user(request)
     from pipeline.okf_parser import parse_okf_file
     import os
     

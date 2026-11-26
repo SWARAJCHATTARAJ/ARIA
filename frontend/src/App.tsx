@@ -10,7 +10,6 @@ import { AuthProvider, useAuth, isNativeRuntime } from './context/AuthContext';
 import { SettingsProvider, useSettingsStore } from './context/SettingsContext';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import LoginScreen from './components/LoginScreen';
-import AuthModal from './components/ui/AuthModal';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import { recordSourceExplored } from './utils/researchPulse';
 import { Loader2, X, Keyboard } from 'lucide-react';
@@ -59,7 +58,9 @@ export default function App() {
 }
 
 function RootGate() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isPasswordRecovery } = useAuth();
+  const isResetPath =
+    typeof window !== 'undefined' && window.location.pathname === '/reset-password';
 
   if (isLoading) {
     return (
@@ -70,6 +71,10 @@ function RootGate() {
         </span>
       </div>
     );
+  }
+
+  if (isPasswordRecovery || isResetPath) {
+    return <LoginScreen />;
   }
 
   if (!user) {
@@ -396,7 +401,6 @@ function AppShell() {
       )}
 
       {/* Global Modals */}
-      <AuthModal />
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}

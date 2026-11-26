@@ -4,6 +4,7 @@ import fitz
 import json
 import os
 import sys
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -113,7 +114,7 @@ def test_export_pdf_endpoint_styles():
         "pdf_style": "academic",
     }
 
-    with patch("main.verify_supabase_jwt", new=AsyncMock(return_value={"id": "00000000-0000-0000-0000-000000000001"})):
+    with patch("utils.api_security.verify_supabase_jwt", new=AsyncMock(return_value={"id": "00000000-0000-0000-0000-000000000001"})):
         resp_acad = client.post(
             "/api/export/pdf",
             json=base_payload,
@@ -389,6 +390,137 @@ def test_peer_reviewed_and_recency_filters():
     print("  -> PASS: peer_reviewed exclusion & recency cutoff verified.")
 
 
+def test_mandatory_auth_and_no_guest_bypass():
+    import time
+    from main import app
+
+    print("[7/8] Testing mandatory JWT authentication & zero guest fallback across protected endpoints...")
+    client = TestClient(app)
+
+    assert client.get("/health").status_code == 200
+
+    # /api/query unauthenticated + X-Anonymous-User must be 401
+    r1 = client.post("/api/query", json={"query": "Quantum entanglement", "thread_id": str(uuid.uuid4())})
+    assert r1.status_code == 401, f"/api/query without auth expected 401, got {r1.status_code}"
+    r2 = client.post(
+        "/api/query",
+        json={"query": "Quantum entanglement", "thread_id": str(uuid.uuid4())},
+        headers={"X-Anonymous-User": "true"},
+    )
+    assert r2.status_code == 401, f"/api/query with X-Anonymous-User expected 401, got {r2.status_code}"
+
+    # /api/export/pdf unauthenticated + X-Anonymous-User must be 401
+    pdf_body = {"query": "Test", "answer_final": "Summary", "sources": [], "claims": []}
+    p1 = client.post("/api/export/pdf", json=pdf_body)
+    assert p1.status_code == 401, f"/api/export/pdf without auth expected 401, got {p1.status_code}"
+    p2 = client.post("/api/export/pdf", json=pdf_body, headers={"X-Anonymous-User": "true"})
+    assert p2.status_code == 401, f"/api/export/pdf with X-Anonymous-User expected 401, got {p2.status_code}"
+
+    # Auxiliary protected endpoints must also reject missing auth cleanly
+    assert client.post("/api/keys/test", json={"api_key": "gsk_1234567890abcdef"}).status_code == 401
+    assert client.get("/api/okf/graph").status_code == 401
+    assert client.request("DELETE", "/api/account", json={"confirm_text": "DELETE"}).status_code == 401
+    print("  -> PASS: All protected endpoints reject unauthenticated and anonymous requests with 401.")
+
+
+def test_account_deletion_reauth_and_cleanup():
+    import time
+    from main import app
+
+    print("[8/8] Testing DELETE /api/account validation, re-auth enforcement, and cascade cleanup...")
+    client = TestClient(app)
+    uid = "33333333-3333-3333-3333-333333333333"
+    now_ts = int(time.time())
+
+    # Case 1: Wrong confirmation phrase -> 400
+    email_payload = {
+        "sub": uid,
+        "email": "researcher@university.edu",
+        "iat": now_ts,
+        "app_metadata": {"provider": "email", "providers": ["email"]},
+    }
+    with patch("utils.api_security.verify_supabase_jwt", new=AsyncMock(return_value=email_payload)):
+        r_bad_confirm = client.request(
+            "DELETE",
+            "/api/account",
+            json={"confirm_text": "delete", "password": "correct-password"},
+            headers={"Authorization": "Bearer valid_email_jwt"},
+        )
+        assert r_bad_confirm.status_code == 400, f"Expected 400 on lowercase confirm, got {r_bad_confirm.status_code}"
+
+        # Case 2: Wrong current password -> 401
+        with patch("main.verify_supabase_user_password", new=AsyncMock(return_value=False)):
+            r_bad_pwd = client.request(
+                "DELETE",
+                "/api/account",
+                json={"confirm_text": "DELETE", "password": "wrong-password"},
+                headers={"Authorization": "Bearer valid_email_jwt"},
+            )
+            assert r_bad_pwd.status_code == 401, f"Expected 401 on wrong password, got {r_bad_pwd.status_code}"
+
+        # Case 3: Email account missing password -> 400
+        r_no_pwd = client.request(
+            "DELETE",
+            "/api/account",
+            json={"confirm_text": "DELETE"},
+            headers={"Authorization": "Bearer valid_email_jwt"},
+        )
+        assert r_no_pwd.status_code == 400, f"Expected 400 on missing password for email account, got {r_no_pwd.status_code}"
+
+        # Case 4: Valid email password re-auth -> 200 {"deleted": true} and cleanup called with verified user_id
+        delete_mock = AsyncMock(return_value={"deleted": True})
+        with patch("main.verify_supabase_user_password", new=AsyncMock(return_value=True)), \
+             patch("utils.supabase_client.permanently_delete_user_account", new=delete_mock):
+            r_ok_email = client.request(
+                "DELETE",
+                "/api/account",
+                json={"confirm_text": "DELETE", "password": "correct-password"},
+                headers={"Authorization": "Bearer valid_email_jwt"},
+            )
+            assert r_ok_email.status_code == 200, f"Expected 200 on valid password delete, got {r_ok_email.status_code}"
+            assert r_ok_email.json() == {"deleted": True}
+            delete_mock.assert_awaited_once_with(uid)
+
+    # Case 5: OAuth account with stale iat (> 300s ago) -> 403
+    stale_oauth_payload = {
+        "sub": uid,
+        "email": "octocat@github.com",
+        "iat": now_ts - 600,
+        "app_metadata": {"provider": "github", "providers": ["github"]},
+    }
+    with patch("utils.api_security.verify_supabase_jwt", new=AsyncMock(return_value=stale_oauth_payload)):
+        r_stale_oauth = client.request(
+            "DELETE",
+            "/api/account",
+            json={"confirm_text": "DELETE"},
+            headers={"Authorization": "Bearer stale_oauth_jwt"},
+        )
+        assert r_stale_oauth.status_code == 403, f"Expected 403 on stale OAuth iat, got {r_stale_oauth.status_code}"
+        assert "Recent authentication required" in r_stale_oauth.json().get("detail", "")
+
+    # Case 6: OAuth account with fresh iat (<= 300s ago) -> 200 {"deleted": true}
+    fresh_oauth_payload = {
+        "sub": uid,
+        "email": "octocat@github.com",
+        "iat": now_ts - 30,
+        "app_metadata": {"provider": "github", "providers": ["github"]},
+    }
+    delete_oauth_mock = AsyncMock(return_value={"deleted": True})
+    with patch("utils.api_security.verify_supabase_jwt", new=AsyncMock(return_value=fresh_oauth_payload)), \
+         patch("utils.supabase_client.permanently_delete_user_account", new=delete_oauth_mock):
+        r_ok_oauth = client.request(
+            "DELETE",
+            "/api/account",
+            json={"confirm_text": "DELETE"},
+            headers={"Authorization": "Bearer fresh_oauth_jwt"},
+        )
+        assert r_ok_oauth.status_code == 200, f"Expected 200 on fresh OAuth delete, got {r_ok_oauth.status_code}"
+        assert r_ok_oauth.json() == {"deleted": True}
+        delete_oauth_mock.assert_awaited_once_with(uid)
+
+    print("  -> PASS: DELETE /api/account re-auth and permanent deletion ledger verified.")
+
+
 if __name__ == "__main__":
     test_wikipedia_clean_extraction()
     test_export_pdf_endpoint_styles()
@@ -396,4 +528,6 @@ if __name__ == "__main__":
     test_verification_state_and_adaptive_followups()
     test_evidence_quote_alignment_and_strict_academic()
     test_peer_reviewed_and_recency_filters()
+    test_mandatory_auth_and_no_guest_bypass()
+    test_account_deletion_reauth_and_cleanup()
     print("\nALL UPGRADE VERIFICATION TESTS PASSED!")
