@@ -1,280 +1,248 @@
 <div align="center">
 
+<!-- HERO BANNER -->
+<br />
 <img src="frontend/public/aria-icon.svg" width="76" alt="ARIA Logo" />
+<h1>✦ ARIA</h1>
+<p><strong>Academic Research &amp; Intelligence Architecture — v2.0</strong></p>
 
-# ARIA v2.0
+<p>
+  <em>Citation-verified synthesis, deterministic claim entailment, and publication-grade exports across Web, Windows, and Android.</em>
+</p>
 
-**An AI research workspace that actually checks its own homework.**
+<p>
+  <a href="https://aria.swarajchattaraj.tech">
+    <img src="https://img.shields.io/badge/LIVE_WORKSPACE-aria.swarajchattaraj.tech-06B6D4?style=for-the-badge&logo=vercel&logoColor=white" alt="Live App" />
+  </a>
+  <a href="https://github.com/SWARAJCHATTARAJ/ARIA/actions/workflows/build-natives.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/SWARAJCHATTARAJ/ARIA/build-natives.yml?branch=main&style=for-the-badge&label=NATIVE_BUILDS&color=10B981" alt="Native Builds" />
+  </a>
+  <a href="https://github.com/SWARAJCHATTARAJ/ARIA/releases">
+    <img src="https://img.shields.io/badge/PLATFORMS-Web_%7C_Win_.exe_%7C_Android_.apk-0F172A?style=for-the-badge&labelColor=1E293B" alt="Platforms" />
+  </a>
+</p>
 
-*(Because citing a hallucinated 2023 Stanford paper in front of your professor is a core memory nobody wants.)*
+<p>
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/React_18-20232A?style=flat-square&logo=react&logoColor=61DAFB" alt="React 18" />
+  <img src="https://img.shields.io/badge/TypeScript_5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5" />
+  <img src="https://img.shields.io/badge/Tauri_v2-FFC131?style=flat-square&logo=tauri&logoColor=black" alt="Tauri v2" />
+  <img src="https://img.shields.io/badge/Capacitor_8-119EFF?style=flat-square&logo=capacitor&logoColor=white" alt="Capacitor 8" />
+  <img src="https://img.shields.io/badge/PyMuPDF-2563EB?style=flat-square&logo=adobeacrobatreader&logoColor=white" alt="PyMuPDF" />
+  <img src="https://img.shields.io/badge/Supabase-3ECF8E?style=flat-square&logo=supabase&logoColor=white" alt="Supabase" />
+  <img src="https://img.shields.io/badge/Azure_VM-0078D4?style=flat-square&logo=microsoftazure&logoColor=white" alt="Azure" />
+</p>
 
-<br/>
+<br />
 
-[![Live App](https://img.shields.io/badge/Live_App-aria.swarajchattaraj.tech-050811?style=for-the-badge&logo=googlechrome&logoColor=60A5FA)](https://aria.swarajchattaraj.tech)
-[![Releases](https://img.shields.io/badge/Releases-v2.0.0-050811?style=for-the-badge&logo=github&logoColor=white)](https://github.com/SWARAJCHATTARAJ/ARIA/releases)
-[![Native Builds](https://img.shields.io/github/actions/workflow/status/SWARAJCHATTARAJ/ARIA/build-natives.yml?branch=main&label=Native%20Builds&style=for-the-badge&color=050811&logo=githubactions&logoColor=white)](https://github.com/SWARAJCHATTARAJ/ARIA/actions/workflows/build-natives.yml)
-
-<br/>
-
-![React](https://img.shields.io/badge/React_18-050811?style=flat-square&logo=react&logoColor=61DAFB)
-![TypeScript](https://img.shields.io/badge/TypeScript_5-050811?style=flat-square&logo=typescript&logoColor=3178C6)
-![FastAPI](https://img.shields.io/badge/FastAPI-050811?style=flat-square&logo=fastapi&logoColor=009688)
-![Supabase](https://img.shields.io/badge/Supabase_pgvector-050811?style=flat-square&logo=supabase&logoColor=3ECF8E)
-![Tauri](https://img.shields.io/badge/Tauri_v2-050811?style=flat-square&logo=tauri&logoColor=FFC131)
-![Capacitor](https://img.shields.io/badge/Capacitor_Android-050811?style=flat-square&logo=capacitor&logoColor=119EFF)
-![Tailwind](https://img.shields.io/badge/Tailwind_CSS-050811?style=flat-square&logo=tailwindcss&logoColor=06B6D4)
+[Launch Web App](https://aria.swarajchattaraj.tech) · [Download Desktop & APK](https://github.com/SWARAJCHATTARAJ/ARIA/releases) · [Architecture](#architecture) · [Quick Start](#quick-start)
 
 </div>
 
 ---
 
-### Wait, what is this?
+## Why ARIA?
 
-Most "AI research tools" are just generic GPT wrappers that slap a fake DOI onto a paragraph of made-up trivia and call it a day. When you click the footnote, the paper doesn't exist, the authors never worked together, and the journal was made up on the spot.
+Most AI tools generate fluent answers first and treat accuracy as an afterthought. **ARIA** is engineered from the ground up as a **verifiable research instrument**—every response runs through a concurrent multi-tier retrieval and deterministic claim-entailment pipeline, paired with a high-craft editorial interface built for deep reading.
 
-**ARIA is built differently.** It doesn't write an answer and hope for the best. It fires a concurrent three-tier retrieval engine, runs every single claim through an entailment auditor before rendering, pulls verified scientific diagrams and quantitative charts directly from Wikimedia Commons and benchmark tables, and exports production-grade academic PDF preprints plus clean `.bib` citation files.
-
-And it runs anywhere: on the **Web**, as a native Windows desktop app (**`.exe`** via Tauri v2), or as an Android app (**`.apk`** via Capacitor) that never boots you out to external browsers.
+<!-- Add screenshots at docs/assets/workspace-desktop.png and docs/assets/workspace-mobile.png before uncommenting:
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="66%">
+        <img src="docs/assets/workspace-desktop.png" alt="ARIA Desktop Workspace" />
+        <br />
+        <sub><b>Desktop &amp; Web Workspace</b> — Editorial reading canvas &amp; 3-tab Research Inspector</sub>
+      </td>
+      <td align="center" width="34%">
+        <img src="docs/assets/workspace-mobile.png" alt="ARIA Android App" />
+        <br />
+        <sub><b>Native Android (.apk)</b> — Obsidian UI &amp; direct Downloads/ARIA export</sub>
+      </td>
+    </tr>
+  </table>
+</div>
+-->
 
 ---
 
-### Stuff that took way too many 2 AM commits
+## Core Capabilities
 
-- **Three-tier concurrent retrieval:** Local OKF curated knowledge graph + Supabase `pgvector` RAG + live arXiv / OpenAlex / Wikipedia REST APIs fired in parallel via `asyncio.gather`. Custom timeouts guarantee slow or dead upstream tiers fail fast without freezing the thread.
-- **Built-in BS detector (Research Inspector):** A dedicated post-synthesis audit pass evaluates each sentence against actual retrieved passages. It checks for exact quote alignment, flags unsupported numbers, catches retracted papers via Crossref/Retraction Watch sync, and exports clean BibTeX `.bib` files.
-- **One-click academic PDFs:** No browser `window.print()` hacks. ARIA generates real single-column preprints with proper LaTeX-to-Unicode math sanitization, formatted Markdown tables, clickable primary source DOIs, verified topic schematics, and 300-DPI publication `matplotlib` plots.
-- **Streaming that won't melt your browser:** Real-time Server-Sent Events (SSE) token streaming throttled to ~20fps with debounced auto-scroll so long 2,000-word synthesis runs don't lock your main thread or peg your CPU.
-- **API key hot-potato:** Intelligent multi-key pool rotation and instant model failover (`llama-3.3-70b-versatile` &rarr; `llama-3.1-8b-instant`). When Groq returns a `429 Too Many Requests`, ARIA switches keys in <0.5s instead of sleeping for 40 seconds and dropping the connection.
-- **Obsidian `#050811` dark mode:** Designed for late-night research marathons. Built from scratch with Obsidian dark tones, mono badges, and zero blinding white canvases (unless you deliberately switch to Light Mode and flashbang yourself).
-- **Auth without the headache:** Pure in-app Email + Password authentication powered by Supabase Auth (PKCE flow) alongside GitHub OAuth, plus a zero-friction, rate-limited Guest Mode for anyone who refuses to sign up for yet another account.
+| Capability | What It Does |
+| :--- | :--- |
+| **4-Stage Verified Pipeline** | Executes `PLAN → RETRIEVE → SYNTHESIZE → VERIFY` in real time over SSE with live kinetic stage indicators and a 25s inactivity stream watchdog. |
+| **Click-to-Proof Citations** | Click any inline `[1]` badge to open the **Research Inspector**, jump straight to the primary source card, and highlight the exact supporting `evidence_quote` sentence. |
+| **Academic Source Controls** | Scope across **9 discipline branches**, **2 research modes** (`Synthesis` / `Deep Compare`), **Strict Academic** entailment gating, **Peer-Reviewed Only** (OpenAlex, arXiv, Crossref, Semantic Scholar, PubMed), and publication recency (`2Y` / `5Y` / `All`). |
+| **Publication-Grade Exports** | Export formatted **Academic Paper** or **Executive Brief** PDFs (PyMuPDF + Unicode/LaTeX math + optional Claim Verification Ledger + Matplotlib plots), Overleaf-ready **`.tex`**, Zotero **`.ris`**, **`.bib`**, **`.md`**, and one-click **APA 7 / IEEE / Chicago / BibTeX** citations. |
+| **Curiosity Pathways** | Every report ends with 3 topic-grounded exploration cards—**Deep Dive**, **Counter-View**, and **Applied**—turning answers into structured research loops. |
+| **Cross-Platform Native UX** | One unified codebase powering **Web**, **Windows `.exe`** (Tauri v2), and **Android `.apk`** (Capacitor 8 + custom `DirectDownloadPlugin` via `MediaStore.Downloads` into `Downloads/ARIA/`). |
+| **Zero-Friction Access** | Instant anonymous guest workspace with in-app **Supabase Email/Password** or **GitHub OAuth** PKCE upgrade—no forced login walls. |
+| **4 Curated Themes** | Switch seamlessly between **Cyber Cyan**, **Emerald Biolab**, **Obsidian Gold**, and **Solaris Paper** across Dark, Light, and System surfaces with Serif/Sans typography options. |
 
 ---
 
-### How a query survives the pipeline
+## Architecture
 
 ```mermaid
 flowchart LR
-    Q["Your Question"] --> P["Planner Node"]
-    P --> T1["Tier 1: OKF Knowledge Graph"]
-    P --> T2["Tier 2: Supabase pgvector"]
-    P --> T3["Tier 3: arXiv · OpenAlex · Wiki"]
-    T1 --> RD["Rank & Dedupe"]
-    T2 --> RD
-    T3 --> RD
-    RD --> SYN["SSE Synthesizer (Multi-Key Failover)"]
-    SYN --> AUD["Claim Auditor (Trust, but Verify)"]
-    AUD --> OUT1["Web / .exe / .apk + Visuals & Inspector"]
-    AUD --> OUT2["PDF Preprint + .BIB Export"]
+    subgraph Client ["Cross-Platform Clients"]
+        W["Web App (Vercel)"]
+        D["Windows .exe (Tauri v2)"]
+        A["Android .apk (Capacitor 8)"]
+    end
+
+    subgraph Edge ["Secure Edge & Auth"]
+        CF["Nginx / TLS Edge"]
+        AUTH["Supabase JWT + Guest Fallback"]
+    end
+
+    subgraph Engine ["ARIA Research Engine (FastAPI + SSE)"]
+        P["1. PLAN<br/>Intent & Sub-queries"]
+        R["2. RETRIEVE<br/>OKF · pgvector · OpenAlex · arXiv · Crossref · PubMed · MediaWiki"]
+        S["3. SYNTHESIZE<br/>Domain-Adaptive Scholarly Prose"]
+        V["4. VERIFY<br/>Deterministic Claim Entailment"]
+        PDF["PyMuPDF PDF + .TEX / .RIS / .BIB"]
+    end
+
+    W & D & A -->|HTTPS / SSE| CF --> AUTH --> P
+    P --> R --> S --> V
+    V -->|Streamed Tokens & Audit| Client
+    V --> PDF -->|Direct Native Save| Client
 ```
 
 ---
 
-### The Stack
+## Security & Engineering Standards
 
-| Layer | Technologies & Tools | Why we picked it |
-|---|---|---|
-| **Frontend** | React 18, Vite 5, TypeScript 5, Tailwind CSS | Fast HMR, type safety, sub-millisecond styling |
-| **Math & Icons** | KaTeX, Lucide React | Real LaTeX equations without mathjax bundle bloat |
-| **Backend API** | FastAPI, Python 3.11+, LangGraph, Uvicorn | Async ASGI pipeline with deterministic DAG routing |
-| **Inference** | Groq LPU (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`) | Token generation speeds exceeding 250+ tokens/sec |
-| **Vector & Data** | Supabase (PostgreSQL 15 + `pgvector`), FastEmbed (`bge-small-en-v1.5`) | Local ONNX embeddings, zero torch dependency, instant RAG |
-| **PDF & Plots** | PyMuPDF (`fitz`), Pillow, Matplotlib (Agg backend) | Native binary PDF generation with crisp 300-DPI charts |
-| **Native Apps** | Tauri v2 (Rust, Windows `.exe`), Capacitor 8 (Android `.apk`) | Lightweight native wrappers with locked WebView navigation |
-| **Infrastructure** | Vercel (Edge Frontend) + Azure Linux VM (Nginx + systemd) | 99.9% uptime, zero cold-start delay for backend inference |
+ARIA is built with defense-in-depth across backend services, web clients, and native shells:
+
+- **SSRF & DNS-Rebinding Hardening** — Outbound figure and source fetchers resolve hostnames and re-verify peer socket IPs (`SSRFSafeTransport`), strictly blocking loopback (`127.0.0.0/8`, `::1`), RFC1918 private subnets, non-HTTP(S) schemes/ports, redirects to internal hosts, and cloud metadata IPs (`169.254.169.254`).
+- **Strict Input & Rate Controls** — Enforced Pydantic v2 payload bounds, 8 KB query body cap (4 MB for PDF export), per-user and per-IP sliding-window rate limiting (`429 Retry-After`), and hardened HTTP headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`).
+- **Safe Rendering & Error Masking** — Strict URL protocol allowlisting (`https:` / `http:` / `mailto:`), XSS-safe Markdown/KaTeX (`trust: false`) rendering, and correlation-ID error handling that never leaks raw Python stack traces.
+- **Automated Native CI/CD** — `.github/workflows/build-natives.yml` compiles signed-ready **Windows `.exe`** (NSIS/Tauri v2) and **Android `.apk`** (Node.js 22, Java 21, Android SDK 36) artifacts on pushes to `main` and version tags.
 
 ---
 
-### Run it locally
+## Quick Start
 
-#### 1. Backend Setup (FastAPI)
+### Prerequisites
+
+- **Python** `3.11+`
+- **Node.js** `22+` & **npm**
+- *(Optional for native builds)* **Rust** (`x86_64-pc-windows-msvc`, Tauri v2) & **Java 21 + Android SDK 36** (Capacitor 8)
+
+### 1. Clone & Configure
 
 ```bash
-# Clone the repository
 git clone https://github.com/SWARAJCHATTARAJ/ARIA.git
-cd ARIA/backend
-
-# Create and activate a clean virtual environment
-python -m venv venv
-# Linux / macOS:
-source venv/bin/activate
-# Windows PowerShell:
-.\venv\Scripts\Activate.ps1
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment variables
-cp .env.example .env
+cd ARIA
 ```
 
-> [!WARNING]
-> **Python 3.12 Compatibility Notice:**
-> If you are on Python 3.12+, keep `numpy<2.0.0` (pinned to `1.26.4`) and `matplotlib<3.10` so `langchain-core` and fastembed bindings don't throw a C-extension tantrum during compilation.
+<details>
+<summary><b>Environment Variables (<code>backend/.env</code> &amp; <code>frontend/.env</code>)</b></summary>
 
-Open `backend/.env` and supply your credentials:
-```ini
+```env
+# backend/.env (see backend/.env.example)
 GROQ_API_KEY=your_groq_api_key_here
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+SUPABASE_JWT_SECRET=your_supabase_jwt_secret_here
 JWT_AUTH_ENABLED=false
-```
+ENVIRONMENT=development
+ALLOWED_ORIGINS=http://localhost:5173,https://aria.swarajchattaraj.tech
 
-Start the backend:
-```bash
-uvicorn main:app --reload --port 8000
-```
-
-#### 2. Frontend Setup (Vite + React)
-
-```bash
-cd ../frontend
-
-# Install dependencies
-npm install
-
-# Configure environment
-cp .env.example .env
-```
-
-Ensure `frontend/.env` points to your local backend:
-```ini
-VITE_API_URL=http://localhost:8000
+# frontend/.env (see frontend/.env.example)
+VITE_API_URL=http://127.0.0.1:8000
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-Launch the development workspace:
+</details>
+
+### 2. Run Backend (FastAPI)
+
 ```bash
-npm run dev
+cd backend
+python -m venv venv
+source venv/bin/activate        # Windows PowerShell: .\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
 ```
 
-Visit `http://localhost:5173` to explore the workspace.
+> [!WARNING]
+> **Python 3.12+ Dependency Note:**
+> `backend/requirements.txt` pins `numpy<2.0.0` (`1.26.4`) and `matplotlib<3.10` for clean compatibility with `fastembed` and ONNX/LaTeX rendering dependencies.
 
----
+### 3. Run Frontend (Web / Desktop / Android)
 
-### Native Builds (`.apk` & `.exe`)
-
-Native build workflows run automatically on GitHub Actions via `.github/workflows/build-natives.yml` whenever code lands on `main`.
-
-#### Required GitHub Actions Secrets
-To build native binaries, add these in your repository's **Settings &rarr; Secrets and variables &rarr; Actions**:
-- `VITE_API_URL`: Live backend URL (e.g., `https://aria.swarajchattaraj.tech`)
-- `VITE_SUPABASE_URL`: Your Supabase public project URL
-- `VITE_SUPABASE_ANON_KEY`: Your Supabase anonymous public key
-
-#### Build Android `.apk` Locally (Capacitor)
 ```bash
-# 1. Build the production web bundle
+cd frontend
+npm install
+npm run dev                      # Web dev server at http://localhost:5173
+```
+
+<details>
+<summary><b>Build Native Desktop (<code>.exe</code>) &amp; Android (<code>.apk</code>)</b></summary>
+
+```bash
+# Build production frontend bundle first
 cd frontend
 npm run build
-
-# 2. Sync web assets and plugin configurations to Android
 cd ..
+
+# Windows desktop binary (Tauri v2, run from repo root)
+npx @tauri-apps/cli@^2 build
+
+# Android APK (Capacitor 8, run from repo root)
 npx cap sync android
-
-# 3. Compile the debug or release APK with Gradle
-cd android
-./gradlew assembleDebug  # Windows: .\gradlew.bat assembleDebug
-
-# Output APK location:
-# android/app/build/outputs/apk/debug/app-debug.apk
+cd android && ./gradlew assembleDebug    # Windows: .\gradlew.bat assembleDebug
 ```
 
-#### Build Windows `.exe` Locally (Tauri v2)
-```bash
-# 1. Build the production web bundle
-cd frontend
-npm run build
-
-# 2. Compile the standalone Windows installer
-cd ..
-npx @tauri-apps/cli build
-
-# Output NSIS Installer location:
-# src-tauri/target/release/bundle/nsis/ARIA-v2.0.0-windows-setup.exe
-```
+</details>
 
 ---
 
-### Production Nginx Snippet (Don't skip this)
-
-If you deploy behind Nginx or an Azure reverse proxy, you **must** disable proxy buffering. Otherwise, Nginx buffers the SSE token stream until the entire 2,000-word answer is finished, totally defeating the purpose of streaming.
-
-```nginx
-# /etc/nginx/sites-available/aria
-server {
-    server_name aria.swarajchattaraj.tech;
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-
-        # Mandatory unless you hate streaming:
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_set_header Connection '';
-        chunked_transfer_encoding on;
-
-        # Keep alive long inference and synthesis tasks
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Deploy & restart one-liner on the Azure VM:
-```bash
-sudo systemctl restart aria-backend && sudo nginx -t && sudo systemctl reload nginx
-```
-
----
-
-### Repo Map
+## Project Structure
 
 ```text
 ARIA/
-├── .github/
-│   └── workflows/
-│       └── build-natives.yml    # CI/CD pipeline for Windows .exe & Android .apk
-├── android/                     # Capacitor native Android app project & Gradle wrapper
-├── assets/                      # Brand assets (logo, high-res icons)
 ├── backend/
-│   ├── pipeline/
-│   │   ├── nodes.py             # LangGraph planner, multi-tier retrieval & synthesis
-│   │   └── state.py             # Research workflow state definitions
-│   ├── utils/
-│   │   ├── media.py             # Wikimedia figure fetcher & Matplotlib chart generator
-│   │   └── pdf_generator.py     # Academic preprint PDF generator (PyMuPDF)
-│   ├── main.py                  # FastAPI server, SSE stream & export endpoints
-│   ├── requirements.txt         # Pinned Python dependencies
-│   └── .env.example             # Backend environment template
-├── data/                        # Static seeds & OKF knowledge base files
+│   ├── main.py                  # FastAPI app, SSE streaming, security middleware & /api/export/pdf
+│   ├── config.py                # Pydantic settings & CORS origin allowlist
+│   ├── pipeline/                # LangGraph state & 4-stage PLAN -> RETRIEVE -> SYNTHESIZE -> VERIFY
+│   ├── routers/                 # Auxiliary export (.bib/.ris) and OKF knowledge graph routers
+│   └── utils/                   # OpenAlex/arXiv/Crossref/PubMed/MediaWiki search, SSRF guard, media, PyMuPDF PDF
 ├── frontend/
-│   ├── public/                  # Static web assets & icons (aria-icon.svg)
-│   ├── src/
-│   │   ├── components/          # ThreadView, Research Inspector, LoginScreen, Markdown
-│   │   ├── context/             # AuthContext (in-app email/password + GitHub PKCE)
-│   │   ├── services/            # SSE client, API helpers, Supabase configuration
-│   │   └── types/               # TypeScript interfaces & pipeline schemas
-│   ├── package.json             # React 18, Vite 5, Tailwind CSS
-│   └── vite.config.ts           # PWA & native build bundle configuration
-├── infra/                       # systemd unit files & Azure VM setup scripts
-├── src-tauri/                   # Tauri v2 desktop shell configuration (Rust)
-├── capacitor.config.ts          # Capacitor root config with locked WebView navigation
-└── README.md
+│   └── src/
+│       ├── components/          # ThreadView, 3-tab Research Inspector, 4-section SettingsView, Modals
+│       ├── context/             # AuthContext (Supabase PKCE/Guest) & unified SettingsContext (useSettingsStore)
+│       ├── services/            # Hardened API client, SSE watchdog parser, storage
+│       └── utils/               # Citation formatters (APA 7/IEEE/Chicago/.tex/.ris/.bib), native downloader, haptics, pulse
+├── android/                     # Capacitor 8 Android project + DirectDownloadPlugin.java
+├── src-tauri/                   # Tauri v2 Windows desktop shell (Rust)
+├── data/                        # Curated OKF Markdown ontology notes
+├── infra/                       # systemd unit & Azure VM reverse-proxy configuration
+└── .github/workflows/
+    └── build-natives.yml        # Automated CI/CD for Windows .exe & Android .apk
 ```
 
 ---
 
+## Author
+
 <div align="center">
 
-Built by [Swaraj Chattaraj](https://github.com/SWARAJCHATTARAJ)
+Built &amp; maintained by **[Swaraj Chattaraj](https://github.com/SWARAJCHATTARAJ)**
 
-*Star the repo if you've ever been personally victimized by a fake AI citation.*
+<p>
+  <a href="https://aria.swarajchattaraj.tech">
+    <img src="https://img.shields.io/badge/Website-aria.swarajchattaraj.tech-06B6D4?style=flat-square&logo=googlechrome&logoColor=white" alt="Website" />
+  </a>
+  <a href="https://github.com/SWARAJCHATTARAJ">
+    <img src="https://img.shields.io/badge/GitHub-@SWARAJCHATTARAJ-181717?style=flat-square&logo=github&logoColor=white" alt="GitHub" />
+  </a>
+</p>
+
+<sub>If ARIA helped your research workflow, consider starring the repository.</sub>
 
 </div>
