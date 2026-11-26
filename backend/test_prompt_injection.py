@@ -13,7 +13,7 @@ if backend_dir not in sys.path:
 from dotenv import load_dotenv
 load_dotenv(os.path.join(backend_dir, ".env"))
 
-from pipeline.nodes import groq_llm, sanitize_answer
+from pipeline.nodes import groq_llm
 from langchain_core.messages import HumanMessage, SystemMessage
 
 async def test_prompt_injection():

@@ -1,7 +1,21 @@
 import React, { useState } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, CheckCircle2, AlertCircle, BookOpen } from 'lucide-react';
 import katex from 'katex';
 import { Citation, TierType, AuditClaim } from '../types';
+
+export function sanitizeHref(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  try {
+    const parsed = new URL(trimmed, 'https://example.invalid');
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:' || parsed.protocol === 'mailto:') {
+      return trimmed;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 interface MarkdownRendererProps {
   content: string;
@@ -52,20 +66,6 @@ export function cleanCompoundHyphens(text: string): string {
     }
     return match;
   });
-}
-
-// Glyph mapping per tier: color is never the only signal
-export function getTierGlyph(tier?: string | TierType): string {
-  switch (tier) {
-    case 'OKF':
-      return '§'; // Section / knowledge graph
-    case 'RAG':
-      return '▲'; // Vector similarity / delta
-    case 'LIVE':
-      return '●'; // Live radar / web snapshot
-    default:
-      return '■';
-  }
 }
 
 export function getTierColorClass(tier?: string | TierType): string {
@@ -257,17 +257,25 @@ function MarkdownRendererInner({
     return map;
   }, [validClaims]);
 
+  // Map citation ID -> best matching AuditClaim (for popover status & supporting quote)
+  const claimByCitationId = React.useMemo(() => {
+    const map = new Map<number, AuditClaim>();
+    if (!auditClaims) return map;
+    for (const c of auditClaims) {
+      if (typeof c !== 'object' || !c) continue;
+      const cids = c.citation_ids || [];
+      for (const cid of cids) {
+        if (!map.has(cid) || (c.evidence && !map.get(cid)?.evidence)) {
+          map.set(cid, c);
+        }
+      }
+    }
+    return map;
+  }, [auditClaims]);
+
   // Parse inline text: bold, italic, code, links, citations [[c:ID]], and KaTeX math formulas
-  const renderInline = (text: string, keyPrefix: string): React.ReactNode[] => {
+  const renderInline = (text: string, keyPrefix: string, activeClaim?: AuditClaim): React.ReactNode[] => {
     const nodes: React.ReactNode[] = [];
-    // Token regex supporting:
-    // 1. [[c:ID]] citations
-    // 2. $$math$$ or \[math\] display math
-    // 3. $math$ or \(math\) inline math (with parentheses inside math supported)
-    // 4. `code`
-    // 5. **bold**
-    // 6. *italic*
-    // 7. [text](url)
     const tokenRegex = /(\[\[c:(\d+)\]\])|(?:\$\$([\s\S]{1,2000}?)\$\$|\\\[([^\\\]]{1,2000}?)\\\])|(?:\$([^\$\n]{1,1000}?)\$|\\\(([\s\S]{1,1000}?)\\\))|(`([^`\n]+)`)|(?:\*\*([^*\n]+)\*\*)|(?:\*([^*\n]+)\*)|(\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\))/g;
     let lastIndex = 0;
     let match: RegExpExecArray | null;
@@ -284,11 +292,13 @@ function MarkdownRendererInner({
         const citId = parseInt(match[2], 10);
         const cit = citationMap.get(citId);
         if (cit) {
+          const matchedClaim = activeClaim || claimByCitationId.get(citId);
           nodes.push(
             <InlineCitationPill
               key={matchKey}
               cit={cit}
               citId={citId}
+              claim={matchedClaim}
               onCitationClick={onCitationClick}
             />
           );
@@ -297,11 +307,11 @@ function MarkdownRendererInner({
         // Display math ($$...$$ or \[...\])
         const mathExpr = (match[3] || match[4] || '').trim();
         try {
-          const html = katex.renderToString(mathExpr, { throwOnError: false, displayMode: true });
+          const html = katex.renderToString(mathExpr, { throwOnError: false, displayMode: true, trust: false });
           nodes.push(
             <div
               key={matchKey}
-              className="my-2.5 overflow-x-auto text-center font-mono text-sm py-1.5 px-2 bg-[#F8FAFC] dark:bg-ink-surface/30 rounded border border-slate-200 dark:border-white/[0.05] text-slate-900 dark:text-zinc-100"
+              className="my-3 overflow-x-auto text-center font-mono text-sm py-2 px-3 bg-[#F8FAFC] dark:bg-ink-surface/40 rounded-lg border border-slate-200 dark:border-white/[0.06] text-slate-900 dark:text-zinc-100"
               dangerouslySetInnerHTML={{ __html: html }}
             />
           );
@@ -312,7 +322,7 @@ function MarkdownRendererInner({
         // Inline math ($...$ or \(...\))
         const mathExpr = (match[5] || match[6] || '').trim();
         try {
-          const html = katex.renderToString(mathExpr, { throwOnError: false, displayMode: false });
+          const html = katex.renderToString(mathExpr, { throwOnError: false, displayMode: false, trust: false });
           nodes.push(
             <span
               key={matchKey}
@@ -326,7 +336,7 @@ function MarkdownRendererInner({
       } else if (match[7]) {
         // `code`
         nodes.push(
-          <code key={matchKey} className="font-mono text-xs bg-slate-100 dark:bg-ink-surface px-1 py-0.5 rounded text-blue-700 dark:text-tier-okf border border-slate-200 dark:border-ink-surface/80">
+          <code key={matchKey} className="font-mono text-[12.5px] bg-slate-100 dark:bg-ink-surface px-1.5 py-0.5 rounded text-blue-700 dark:text-tier-okf border border-slate-200 dark:border-white/[0.07]">
             {match[8]}
           </code>
         );
@@ -337,20 +347,24 @@ function MarkdownRendererInner({
         // *italic*
         nodes.push(<em key={matchKey} className="italic text-slate-700 dark:text-zinc-300">{match[10]}</em>);
       } else if (match[11]) {
-        // [text](url)
+        // [text](url) — strictly sanitized protocol
         const linkText = match[12];
-        const linkUrl = match[13];
-        nodes.push(
-          <a
-            key={matchKey}
-            href={linkUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 dark:text-tier-okf hover:underline underline-offset-2 break-all"
-          >
-            {linkText}
-          </a>
-        );
+        const safeUrl = sanitizeHref(match[13]);
+        if (safeUrl) {
+          nodes.push(
+            <a
+              key={matchKey}
+              href={safeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 dark:text-tier-okf hover:underline underline-offset-2 break-all"
+            >
+              {linkText}
+            </a>
+          );
+        } else {
+          nodes.push(linkText);
+        }
       }
 
       lastIndex = tokenRegex.lastIndex;
@@ -363,58 +377,7 @@ function MarkdownRendererInner({
     return nodes;
   };
 
-  // Helper to render mark/stamp for an audited claim
-  const renderClaimStamp = (claim: AuditClaim) => {
-    switch (claim.status) {
-      case 'supported':
-        // Never inject raw literal "[VERIFIED]" text into prose (avoids mid-word corruption like late[VERIFIED]ncy)
-        return null;
-      case 'partially_supported':
-        return (
-          <span
-            className="inline-flex items-center gap-1 border-b border-dashed border-gray-400 font-mono text-[10px] text-gray-300 ml-1.5 px-1 bg-ink-surface/40 select-none"
-            title={claim.note || 'Partially supported claim'}
-          >
-            <span className="font-bold text-gray-200">!</span>
-            <span>partial</span>
-          </span>
-        );
-      case 'unsupported':
-        return (
-          <span
-            className="inline-flex items-center gap-1 border-b border-gray-400 font-mono text-[10px] text-gray-300 ml-1.5 px-1 bg-ink-surface/40 select-none"
-            title={claim.note || 'Unsupported claim'}
-          >
-            <span className="font-bold text-gray-200">×</span>
-            <span>unsupported</span>
-          </span>
-        );
-      case 'uncited':
-        return (
-          <span
-            className="inline-flex items-center gap-1 border-b border-dotted border-gray-400 font-mono text-[10px] text-gray-300 ml-1.5 px-1 bg-ink-surface/40 select-none"
-            title={claim.note || 'Uncited factual assertion'}
-          >
-            <span className="font-bold text-gray-200">?</span>
-            <span>uncited</span>
-          </span>
-        );
-      case 'audit_incomplete':
-        return (
-          <span
-            className="inline-flex items-center gap-1 border-b border-dotted border-tier-live/60 font-mono text-[10px] text-tier-live ml-1.5 px-1 bg-ink-surface/40 select-none"
-            title={claim.note || 'Could not be checked'}
-          >
-            <span className="font-bold text-tier-live">?</span>
-            <span>could not be checked</span>
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
-
-  // Core mapping: renders a chunk of text with exact claim sentence highlights
+  // Core mapping: renders a chunk of text with subtle audited claim highlight spans (no intrusive inline badges)
   const renderAuditedText = (
     text: string,
     startOffset: number,
@@ -460,19 +423,17 @@ function MarkdownRendererInner({
           );
         }
 
-        // Highlighted claim text
+        // Clean editorial prose with subtle claim association for citation popovers
         const claimText = answerFinal.slice(cStart, cEnd);
         nodes.push(
           <span
             key={`${keyPrefix}-claim-${claim.claim_id ?? idx}`}
-            className="audit-claim-highlight inline px-0.5 rounded-none transition-colors"
+            className="audit-claim-highlight inline transition-colors"
             style={{
-              animation: 'sweepHighlight calc(350ms * var(--motion-scale, 1)) cubic-bezier(0.2, 0.8, 0.2, 1) forwards',
-              animationDelay: `calc(${globalIdx} * 250ms * var(--motion-scale, 1))`,
+              animationDelay: `calc(${globalIdx} * 120ms * var(--motion-scale, 1))`,
             }}
           >
-            {renderInline(claimText, `${keyPrefix}-c-${idx}`)}
-            {renderClaimStamp(claim)}
+            {renderInline(claimText, `${keyPrefix}-c-${idx}`, claim)}
           </span>
         );
 
@@ -492,15 +453,9 @@ function MarkdownRendererInner({
       return nodes;
     }
 
-    // Fallback: mapping cannot be exact without crossing block boundaries.
     return (
-      <span className="audit-claim-highlight inline px-0.5 rounded-none transition-colors">
-        {renderInline(text, `${keyPrefix}-blkhl`)}
-        {overlapping.map((c, idx) => (
-          <React.Fragment key={`${keyPrefix}-stmp-${c.claim_id ?? idx}`}>
-            {renderClaimStamp(c)}
-          </React.Fragment>
-        ))}
+      <span className="audit-claim-highlight inline transition-colors">
+        {renderInline(text, `${keyPrefix}-blkhl`, overlapping[0])}
       </span>
     );
   };
@@ -647,14 +602,14 @@ function MarkdownRendererInner({
         }
       }
 
-      // Headings (refined scale & tracking)
+      // Headings (refined editorial scale & tracking)
       if (trimmed.startsWith('# ')) {
         orderedSeq = 1;
         const leadWs = line.text.length - line.text.trimStart().length;
         const headingStart = line.start + leadWs + 2;
         const headingEnd = line.end;
         result.push(
-          <h1 key={`blk-${blockId++}`} className="text-[17px] font-sans font-semibold text-slate-900 dark:text-zinc-100 tracking-[-0.015em] mt-5 mb-2 leading-snug">
+          <h1 key={`blk-${blockId++}`} className="text-[19px] font-sans font-semibold text-slate-900 dark:text-zinc-100 tracking-[-0.02em] mt-6 mb-2.5 leading-snug">
             {renderAuditedText(trimmed.slice(2), headingStart, headingEnd, `h1-${blockId}`)}
           </h1>
         );
@@ -667,7 +622,7 @@ function MarkdownRendererInner({
         const headingStart = line.start + leadWs + 3;
         const headingEnd = line.end;
         result.push(
-          <h2 key={`blk-${blockId++}`} className="text-[15px] font-sans font-semibold text-slate-900 dark:text-zinc-100 tracking-[-0.015em] mt-4 mb-2 leading-snug">
+          <h2 key={`blk-${blockId++}`} className="text-[16px] font-sans font-semibold text-slate-900 dark:text-zinc-100 tracking-[-0.015em] mt-6 mb-2 pt-1 leading-snug">
             {renderAuditedText(trimmed.slice(3), headingStart, headingEnd, `h2-${blockId}`)}
           </h2>
         );
@@ -680,7 +635,7 @@ function MarkdownRendererInner({
         const headingStart = line.start + leadWs + 4;
         const headingEnd = line.end;
         result.push(
-          <h3 key={`blk-${blockId++}`} className="text-[14px] font-sans font-semibold text-slate-900 dark:text-zinc-200 tracking-[-0.015em] mt-3 mb-1.5 leading-snug">
+          <h3 key={`blk-${blockId++}`} className="text-[14.5px] font-sans font-semibold text-slate-900 dark:text-zinc-200 tracking-[-0.01em] mt-4 mb-1.5 leading-snug">
             {renderAuditedText(trimmed.slice(4), headingStart, headingEnd, `h3-${blockId}`)}
           </h3>
         );
@@ -688,10 +643,32 @@ function MarkdownRendererInner({
         continue;
       }
 
+      // Editorial Callout / Blockquote (> ...)
+      if (trimmed.startsWith('>')) {
+        orderedSeq = 1;
+        const quoteLines: string[] = [];
+        const qStart = line.start;
+        let qEnd = line.end;
+        while (lIdx < lineSpans.length && lineSpans[lIdx].text.trim().startsWith('>')) {
+          quoteLines.push(lineSpans[lIdx].text.trim().replace(/^>\s?/, ''));
+          qEnd = lineSpans[lIdx].end;
+          lIdx++;
+        }
+        result.push(
+          <blockquote
+            key={`blk-${blockId++}`}
+            className="my-3.5 pl-3.5 pr-3 py-2.5 border-l-2 border-l-blue-500/70 dark:border-l-[#60A5FA]/70 bg-slate-50/80 dark:bg-white/[0.025] rounded-r-[6px] text-[14.5px] text-slate-700 dark:text-zinc-300 leading-[1.7] italic"
+          >
+            {renderAuditedText(quoteLines.join(' '), qStart, qEnd, `bq-${blockId}`)}
+          </blockquote>
+        );
+        continue;
+      }
+
       // Horizontal Rules
       if (trimmed === '---' || trimmed === '***') {
         orderedSeq = 1;
-        result.push(<hr key={`blk-${blockId++}`} className="border-slate-200 dark:border-ink-surface my-4" />);
+        result.push(<hr key={`blk-${blockId++}`} className="border-slate-200 dark:border-white/[0.07] my-5" />);
         lIdx++;
         continue;
       }
@@ -706,7 +683,7 @@ function MarkdownRendererInner({
         result.push(
           <li
             key={`blk-${blockId++}`}
-            className={`text-[15px] text-slate-800 dark:text-zinc-200 list-disc my-1 leading-[1.65] ${leadWs >= 2 ? 'ml-9' : 'ml-5'}`}
+            className={`text-[15px] text-slate-800 dark:text-zinc-200 list-disc my-1.5 leading-[1.7] ${leadWs >= 2 ? 'ml-9' : 'ml-5'}`}
             style={{ counterIncrement: 'none' }}
           >
             {renderAuditedText(bulletMatch[2], itemStart, itemEnd, `li-${blockId}`)}
@@ -732,7 +709,7 @@ function MarkdownRendererInner({
           <li
             key={`blk-${blockId++}`}
             value={itemNum}
-            className={`text-[15px] text-slate-800 dark:text-zinc-200 list-decimal my-1 leading-[1.65] ${leadWs >= 2 ? 'ml-9' : 'ml-5'}`}
+            className={`text-[15px] text-slate-800 dark:text-zinc-200 list-decimal my-1.5 leading-[1.7] ${leadWs >= 2 ? 'ml-9' : 'ml-5'}`}
           >
             {renderAuditedText(numMatch[2], itemStart, itemEnd, `oli-${blockId}`)}
           </li>
@@ -747,6 +724,7 @@ function MarkdownRendererInner({
         lIdx < lineSpans.length &&
         lineSpans[lIdx].text.trim() &&
         !lineSpans[lIdx].text.trim().startsWith('#') &&
+        !lineSpans[lIdx].text.trim().startsWith('>') &&
         !lineSpans[lIdx].text.trim().startsWith('|') &&
         !lineSpans[lIdx].text.trim().startsWith('```') &&
         !lineSpans[lIdx].text.trim().startsWith('- ') &&
@@ -767,7 +745,7 @@ function MarkdownRendererInner({
         const paraText = displayContent.slice(paraStart, paraEnd);
 
         result.push(
-          <p key={`blk-${blockId++}`} className="text-[15px] text-slate-800 dark:text-zinc-200 my-2 leading-[1.65]">
+          <p key={`blk-${blockId++}`} className="text-[15px] text-slate-800 dark:text-zinc-200 my-2.5 leading-[1.7]">
             {renderAuditedText(paraText, paraStart, paraEnd, `p-${blockId}`)}
           </p>
         );
@@ -775,10 +753,10 @@ function MarkdownRendererInner({
     }
 
     return result;
-  }, [displayContent, answerFinal, validClaims, claimIndexMap, citationMap]);
+  }, [displayContent, answerFinal, validClaims, claimIndexMap, citationMap, claimByCitationId]);
 
   return (
-    <div className="space-y-1 select-text max-w-[68ch] leading-[1.65]">
+    <div className="space-y-1 select-text max-w-[70ch] leading-[1.7]">
       {blocks}
       {/* Stream Caret: subtle vertical blinking caret at stream end */}
       {isStreaming && <span className="streaming-caret" aria-hidden="true" />}
@@ -789,21 +767,36 @@ function MarkdownRendererInner({
 function InlineCitationPill({
   cit,
   citId,
+  claim,
   onCitationClick,
 }: {
   cit: Citation;
   citId: number;
+  claim?: AuditClaim;
   onCitationClick?: (citation: Citation) => void;
 }) {
   const [showPreview, setShowPreview] = useState(false);
-  const glyph = getTierGlyph(cit.tier);
   const colorClass = getTierColorClass(cit.tier);
-  const authorsStr = Array.isArray(cit.authors) ? cit.authors.join(', ') : String(cit.authors || '');
-  const targetUrl = cit.doi
+  const authorsStr = Array.isArray(cit.authors)
+    ? cit.authors.filter(Boolean).join(', ')
+    : String(cit.authors || '').trim();
+  const rawUrl = cit.doi
     ? cit.doi.startsWith('http')
       ? cit.doi
       : `https://doi.org/${cit.doi}`
     : cit.url || (cit.arxiv_id ? `https://arxiv.org/abs/${cit.arxiv_id}` : '');
+  const targetUrl = sanitizeHref(rawUrl);
+
+  const supportingQuote = claim?.evidence || cit.snippet || '';
+  const claimStatus = claim?.status;
+  const statusDotColor =
+    claimStatus === 'supported'
+      ? 'bg-emerald-400'
+      : claimStatus === 'partially_supported'
+      ? 'bg-amber-400'
+      : claimStatus === 'unsupported'
+      ? 'bg-rose-400'
+      : '';
 
   return (
     <span
@@ -815,68 +808,103 @@ function InlineCitationPill({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
+          setShowPreview((prev) => !prev);
           if (onCitationClick) onCitationClick(cit);
-          const card = document.getElementById(`citation-card-${citId}`);
-          if (card) {
-            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            const ev = card.querySelector('.evidence-snippet');
-            if (ev) {
-              ev.classList.remove('flash-evidence');
-              void (ev as HTMLElement).offsetWidth;
-              ev.classList.add('flash-evidence');
-            }
-          }
         }}
-        className={`inline-flex items-center gap-1 font-mono text-[10px] font-medium px-1.5 py-0.5 mx-0.5 rounded-[3px] border tabular-nums transition-all select-none cursor-pointer align-baseline hover:scale-105 active:scale-[0.98] ${colorClass}`}
-        aria-label={`Citation § ${citId + 1}: ${cit.title || 'Source'}`}
+        className={`inline-flex items-center gap-1 font-mono text-[10.5px] font-medium px-1.5 py-[1px] mx-0.5 rounded-[4px] border tabular-nums transition-all duration-150 select-none cursor-pointer align-baseline hover:brightness-110 active:scale-[0.96] ${colorClass}`}
+        aria-label={`Citation [${citId + 1}]: ${cit.title || 'Source'}`}
+        aria-expanded={showPreview}
       >
-        <span className="opacity-90 select-none">§</span>
-        <span>{citId + 1}</span>
+        {statusDotColor && <span className={`w-1.5 h-1.5 rounded-full ${statusDotColor} shrink-0`} />}
+        <span>[{citId + 1}]</span>
       </button>
 
-      {/* Popover preview on hover */}
+      {/* Interactive Citation & Verification Popover */}
       {showPreview && (
         <span
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.15] shadow-xl z-50 rounded-[6px] pointer-events-auto text-left block animate-fade-slide"
-          style={{ filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.25))' }}
+          className="animate-popover-reveal absolute bottom-full left-1/2 mb-2 w-80 max-w-[85vw] p-3.5 bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.14] shadow-2xl z-50 rounded-[8px] pointer-events-auto text-left block"
+          style={{ filter: 'drop-shadow(0 12px 28px rgba(0,0,0,0.32))' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <span className="flex items-center justify-between text-[10px] font-mono mb-1.5 border-b border-slate-200 dark:border-white/[0.07] pb-1 text-slate-500 dark:text-[#8B8B8E]">
+          <span className="flex items-center justify-between text-[10px] font-mono mb-2 border-b border-slate-200 dark:border-white/[0.07] pb-1.5 text-slate-500 dark:text-[#8B8B8E]">
             <span
-              className="flex items-center gap-1 font-semibold"
+              className="flex items-center gap-1.5 font-semibold"
               style={{
-                color: cit.tier === 'OKF' ? '#2563EB' : cit.tier === 'RAG' ? '#7C3AED' : '#D97706',
+                color: cit.tier === 'OKF' ? '#60A5FA' : cit.tier === 'RAG' ? '#A78BFA' : '#F59E0B',
               }}
             >
-              <span>§ {citId + 1}</span>
+              <span>[{citId + 1}]</span>
               <span>· {cit.tier || 'LIVE'}</span>
+              {cit.year && <span className="text-slate-400 dark:text-[#71717A] tabular-nums">· {cit.year}</span>}
             </span>
-            {cit.year && <span className="tabular-nums">{cit.year}</span>}
+
+            {claimStatus ? (
+              <span
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold border ${
+                  claimStatus === 'supported'
+                    ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                    : claimStatus === 'partially_supported'
+                    ? 'text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/10'
+                    : 'text-rose-600 dark:text-rose-400 border-rose-500/30 bg-rose-500/10'
+                }`}
+              >
+                {claimStatus === 'supported' ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
+                <span>
+                  {claimStatus === 'supported'
+                    ? 'Supported'
+                    : claimStatus === 'partially_supported'
+                    ? 'Partial'
+                    : 'Flagged'}
+                </span>
+              </span>
+            ) : (
+              <span className="text-[9.5px] text-slate-400 dark:text-[#71717A]">Cited Source</span>
+            )}
           </span>
-          <span className="block font-sans font-medium text-xs text-slate-900 dark:text-[#EDEDED] leading-snug line-clamp-2 mb-1">
+
+          <span className="block font-sans font-semibold text-[12.5px] text-slate-900 dark:text-[#EDEDED] leading-snug line-clamp-2 mb-1">
             {cit.title || cit.path || 'Academic Citation'}
           </span>
-          {authorsStr && (
-            <span className="block font-sans text-[11px] text-slate-600 dark:text-[#8B8B8E] line-clamp-1 mb-1.5">
-              {authorsStr}
+
+          {(authorsStr || cit.venue) && (
+            <span className="block font-mono text-[10px] text-slate-500 dark:text-[#8B8B8E] line-clamp-1 mb-2">
+              {[authorsStr, cit.venue].filter(Boolean).join(' · ')}
             </span>
           )}
-          {cit.venue && (
-            <span className="block font-mono text-[10px] text-slate-500 dark:text-[#71717A] line-clamp-1 mb-1">
-              Venue: {cit.venue}
+
+          {supportingQuote && (
+            <span className="block p-2 rounded-[5px] bg-slate-50 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.06] border-l-2 border-l-[#60A5FA] text-[11px] font-sans text-slate-700 dark:text-zinc-300 leading-relaxed line-clamp-3 mb-2">
+              &ldquo;{supportingQuote}&rdquo;
             </span>
           )}
-          {targetUrl && (
-            <a
-              href={targetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[10px] font-mono text-blue-600 dark:text-[#60A5FA] hover:underline mt-1"
-            >
-              <span>View Source / DOI</span>
-              <ExternalLink size={10} />
-            </a>
-          )}
+
+          <span className="flex items-center justify-between pt-1">
+            {onCitationClick && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCitationClick(cit);
+                  setShowPreview(false);
+                }}
+                className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-600 dark:text-[#8B8B8E] hover:text-slate-900 dark:hover:text-[#EDEDED] cursor-pointer"
+              >
+                <BookOpen size={10} />
+                <span>Inspect</span>
+              </button>
+            )}
+            {targetUrl && (
+              <a
+                href={targetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] font-mono text-blue-600 dark:text-[#60A5FA] hover:underline ml-auto"
+              >
+                <span>Open Source</span>
+                <ExternalLink size={10} />
+              </a>
+            )}
+          </span>
         </span>
       )}
     </span>

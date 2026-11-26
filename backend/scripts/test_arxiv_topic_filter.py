@@ -1,5 +1,4 @@
 import re
-import sys
 
 # STOP_WORDS from backend/utils/academic_search.py
 STOP_WORDS = {

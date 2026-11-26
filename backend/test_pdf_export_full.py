@@ -122,12 +122,12 @@ async def main():
     assert "[SUPPORTED] Supported" not in full_pdf_text, "Found duplicate [SUPPORTED] Supported badge!"
     assert "[PARTIAL] Partial" not in full_pdf_text, "Found duplicate [PARTIAL] Partial badge!"
 
-    # Verify sections exist
-    assert "I. INTRODUCTION" in full_pdf_text, "Missing Section I"
-    assert "II. CORE MECHANISMS" in full_pdf_text, "Missing Section II"
-    assert "III. QUANTITATIVE PROPERTIES" in full_pdf_text, "Missing Section III"
-    assert "IV. EMPIRICAL APPLICATIONS" in full_pdf_text, "Missing Section IV"
-    assert "V. CONCLUSION" in full_pdf_text, "Missing Section V"
+    # Verify all 5 domain-adaptive Roman-numeral sections + References + Audit Ledger exist
+    assert re.search(r'(?m)^I\.\s+\S+', full_pdf_text), "Missing Section I"
+    assert re.search(r'(?m)^II\.\s+\S+', full_pdf_text), "Missing Section II"
+    assert re.search(r'(?m)^III\.\s+\S+', full_pdf_text), "Missing Section III"
+    assert re.search(r'(?m)^IV\.\s+\S+', full_pdf_text), "Missing Section IV"
+    assert re.search(r'(?m)^V\.\s+\S+', full_pdf_text), "Missing Section V"
     assert "VI. REFERENCES" in full_pdf_text, "Missing Section VI"
     assert "APPENDIX: VERIFICATION AUDIT LEDGER" in full_pdf_text, "Missing Appendix"
 

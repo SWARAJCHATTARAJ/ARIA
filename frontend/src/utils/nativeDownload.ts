@@ -192,7 +192,7 @@ export async function saveOrDownloadFile(
       window.setTimeout(() => {
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
-      }, 100);
+      }, 1500);
       showDownloadToast(`Downloaded: ${safeFilename}`);
       return true;
     }

@@ -7,7 +7,7 @@ backend_dir = os.path.dirname(os.path.abspath(__file__))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-from pipeline.nodes import run_claim_audit, split_answer_into_claim_sentences
+from pipeline.nodes import run_claim_audit
 
 async def run_red_team_test():
     print("======================================================================")

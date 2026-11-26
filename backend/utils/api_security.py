@@ -22,6 +22,7 @@ _user_feedback_history: Dict[str, List[float]] = {}
 # Backward-compatibility storage for IP rate limits
 _ip_query_history: Dict[str, List[float]] = {}
 _ip_feedback_history: Dict[str, List[float]] = {}
+_ip_general_history: Dict[str, List[float]] = {}
 
 # Daily global query count: (date_str, count)
 _daily_counter = {"date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"), "count": 0}
@@ -209,6 +210,23 @@ def record_anonymous_request(client_ip: str, is_feedback: bool = False) -> None:
     history_store.setdefault(client_ip, []).append(now)
     if not is_feedback:
         _daily_counter["count"] += 1
+
+
+def check_general_ip_rate_limit(client_ip: str, max_per_minute: int = 40) -> Tuple[bool, int, str]:
+    """
+    Sliding-window per-IP rate limiter for API endpoints (/api/export/pdf, /api/keys/test, etc.).
+    Returns (is_allowed, retry_after_seconds, error_message).
+    """
+    now = time.time()
+    window_start = now - 60.0
+    timestamps = [t for t in _ip_general_history.get(client_ip, []) if t > window_start]
+    if len(timestamps) >= max_per_minute:
+        retry_after = max(1, int(60 - (now - timestamps[0])))
+        _ip_general_history[client_ip] = timestamps
+        return False, retry_after, f"Rate limit exceeded: Limit is {max_per_minute} requests per minute. Try again in {retry_after}s."
+    timestamps.append(now)
+    _ip_general_history[client_ip] = timestamps
+    return True, 0, ""
 
 def validate_uuid(val: Optional[str], field_name: str = "thread_id") -> None:
     """Validates that a string is a valid UUID."""

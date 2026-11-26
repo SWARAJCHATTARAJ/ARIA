@@ -1,12 +1,10 @@
 import sys
 import os
 import uuid
-import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi.testclient import TestClient
-from fastapi import Request
 from main import app
 from utils.api_security import get_client_ip, _ip_query_history, _daily_counter
 

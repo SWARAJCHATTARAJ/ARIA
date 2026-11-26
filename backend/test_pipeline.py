@@ -1,10 +1,10 @@
 import asyncio
 import sys
-import os
 import time
 import json
 import uuid
 import re
+import httpx
 from dotenv import load_dotenv
 
 # Ensure UTF-8 output in Windows console

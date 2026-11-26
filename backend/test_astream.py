@@ -1,6 +1,5 @@
 import asyncio
 import sys
-import json
 import os
 from dotenv import load_dotenv
 

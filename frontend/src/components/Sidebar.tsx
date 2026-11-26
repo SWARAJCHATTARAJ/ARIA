@@ -1,11 +1,9 @@
-import React from 'react';
 import {
   PlusCircle,
   FolderGit2,
   BookOpen,
   Clock,
   Settings,
-  Menu,
   Command,
   PanelLeftOpen,
   LogOut,
@@ -170,23 +168,6 @@ export default function Sidebar({
             <p className="text-[11px] text-[#71717A] truncate font-sans">
               {user.provider === 'github' ? `@${user.username}` : user.email}
             </p>
-          </div>
-        )}
-
-        {/* Small visible build indicator */}
-        {!isRail ? (
-          <div className="px-1.5 pt-2 mt-1 border-t border-white/[0.04] flex items-center justify-between text-[10px] font-sans text-[#52525B]">
-            <span>ARIA v2.0</span>
-            <span className="tabular-nums" title={`Build commit: ${typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : 'live'}`}>
-              · {typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : '2.0.0'}
-            </span>
-          </div>
-        ) : (
-          <div
-            className="text-[9px] font-sans text-[#52525B] text-center pt-1 border-t border-white/[0.04]"
-            title={`ARIA v2.0 · ${typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : 'live'}`}
-          >
-            {typeof __BUILD_HASH__ !== 'undefined' ? __BUILD_HASH__ : 'v2.0'}
           </div>
         )}
       </div>

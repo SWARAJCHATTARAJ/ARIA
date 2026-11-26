@@ -165,6 +165,8 @@ export interface MessageTelemetry {
   stage?: PipelineStage;
   figures?: FigureData[];
   chart?: ChartData;
+  followup_questions?: string[];
+  query?: string;
 }
 
 export interface Message {

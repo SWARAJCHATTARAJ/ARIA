@@ -1,4 +1,3 @@
-import os
 import sys
 import httpx
 from dotenv import dotenv_values

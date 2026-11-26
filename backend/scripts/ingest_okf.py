@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 import logging
 import httpx
 from dotenv import load_dotenv

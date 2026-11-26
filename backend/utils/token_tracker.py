@@ -1,7 +1,6 @@
 import asyncio
 import datetime
 import logging
-import re
 import time
 from typing import Dict, List, Any, Optional, Tuple
 from config import settings

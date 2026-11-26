@@ -1,4 +1,3 @@
-import asyncio
 import io
 import logging
 import re
@@ -7,6 +6,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 import httpx
 from PIL import Image
+from utils.ssrf_guard import is_allowed_image_url, SSRFSafeTransport
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ MEDIA_REJECT_TERMS = {
     "icon", "logo", "flag", "symbol", "stub", "button", "portal", "edit",
     "crystal_clear", "ambox", "folder", "gnome", "disambig", "wikidata",
     "sound-icon", "p_vip", "padlock", "question_mark", "scale_icon", "locator",
-    "map_of", "blank", "default", "navbar", "signature", "coat_of_arms",
+    "blank", "default", "navbar", "signature", "coat_of_arms",
     "audio", "speaker", "placeholder", "wikipedia_logo", "wikimedia_logo", "wiki_icon",
     "advertisement", "banner", "film_poster", "album_cover", "book_cover",
     "user_interface", "status", "arrow", "checkbox",
@@ -101,10 +101,12 @@ def _is_image_valid(url: str, width: int, height: int, filename: str, desc: str)
     desc_lower = (desc or "").lower()
     url_clean = url.split("?")[0].lower()
 
-    # Reject .svg, .ico, .gif, or unapproved extensions
-    if any(url_clean.endswith(ext) or fn_clean.endswith(ext) for ext in (".svg", ".ico", ".gif")):
+    # Reject raw .svg, .ico, .gif URLs; allow raster PNG/JPEG/WEBP thumbnails rendered from .svg diagrams/maps
+    if any(url_clean.endswith(ext) for ext in (".svg", ".ico", ".gif")):
         return False
-    if not any(url_clean.endswith(ext) or fn_clean.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+    if any(fn_clean.endswith(ext) for ext in (".ico", ".gif")):
+        return False
+    if not any(url_clean.endswith(ext) for ext in ALLOWED_EXTENSIONS):
         return False
 
     # Reject icons, logos, flags, portraits, headshots in filename
@@ -150,35 +152,64 @@ def _is_image_valid(url: str, width: int, height: int, filename: str, desc: str)
 
     return True
 
-def format_figure_caption(clean_desc: str, fallback_title: str) -> str:
+def format_figure_caption(clean_desc: str, fallback_title: str, article_context: str = "") -> str:
     """
-    Truncates figure captions strictly at a complete sentence boundary.
-    Avoids mid-word cuts (e.g. 'Includes bibliograp') and noisy metadata dumps.
+    Produces a concise 1–2 sentence contextual figure caption strictly at a complete sentence boundary.
+    Deduplicates against fallback_title so captions never repeat the figure title word-for-word,
+    and avoids mid-word cuts or noisy catalog metadata dumps.
     """
-    if not clean_desc:
-        return f"Structural diagram for {fallback_title}."
+    clean_title_norm = re.sub(r'[^a-z0-9]+', ' ', (fallback_title or '').lower()).strip()
 
-    clean = re.sub(r'<[^>]+>', '', clean_desc).strip()
-    clean = " ".join(clean.split())
+    def _is_redundant_with_title(candidate: str) -> bool:
+        c_norm = re.sub(r'[^a-z0-9]+', ' ', candidate.lower()).strip()
+        if not c_norm or not clean_title_norm:
+            return False
+        if c_norm == clean_title_norm:
+            return True
+        if c_norm.startswith(clean_title_norm) and len(c_norm) <= len(clean_title_norm) + 8:
+            return True
+        return False
 
-    # Reject/sanitize noisy metadata dumps
-    if any(m in clean.lower() for m in (
-        "includes bibliographical", "includes index", "call number", "lc control",
-        "isbn", "oclc", "digitized by", "reproduction of"
-    )):
-        return f"Structural diagram for {fallback_title}."
+    clean = ""
+    if clean_desc:
+        clean = re.sub(r'<[^>]+>', '', clean_desc).strip()
+        clean = " ".join(clean.split())
+        # Strip leading exact repetition of the title
+        if clean_title_norm and re.sub(r'[^a-z0-9]+', ' ', clean[:len(fallback_title) + 4].lower()).strip().startswith(clean_title_norm):
+            remainder = clean[len(fallback_title):].lstrip(" .:-–—")
+            if len(remainder) >= 20:
+                clean = remainder[0].upper() + remainder[1:]
 
-    # If short enough and ends with terminal punctuation, return directly
+    is_noisy = (
+        not clean
+        or _is_redundant_with_title(clean)
+        or any(m in clean.lower() for m in (
+            "includes bibliographical", "includes index", "call number", "lc control",
+            "isbn", "oclc", "digitized by", "reproduction of", "own work", "self-photographed"
+        ))
+    )
+
+    if is_noisy:
+        if article_context:
+            ctx = " ".join(re.sub(r'<[^>]+>', '', article_context).split())
+            sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', ctx) if len(s.strip()) >= 25]
+            if sents:
+                first_ctx = sents[0][:220]
+                if not re.search(r'[.!?]$', first_ctx):
+                    first_ctx = first_ctx.rsplit(' ', 1)[0].rstrip(' ,;:-–—') + "."
+                return first_ctx
+        return f"Visual reference illustrating key structural or geographic context for {fallback_title}."
+
+    # Take at most 2 complete sentences up to 240 chars
+    sentences = list(re.finditer(r'([.!?]["\')]*)(?:\s+|$)', clean[:280]))
+    if len(sentences) >= 2 and sentences[1].end() <= 240:
+        return clean[:sentences[1].end()].strip()
+    if sentences:
+        return clean[:sentences[0].end()].strip()
+
     if len(clean) <= 220 and re.search(r'[.!?]["\')]*$', clean):
         return clean
 
-    # Find terminal sentence boundaries within the first 250 characters
-    target = clean[:250]
-    matches = list(re.finditer(r'([.!?]["\')]*)(?:\s+|$)', target))
-    if matches:
-        return target[:matches[-1].end()].strip()
-
-    # If no sentence boundary in range, slice at word boundary and add period
     truncated = clean[:180].rsplit(' ', 1)[0].rstrip(' ,;:-–—')
     if not re.search(r'[.!?]$', truncated):
         truncated += "."
@@ -287,32 +318,42 @@ def _score_image_candidate(filename: str, desc: str, keywords: List[str]) -> flo
     if matched_kws == 0:
         return -1.0
 
-    # Bonus for scientific / technical diagrams, structures, and schematics
+    # Bonus for scientific / technical diagrams, structures, schematics, and canonical maps
     if any(tech in fn_clean or tech in desc_lower for tech in (
         "structure", "diagram", "schematic", "mechanism", "formula", "synthesis",
         "pathway", "architecture", "curve", "spectrum", "crystal", "reaction",
-        "model", "molecule", "chemical", "system", "overview"
+        "model", "molecule", "chemical", "system", "overview",
+        "map", "orthographic", "topographic", "satellite", "projection", "chart"
     )):
-        score += 2.5
+        score += 3.0
+
+    # Penalize generic tourist/travel/street snapshots when technical/cartographic visuals exist
+    if any(travel in fn_clean or travel in desc_lower for travel in (
+        "tourist", "vacation", "street view", "night view", "skyline at", "souvenir", "cafe", "menu"
+    )):
+        score -= 2.5
 
     return score
 
 async def fetch_verified_figures(
     query: str,
     canonical_topic: Optional[str] = None,
-    max_figures: int = 2
+    max_figures: int = 2,
+    wikipedia_exact_title: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Queries Wikipedia and Wikimedia APIs for verified, topic-relevant scientific diagrams,
-    structural formulas, schematics, or domain photographs.
+    structural formulas, schematics, maps, or domain photographs.
     Applies strict topical relevance, resolution (>=400px), aspect ratio, and format filtering.
     Fails fast (<4.0s timeout) and returns empty list if no high-confidence image matches.
     """
-    clean_topic = _clean_topic_for_media(query, canonical_topic)
+    clean_topic = _clean_topic_for_media(query, wikipedia_exact_title or canonical_topic)
     if not clean_topic or len(clean_topic) < 2:
         return []
 
-    keywords = _extract_media_keywords(clean_topic)
+    keywords = _extract_media_keywords(_clean_topic_for_media(query, canonical_topic) or clean_topic)
+    if not keywords:
+        keywords = _extract_media_keywords(clean_topic)
     if not keywords:
         return []
 
@@ -322,6 +363,7 @@ async def fetch_verified_figures(
 
     async with httpx.AsyncClient(timeout=EXTERNAL_MEDIA_TIMEOUT) as client:
         resolved_title = clean_topic
+        wiki_article_extract = ""
 
         # 1. Canonical Wikipedia Summary / PageImage (Highest precision)
         try:
@@ -332,6 +374,7 @@ async def fetch_verified_figures(
                 # Reject disambiguation pages
                 if data.get("type") != "disambiguation":
                     resolved_title = data.get("title", clean_topic)
+                    wiki_article_extract = (data.get("extract") or "").strip()
                     img = data.get("originalimage") or data.get("thumbnail")
                     if img:
                         src = img.get("source")
@@ -345,8 +388,7 @@ async def fetch_verified_figures(
                                 if score >= 0.0:
                                     fig_display_title = clean_figure_title(fn, desc=desc, fallback=resolved_title)
                                     raw_desc = (data.get("description") or "").strip()
-                                    desc_full = f"{fig_display_title}. {raw_desc}".strip(". ") if raw_desc else fig_display_title
-                                    cap = format_figure_caption(desc_full, fig_display_title)
+                                    cap = format_figure_caption(raw_desc, fig_display_title, article_context=wiki_article_extract)
                                     attr = get_figure_attribution(fig_display_title, desc, fn)
 
                                     figures.append({
@@ -365,7 +407,7 @@ async def fetch_verified_figures(
             try:
                 images_url = (
                     "https://en.wikipedia.org/w/api.php?action=query&format=json"
-                    f"&titles={urllib.parse.quote(resolved_title)}&prop=images&imlimit=20"
+                    f"&titles={urllib.parse.quote(resolved_title)}&prop=images&imlimit=25"
                 )
                 i_resp = await client.get(images_url, headers=headers)
                 if i_resp.status_code == 200:
@@ -374,15 +416,17 @@ async def fetch_verified_figures(
                     for _, p in pages.items():
                         for im in p.get("images") or []:
                             im_title = im.get("title", "")
-                            if any(im_title.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
+                            im_lower = im_title.lower()
+                            # Allow raster extensions + .svg (rendered cleanly to 1400px PNG via iiurlwidth=1400)
+                            if any(im_lower.endswith(ext) for ext in ALLOWED_EXTENSIONS + (".svg",)):
                                 page_images.append(im_title)
 
-                    # Score image titles against topic keywords
+                    # Score image titles against topic keywords (prefer maps/diagrams/structures)
                     scored_images = []
                     for im_t in page_images:
                         clean_fn = im_t.replace("File:", "")
                         sc = _score_image_candidate(clean_fn, "", keywords)
-                        if sc >= 4.0:
+                        if sc >= 2.0:
                             scored_images.append((sc, im_t))
 
                     scored_images.sort(key=lambda x: x[0], reverse=True)
@@ -391,7 +435,7 @@ async def fetch_verified_figures(
                         info_url = (
                             "https://en.wikipedia.org/w/api.php?action=query&format=json"
                             f"&titles={'|'.join(urllib.parse.quote(t) for t in top_titles)}"
-                            "&prop=imageinfo&iiprop=url|size|extmetadata&iiurlwidth=1200"
+                            "&prop=imageinfo&iiprop=url|size|extmetadata&iiurlwidth=1400"
                         )
                         info_resp = await client.get(info_url, headers=headers)
                         if info_resp.status_code == 200:
@@ -411,7 +455,7 @@ async def fetch_verified_figures(
                                     clean_desc = re.sub(r'<[^>]+>', '', desc_val).strip()
                                     if _is_image_valid(u, w, h, raw_title, clean_desc):
                                         clean_fig_title = clean_figure_title(raw_title, extmetadata=ext_meta, desc=clean_desc, fallback=resolved_title)
-                                        cap = format_figure_caption(clean_desc, clean_fig_title)
+                                        cap = format_figure_caption(clean_desc, clean_fig_title, article_context=wiki_article_extract)
                                         attr = get_figure_attribution(clean_fig_title, clean_desc, raw_title)
                                         figures.append({
                                             "title": clean_fig_title,
@@ -429,11 +473,11 @@ async def fetch_verified_figures(
         # 3. Wikimedia Commons Search (ONLY as fallback if Wikipedia had no suitable image)
         if not figures:
             try:
-                search_query = f'"{resolved_title}" (diagram OR structure OR schematic OR architecture)'
+                search_query = f'"{resolved_title}" (diagram OR structure OR schematic OR architecture OR map)'
                 commons_url = (
                     "https://commons.wikimedia.org/w/api.php?action=query&format=json"
                     f"&generator=search&gsrnamespace=6&gsrsearch={urllib.parse.quote(search_query)}"
-                    "&gsrlimit=8&prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=1200"
+                    "&gsrlimit=8&prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=1400"
                 )
                 c_resp = await client.get(commons_url, headers=headers)
                 if c_resp.status_code == 200:
@@ -467,7 +511,7 @@ async def fetch_verified_figures(
                         if len(figures) >= max_figures:
                             break
                         clean_title = clean_figure_title(fn, extmetadata=ext_meta, desc=clean_desc, fallback=resolved_title)
-                        cap = format_figure_caption(clean_desc, clean_title)
+                        cap = format_figure_caption(clean_desc, clean_title, article_context=wiki_article_extract)
                         attr = get_figure_attribution(clean_title, clean_desc, fn)
                         figures.append({
                             "title": clean_title,
@@ -991,11 +1035,17 @@ def render_chart_matplotlib(chart_data: Optional[Dict[str, Any]]) -> Optional[by
 
 async def download_image_safe(url: str, timeout: Optional[float] = 5.0) -> Optional[bytes]:
     """
-    Downloads image with strict 5s timeout and compliant Wikimedia User-Agent header.
-    Rejects non-image Content-Types, caps size to 4 MB, downscales large JPEGs/PNGs with Pillow to max 1200px.
+    Downloads image with SSRF + HTTPS-only allowlisted domain protection, strict 5s timeout,
+    and compliant Wikimedia User-Agent header.
+    Rejects non-image Content-Types, caps size to 4 MB, downscales large JPEGs/PNGs with Pillow up to 1400px.
     Gracefully skips cleanly on network, 404, or decoding error without crashing.
     """
-    if not url or not url.startswith("http"):
+    if not url:
+        return None
+
+    allowed, reason = is_allowed_image_url(url)
+    if not allowed:
+        logger.warning(f"Blocked unsafe/disallowed image fetch for {url}: {reason}")
         return None
 
     try:
@@ -1004,10 +1054,27 @@ async def download_image_safe(url: str, timeout: Optional[float] = 5.0) -> Optio
             "User-Agent": USER_AGENT,
             "Accept": "image/webp,image/png,image/jpeg,image/*;q=0.8"
         }
-        async with httpx.AsyncClient(timeout=req_timeout, follow_redirects=True) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code != 200:
-                logger.debug(f"Image download HTTP {resp.status_code} for {url}")
+        transport = SSRFSafeTransport()
+        current_url = url
+        async with httpx.AsyncClient(transport=transport, timeout=req_timeout, follow_redirects=False) as client:
+            resp = None
+            for _hop in range(4):
+                resp = await client.get(current_url, headers=headers)
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    loc = resp.headers.get("location")
+                    if not loc:
+                        return None
+                    next_url = urllib.parse.urljoin(current_url, loc)
+                    next_ok, next_reason = is_allowed_image_url(next_url)
+                    if not next_ok:
+                        logger.warning(f"Blocked unsafe image redirect to {next_url}: {next_reason}")
+                        return None
+                    current_url = next_url
+                    continue
+                break
+
+            if resp is None or resp.status_code != 200:
+                logger.debug(f"Image download HTTP {getattr(resp, 'status_code', 'none')} for {url}")
                 return None
 
             # Reject non-image responses (such as HTML error pages)
@@ -1039,12 +1106,12 @@ async def download_image_safe(url: str, timeout: Optional[float] = 5.0) -> Optio
                 logger.debug(f"Rejecting dark/blank/monochrome candidate image from {url}: mean={mean_brightness:.1f}, std={std_dev:.1f}")
                 return None
 
-            max_dim = 1200
+            max_dim = 1400
             if img.width > max_dim or img.height > max_dim:
                 img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
 
             out_buf = io.BytesIO()
-            img.save(out_buf, format="JPEG", quality=90)
+            img.save(out_buf, format="JPEG", quality=92)
             return out_buf.getvalue()
     except Exception as e:
         logger.debug(f"Image download/processing failed for {url}: {e}")

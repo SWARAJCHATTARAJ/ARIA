@@ -93,6 +93,12 @@ function compactSource(src: any) {
     year: src.year,
     venue: typeof src.venue === 'string' ? src.venue.slice(0, 200) : undefined,
     doi: typeof src.doi === 'string' ? src.doi.slice(0, 100) : undefined,
+    arxiv_id: typeof src.arxiv_id === 'string' ? src.arxiv_id.slice(0, 100) : undefined,
+    source_type: typeof src.source_type === 'string' ? src.source_type.slice(0, 60) : undefined,
+    review_status: typeof src.review_status === 'string' ? src.review_status.slice(0, 60) : undefined,
+    source: typeof src.source === 'string' ? src.source.slice(0, 300) : undefined,
+    published: typeof src.published === 'string' ? src.published.slice(0, 60) : undefined,
+    path: typeof src.path === 'string' ? src.path.slice(0, 200) : undefined,
     score: typeof src.score === 'number' ? src.score : undefined,
     tier: src.tier,
     citation_id: src.citation_id,
@@ -113,13 +119,16 @@ function compactFigure(fig: any) {
 
 function compactClaim(claim: any) {
   if (!claim || typeof claim !== 'object') return claim;
+  const rawText = typeof claim.text === 'string' ? claim.text : (typeof claim.claim === 'string' ? claim.claim : '');
   return {
-    id: claim.id,
-    claim: typeof claim.claim === 'string' ? claim.claim.slice(0, 600) : '',
+    claim_id: claim.claim_id ?? claim.id,
+    text: rawText.slice(0, 600),
+    claim: rawText.slice(0, 600),
     status: claim.status,
-    verification: claim.verification,
-    confidence: typeof claim.confidence === 'number' ? claim.confidence : undefined,
-    citation: claim.citation,
+    supported: typeof claim.supported === 'boolean' ? claim.supported : undefined,
+    coverage: typeof claim.coverage === 'number' ? claim.coverage : undefined,
+    citation_ids: Array.isArray(claim.citation_ids) ? claim.citation_ids.slice(0, 10) : undefined,
+    note: typeof claim.note === 'string' ? claim.note.slice(0, 300) : undefined,
     source: typeof claim.source === 'string' ? claim.source.slice(0, 300) : undefined,
     evidence: typeof claim.evidence === 'string' ? claim.evidence.slice(0, 500) : undefined,
   };
@@ -127,14 +136,14 @@ function compactClaim(claim: any) {
 
 /**
  * Execute PDF export request against the backend endpoint (/api/export/pdf).
- * - Enforces an AbortController timeout (default 45s).
+ * - Enforces an AbortController timeout (default 90s).
  * - Pre-compacts sources, figures, and claims to stay under limits and avoid large payloads.
  * - Attaches Supabase session bearer token.
  * - Parses structured error responses and returns clear, actionable error diagnostics.
  */
 export async function exportPdfApi(
   payload: ExportPdfPayload,
-  timeoutMs: number = 45000,
+  timeoutMs: number = 90000,
   customToken?: string
 ): Promise<Blob> {
   const url = `${API_BASE_URL}/api/export/pdf`;

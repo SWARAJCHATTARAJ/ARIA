@@ -79,20 +79,17 @@ _IDENTITY_SECURITY = (
 _CITATION_RULES = (
     "STRICT GROUNDING & CITATION RULES:\n"
     "- DIRECT FOCUS ON USER QUERY: Address what the user actually asked first in Section I with clear, accurate "
-    "foundational facts (canonical definitions, taxonomy, primary verified physical/technical quantities) before niche paper details.\n"
-    "- STRICT FACTUAL GROUNDING: Every factual claim, definition, statistic, date, and Markdown table cell MUST "
-    "come strictly from the provided relevance-filtered primary sources. ONLY cite facts, metrics, percentages, hardware "
-    "names, and benchmarks that actually exist in the retrieved text. Zero speculation, zero off-topic tangents, "
-    "zero fabricated benchmarks, and zero extrapolating numbers from unrelated sub-topics (e.g., do NOT extrapolate "
-    "'12% battery life' or 'Intel Skylake' if absent from the retrieved text).\n"
-    "- QUANTITATIVE COMPARATIVE ANALYSIS & TABLES: In Section III, the Markdown table must ONLY present verified metrics "
-    "and parameters whose values are extracted verbatim from the cited sources [[c:N]]. If sources do not contain direct "
-    "quantitative comparisons, provide a structured taxonomy table of verified characteristics from the sources—NEVER "
-    "invent numbers, fabricate benchmarks, or assign arbitrary ratings.\n"
-    "- EVERY single sentence containing a technical fact, formula, mechanism, or quantitative metric MUST end "
+    "foundational facts (canonical definitions, names, official titles, dates, and primary verified quantities) before niche details.\n"
+    "- STRICT FACTUAL GROUNDING: Every factual claim, proper name, official title, date, statistic, and Markdown table cell MUST "
+    "come strictly from the provided relevance-filtered primary sources. ONLY cite facts, metrics, percentages, names, "
+    "and dates that actually exist in the retrieved text. Zero speculation, zero off-topic tangents, "
+    "zero fabricated benchmarks, and zero extrapolating numbers from unrelated sub-topics.\n"
+    "- QUANTITATIVE & COMPARATIVE TABLES: In Section III, include a well-structured GFM Markdown table ONLY if the sources "
+    "provide 3 or more comparable metrics, dates, or attributes—NEVER invent numbers, fabricate benchmarks, or assign arbitrary ratings.\n"
+    "- EVERY single sentence containing a factual claim, date, statistic, mechanism, or quantitative metric MUST end "
     "with an explicit inline citation marker [[c:N]] pointing at the specific source(s) that prove it.\n"
     "- The cited segment must contain a verbatim or near-verbatim terminology match with the claim: use the "
-    "exact technical terms, quantities, and units found in that source's abstract or snippet, so a deterministic "
+    "exact terms, quantities, and units found in that source's text, so a deterministic "
     "entailment auditor can verify the claim against the source text.\n"
     "- ZERO speculation or ungrounded claims. If a metric or parameter is not present in the sources, do NOT invent it.\n"
     "- Use ONLY numeric markers [[c:0]], [[c:1]], etc. corresponding to the provided context sources (0 through N-1).\n"
@@ -101,32 +98,36 @@ _CITATION_RULES = (
 )
 
 _DEEP_STRUCTURE = (
-    "UNIVERSAL ADAPTIVE RESEARCH STRUCTURE - you MUST organize the synthesis into these exact 4 sections with "
-    "Markdown ## headings, adapting the technical vocabulary to the topic:\n\n"
-    "## Executive Definition and Canonical Taxonomy\n"
-    "Directly answer the user's inquiry first: formal canonical definition, taxonomy/classification, canonical nomenclature, and fundamental verified physical/technical principles [[c:0]].\n\n"
-    "## Core Mechanisms, Architecture and Theoretical Formulation\n"
-    "Underlying mechanisms, formulas, pathways, pipelines or theoretical formulations, step by step [[c:0]].\n\n"
-    "## Quantitative and Comparative Analysis\n"
-    "A well-structured GFM Markdown table comparing key parameters, benchmarks, properties or variants "
-    "extracted strictly and verbatim from the cited sources [[c:0]]. Follow the table with substantive comparative analysis.\n\n"
-    "## Empirical Verification, Applications and Technical Limitations\n"
-    "Empirical results, verified applications, observational/experimental benchmarks, known failure modes and technical limitations [[c:0]]."
+    "DOMAIN-ADAPTIVE SCHOLARLY STRUCTURE - organize the synthesis into 4 concise, domain-appropriate sections "
+    "with Markdown ## headings specifically tailored to the actual query's discipline (NEVER use generic CS/engineering "
+    "jargon like 'Canonical Taxonomy' or 'Architecture' for history, geography, humanities, or social-science topics):\n\n"
+    "1. First ## heading — Foundational Context / Definition & Core Identity (e.g., '## Geographic & Historical Foundations' "
+    "for countries/history, '## Definition & Structural Classification' for sciences, '## Formal Definition & Taxonomy' for CS): "
+    "Directly answer the user's inquiry first with canonical facts, verified names, dates, and foundational scope [[c:0]].\n\n"
+    "2. Second ## heading — Core Mechanisms / Governance / Processes (e.g., '## Governance, Society & Cultural Institutions' "
+    "for nations/history, '## Underlying Mechanisms & Pathways' for sciences, '## Core Data Structures & Algorithmic Mechanisms' for CS): "
+    "Explain the primary mechanisms, institutional structures, historical developments, or theoretical principles step by step [[c:0]].\n\n"
+    "3. Third ## heading — Comparative Profile / Quantitative & Empirical Indicators (e.g., '## Economic Profile & Key Indicators' "
+    "or '## Quantitative Properties & Comparative Analysis'): "
+    "Present a GFM Markdown table of verified metrics, parameters, or comparative characteristics extracted strictly from the sources [[c:0]], "
+    "followed by concise analytical prose.\n\n"
+    "4. Fourth ## heading — Contemporary Significance / Applications & Limitations (e.g., '## Contemporary Global Role & Challenges' "
+    "or '## Empirical Applications & Technical Limitations'): "
+    "Synthesize verified real-world impact, applications, empirical evidence, and known constraints or open questions [[c:0]]."
 )
 
 
 def build_synthesis_prompt(topic: Optional[str] = None) -> str:
     """
     Composes the full synthesis system prompt from the identity/security base,
-    the universal structure, and the shared grounding/citation rules.
+    the domain-adaptive structure, and the shared grounding/citation rules.
     Used by BOTH the streaming /api/query path and synthesize_answer.
     """
     domain_clause = ""
     if topic and topic.lower() != "auto":
         domain_clause = (
             f"\n\nDOMAIN SCOPE: {topic.upper()}.\n"
-            f"Ensure scientific terminology, theoretical principles, physical/chemical/computational mechanisms, "
-            f"and comparative empirical benchmarks are strictly grounded within {topic}."
+            f"Ensure terminology, headings, mechanisms, and comparative evidence are strictly grounded within {topic}."
         )
     return f"{_IDENTITY_SECURITY}\n{_DEEP_STRUCTURE}{domain_clause}\n\n{_CITATION_RULES}"
 
@@ -746,7 +747,7 @@ async def retrieve_cascade(state: AgentState) -> dict:
                 for s in free_sources:
                     s["tier"] = "LIVE"
                     st = s.get("source_type")
-                    if st == "openalex":
+                    if st in ("openalex", "crossref", "semantic_scholar"):
                         s["review_status"] = "scholarly"
                     elif st == "arxiv":
                         s["review_status"] = "preprint"
@@ -932,8 +933,8 @@ async def retrieve_cascade(state: AgentState) -> dict:
         tier_bonus = {"OKF": 0.30, "RAG": 0.28}.get(tier, 0.0)
         stype = chunk.get("source_type", "")
         quality_bonus = {
-            "arxiv": 0.12, "openalex": 0.11, "semantic_scholar": 0.11,
-            "wikipedia": 0.04, "duckduckgo": 0.02
+            "arxiv": 0.12, "openalex": 0.11, "crossref": 0.11, "semantic_scholar": 0.11,
+            "wikipedia": 0.05, "duckduckgo": 0.02
         }.get(stype, 0.02 if tier in ("OKF", "RAG") else 0.0)
 
         return relevance + tier_bonus + quality_bonus
@@ -966,7 +967,7 @@ async def retrieve_cascade(state: AgentState) -> dict:
     live_selected.sort(
         key=lambda c: (
             1 if c.get("doi") or c.get("url") else 0,
-            1 if c.get("source_type") in ("openalex", "arxiv", "semantic_scholar") else 0,
+            1 if c.get("source_type") in ("openalex", "crossref", "arxiv", "semantic_scholar") else 0,
             _relevance_score(c)
         ),
         reverse=True
@@ -994,8 +995,6 @@ async def retrieve_cascade(state: AgentState) -> dict:
         "rag_scores": rag_scores,
         "retrieval_timings": retrieval_tracker.get_logs()
     }
-
-import re
 
 def normalize_markers(text: str) -> str:
     """
@@ -1284,7 +1283,7 @@ def synthesize_answer(state: AgentState) -> dict:
         updates["answer_final"] = clean_text
     except Exception as e:
         logger.error(f"Groq API error: {e}")
-        updates["draft_answer"] = f"Error generating answer: {str(e)}"
+        updates["draft_answer"] = "Unable to synthesize an answer from the retrieved sources at this time."
         updates["answer_final"] = updates["draft_answer"]
         
     updates["citations"] = chunks
@@ -2652,7 +2651,9 @@ async def audit_answer(state: AgentState) -> dict:
     source_weights = {
         "arxiv": 0.95,
         "openalex": 0.92,
-        "wikipedia": 0.75,
+        "crossref": 0.92,
+        "semantic_scholar": 0.90,
+        "wikipedia": 0.78,
         "duckduckgo": 0.55,
         "okf_graph": 0.95,
         "okf_note": 0.95,
@@ -2743,40 +2744,38 @@ async def audit_answer(state: AgentState) -> dict:
 # Deep Research Manuscript Expansion (PDF Publication Mode)
 # ---------------------------------------------------------------------------
 _MANUSCRIPT_EXPANSION_SYSTEM = (
-    "You are ARIA, an elite Principal Scientific Researcher and Chief Editor of IEEE / ACM Transactions.\n"
-    "Your objective is to produce a publication-grade, definitive academic research paper (1,400 to 2,000 words) "
+    "You are ARIA, an elite Principal Researcher and Chief Editor of Academic Journals & Working Papers.\n"
+    "Your objective is to produce a publication-grade, definitive scholarly paper (1,400 to 2,000 words) "
     "grounded strictly and exhaustively in the provided verified sources and the user's specific query topic.\n\n"
     "CRITICAL GROUNDING & DOMAIN FIDELITY DIRECTIVES:\n"
     "- Directly answer what the user actually asked first in Section I with foundational canonical facts before specialized details.\n"
-    "- Strictly adhere to the user's research topic and scientific domain (e.g., Computer Science, Artificial Intelligence, "
-    "Biology, Medicine, Physics, Materials Science, Engineering, Economics, or Law). Never inject analogies, chemicals, "
-    "or boilerplate concepts from unrelated disciplines.\n"
-    "- Ground all scientific facts, theoretical frameworks, architectural mechanisms, equations, dates, statistics, and empirical metrics "
-    "strictly in the provided verified primary sources. ONLY cite facts, metrics, hardware names, and percentages that actually exist in "
-    "the provided source snippets. Zero speculation, zero off-topic tangents, and zero extrapolating numbers from unrelated sub-topics "
-    "(e.g., do NOT extrapolate '12% battery life' or 'Intel Skylake' if absent from the retrieved text).\n"
-    "- EVERY assertion containing a technical fact, theorem, mechanism, or quantitative metric MUST end with an explicit "
+    "- Strictly adhere to the user's research domain (e.g., Geography, History, Economics, Law, Computer Science, "
+    "Biology, Chemistry, Physics, Materials Science, or Engineering). Tailor ALL 5 section headings to fit the actual discipline—never "
+    "inject CS/engineering terms like 'Theoretical Architecture' onto history, geography, or cultural subjects unless the topic is STEM/engineering.\n"
+    "- Ground all facts, names, official titles, theoretical frameworks, mechanisms, equations, dates, statistics, and empirical metrics "
+    "strictly in the provided verified primary sources. ONLY cite facts, metrics, names, and dates that actually exist in "
+    "the provided source text. Zero speculation, zero off-topic tangents, and zero extrapolating numbers from unrelated sub-topics.\n"
+    "- EVERY assertion containing a factual claim, date, mechanism, or quantitative metric MUST end with an explicit "
     "inline citation marker [[c:N]] corresponding to the provided sources (0 through N-1).\n"
     "- Output formal, substantive, publication-quality academic prose. Never output conversational filler or fluff.\n"
     "- Use clean Markdown only. Absolutely NO raw HTML tags.\n\n"
-    "MANDATORY 5-SECTION STRUCTURE (You MUST write multi-paragraph substantive content under every heading with ZERO empty sections):\n\n"
-    "## I. Introduction & Executive Definition\n"
-    "Provide 2 to 3 substantive paragraphs establishing the canonical definition, theoretical/system taxonomy, "
-    "historical scientific discovery, and fundamental technological/scientific significance [[c:0]].\n\n"
-    "## II. Core Mechanisms, Theoretical Architecture & Methodology\n"
-    "Provide 2 to 3 detailed technical paragraphs detailing theoretical formulations, algorithmic or physical "
-    "processes, system architecture, operational workflows, and underlying governing dynamics grounded in the domain of inquiry [[c:0]].\n\n"
-    "## III. Quantitative Properties & Comparative Analysis\n"
-    "Provide a detailed GFM Markdown comparison table summarizing key empirical metrics, benchmarks, quantitative parameters, "
-    "or performance trade-offs extracted verbatim from the cited sources [[c:0]]. Never extrapolate or invent numbers. "
-    "Follow the table with 2 substantive analytical paragraphs discussing empirical variance, comparative advantages, "
-    "and quantitative performance trade-offs [[c:0]].\n\n"
-    "## IV. Empirical Applications, Operational Impact & Technical Limitations\n"
-    "Provide 2 to 3 substantive paragraphs analyzing primary real-world applications, systems integration challenges, "
-    "failure modes, safety/security implications, and critical operational constraints [[c:0]].\n\n"
+    "MANDATORY 5-SECTION STRUCTURE (Use Roman numerals ## I. through ## V., writing multi-paragraph substantive content under every heading with ZERO empty sections):\n\n"
+    "## I. Introduction & Foundational Overview (or '## I. Introduction & Executive Definition' for STEM/engineering)\n"
+    "Provide 2 to 3 substantive paragraphs establishing canonical definitions, official nomenclature/taxonomy, "
+    "historical background, and fundamental significance [[c:0]].\n\n"
+    "## II. <Domain-Appropriate Title for Core Mechanisms, Governance, Historical Trajectory, or Architecture>\n"
+    "Provide 2 to 3 detailed paragraphs analyzing core processes, institutional structures, theoretical formulations, "
+    "or governing dynamics grounded strictly in the topic's domain [[c:0]].\n\n"
+    "## III. <Domain-Appropriate Title for Quantitative Indicators, Empirical Properties, or Comparative Analysis>\n"
+    "Provide a detailed GFM Markdown comparison table summarizing key verified metrics, dates, indicators, or parameters "
+    "extracted verbatim from the cited sources [[c:0]]. Never extrapolate or invent numbers. "
+    "Follow the table with 2 substantive analytical paragraphs discussing comparative patterns and empirical trade-offs [[c:0]].\n\n"
+    "## IV. <Domain-Appropriate Title for Contemporary Impact, Applications, Challenges & Limitations>\n"
+    "Provide 2 to 3 substantive paragraphs analyzing primary applications, global/operational impact, "
+    "structural challenges, and critical limitations [[c:0]].\n\n"
     "## V. Conclusion & Open Research Directions\n"
-    "Provide 1 to 2 substantive paragraphs synthesizing the current state of verified science, key technological trade-offs, "
-    "and active open research frontiers in the field [[c:0]]."
+    "Provide 1 to 2 substantive paragraphs synthesizing the verified evidence, key trade-offs, "
+    "and active open questions in the field [[c:0]]."
 )
 
 
@@ -2823,7 +2822,7 @@ async def expand_to_full_research_paper(
 
     # Candidate models for expansion with instant failover
     candidate_models = [settings.groq_writer_model]
-    for fallback in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
+    for fallback in ["qwen/qwen3.8-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
         if fallback not in candidate_models:
             candidate_models.append(fallback)
 
@@ -2887,6 +2886,155 @@ async def expand_to_full_research_paper(
 
     logger.info(f"Manuscript expansion complete: {len(expanded_text.split())} words, {len(claims)} audited claims, confidence={confidence}")
     return expanded_text, claims, confidence
+
+
+def generate_followup_questions(
+    query: str,
+    answer_final: str,
+    claims: Optional[List[Dict[str, Any]]] = None,
+    canonical_topic: Optional[str] = None,
+) -> List[str]:
+    """
+    Generates 3 real, topic-specific follow-up research questions directly grounded in
+    entities, concepts, institutions, and findings present in the synthesized answer & claims.
+    Never plugs section headings into generic templates.
+    """
+    if not answer_final or not answer_final.strip():
+        return []
+
+    subject = strip_question_boilerplate(canonical_topic or query or "").strip()
+    if ":" in subject:
+        subject = subject.split(":")[0].strip()
+    subject_tokens = {w.lower() for w in re.findall(r'[A-Za-z0-9-]+', subject)}
+
+    # Strip headings, tables, code blocks, and citation markers so we extract only real prose entities
+    prose_lines = []
+    for line in answer_final.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or s.startswith("|") or s.startswith("```") or s in ("---", "***"):
+            continue
+        prose_lines.append(s)
+    prose = re.sub(r'\[+c:\d+\]+|\[\d+\]|[*_`]', '', " ".join(prose_lines))
+
+    # Collect named entities / multi-word technical or proper-noun phrases from prose & supported claims
+    candidates: List[str] = []
+    seen_norm = set()
+
+    def _add_entity(phrase: str):
+        p = " ".join(phrase.split()).strip(" ,.;:()[]\"'")
+        if len(p) < 3 or len(p) > 48:
+            return
+        pl = p.lower()
+        if pl in subject_tokens or pl in STOPWORDS:
+            return
+        if pl in {"the", "however", "moreover", "furthermore", "additionally", "therefore", "overall", "meanwhile", "consequently"}:
+            return
+        if pl not in seen_norm:
+            seen_norm.add(pl)
+            candidates.append(p)
+
+    # 1. Multi-word capitalized phrases inside sentences (proper nouns, institutions, historical eras, algorithms)
+    for m in re.finditer(r'(?<![.!?]\s)\b([A-Z][a-zA-Z0-9-]+(?:\s+(?:of|and|for|the)?\s*[A-Z][a-zA-Z0-9-]+){1,3})\b', prose):
+        _add_entity(m.group(1))
+
+    # 2. Acronyms and hyphenated scientific/domain terms
+    for m in re.finditer(r'\b([A-Z]{2,}[0-9-]*|[a-zA-Z]+-[a-zA-Z0-9-]+)\b', prose):
+        tok = m.group(1)
+        if tok.lower() not in {"table", "figure", "section", "aria", "okf", "rag", "live"}:
+            _add_entity(tok)
+
+    # 3. Single mid-sentence capitalized proper nouns
+    for m in re.finditer(r'(?<=[a-z,]\s)\b([A-Z][a-z]{3,})\b', prose):
+        _add_entity(m.group(1))
+
+    # 4. Quantitative / comparative sentences from verified claims for grounded question angles
+    claim_texts = [
+        strip_claim_text(str(c.get("text", "")))
+        for c in (claims or [])
+        if isinstance(c, dict) and c.get("status") in ("supported", "partially_supported") and c.get("text")
+    ]
+
+    lower_blob = f"{query} {canonical_topic or ''} {prose[:1200]}".lower()
+    is_geo_history = any(k in lower_blob for k in (
+        "country", "island", "archipelago", "parliament", "constitution", "emperor", "gdp",
+        "prefecture", "dynasty", "treaty", "economy", "population", "geography", "republic", "monarchy"
+    ))
+    is_bio_med = any(k in lower_blob for k in (
+        "gene", "protein", "cell", "rna", "dna", "crispr", "enzyme", "clinical", "therapy", "molecule"
+    ))
+    is_cs_math = any(k in lower_blob for k in (
+        "algorithm", "complexity", "tree", "graph", "hash", "consensus", "transformer", "neural", "database", "latency"
+    ))
+
+    questions: List[str] = []
+    subj_label = subject if subject else "this subject"
+
+    if len(candidates) >= 1:
+        e1 = candidates[0]
+        if is_geo_history:
+            questions.append(f"How did {e1} shape the historical and institutional development of {subj_label}?")
+        elif is_bio_med:
+            questions.append(f"What molecular mechanisms govern the role of {e1} in {subj_label}?")
+        elif is_cs_math:
+            questions.append(f"How does {e1} affect asymptotic complexity and practical performance in {subj_label}?")
+        else:
+            questions.append(f"What specific evidence explains how {e1} influences {subj_label}?")
+
+    if len(candidates) >= 2:
+        e2 = candidates[1]
+        if is_geo_history:
+            questions.append(f"What primary economic or demographic factors link {e2} to contemporary {subj_label}?")
+        elif is_bio_med:
+            questions.append(f"What experimental limitations or off-target effects are associated with {e2}?")
+        elif is_cs_math:
+            questions.append(f"What trade-offs distinguish {e2} from alternative approaches in {subj_label}?")
+        else:
+            questions.append(f"How do empirical measurements characterize {e2} within {subj_label}?")
+
+    if len(candidates) >= 3:
+        e3 = candidates[2]
+        if is_geo_history:
+            questions.append(f"How have recent policy or structural shifts impacted {e3} in {subj_label}?")
+        elif is_bio_med:
+            questions.append(f"How do current delivery or validation studies address {e3}?")
+        elif is_cs_math:
+            questions.append(f"Under what workload constraints does {e3} outperform baseline methods?")
+        else:
+            questions.append(f"What comparative evidence evaluates {e3} across different contexts of {subj_label}?")
+
+    # Fill any remaining slots up to 3 using grounded claim topics (never section headings)
+    if len(questions) < 3 and claim_texts:
+        for ct in claim_texts:
+            if len(questions) >= 3:
+                break
+            words = [w for w in re.findall(r'\b[a-zA-Z0-9-]{4,}\b', ct) if w.lower() not in STOPWORDS and w.lower() not in subject_tokens]
+            if len(words) >= 2:
+                focus = " ".join(words[:3])
+                q_cand = f"What primary sources further quantify {focus} in {subj_label}?"
+                if q_cand not in questions:
+                    questions.append(q_cand)
+
+    if len(questions) < 3:
+        fallbacks = (
+            [
+                f"What historical turning points most strongly shaped {subj_label}'s modern governance?",
+                f"Which demographic and macroeconomic indicators define {subj_label}'s current trajectory?",
+                f"How do regional and international factors influence {subj_label} today?",
+            ]
+            if is_geo_history
+            else [
+                f"What quantitative evidence supports the primary findings on {subj_label}?",
+                f"What key constraints or trade-offs emerge in real-world applications of {subj_label}?",
+                f"How have recent peer-reviewed studies expanded our understanding of {subj_label}?",
+            ]
+        )
+        for fb in fallbacks:
+            if len(questions) >= 3:
+                break
+            if fb not in questions:
+                questions.append(fb)
+
+    return questions[:3]
 
 
 def is_identity_query(query: str) -> bool:
@@ -3000,21 +3148,39 @@ def get_identity_response_payload() -> dict:
 
     claims = [
         {
+            "claim_id": 0,
+            "text": "ARIA v2.0 was architected and developed by Swaraj Chattaraj as an autonomous scientific synthesis engine.",
             "claim": "ARIA v2.0 was architected and developed by Swaraj Chattaraj as an autonomous scientific synthesis engine.",
             "status": "supported",
+            "supported": True,
+            "coverage": 1.0,
+            "citation_ids": [0],
             "source": "ARIA System Profile",
+            "evidence": "ARIA is an autonomous scientific synthesis engine and technical workbench architected and developed by Swaraj Chattaraj.",
             "quotes": ["ARIA is an autonomous scientific synthesis engine and technical workbench architected and developed by Swaraj Chattaraj."]
         },
         {
+            "claim_id": 1,
+            "text": "ARIA features tri-tier evidence cascade retrieval across OKF, RAG, and live academic sources (arXiv, OpenAlex, Wikipedia).",
             "claim": "ARIA features tri-tier evidence cascade retrieval across OKF, RAG, and live academic sources (arXiv, OpenAlex, Wikipedia).",
             "status": "supported",
+            "supported": True,
+            "coverage": 1.0,
+            "citation_ids": [0],
             "source": "ARIA System Profile",
+            "evidence": "Tri-Tier Evidence Cascade Retrieval across OKF, RAG, arXiv, OpenAlex, and Wikipedia.",
             "quotes": ["Tri-Tier Evidence Cascade Retrieval across OKF, RAG, arXiv, OpenAlex, and Wikipedia."]
         },
         {
+            "claim_id": 2,
+            "text": "ARIA is available across Web, Windows desktop (.exe), and Android (.apk) platforms.",
             "claim": "ARIA is available across Web, Windows desktop (.exe), and Android (.apk) platforms.",
             "status": "supported",
+            "supported": True,
+            "coverage": 1.0,
+            "citation_ids": [0],
             "source": "ARIA System Profile",
+            "evidence": "Cross-Platform Availability across Web, Windows Desktop, and Android Mobile.",
             "quotes": ["Cross-Platform Availability across Web, Windows Desktop, and Android Mobile."]
         }
     ]

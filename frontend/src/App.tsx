@@ -1,4 +1,4 @@
-import React, { useState, Suspense, lazy, useEffect, useCallback } from 'react';
+import { useState, Suspense, lazy, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ThreadView from './components/ThreadView';
 import SourcePanel from './components/SourcePanel';

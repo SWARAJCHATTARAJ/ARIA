@@ -3,6 +3,7 @@ import time
 import json
 import logging
 import re
+import urllib.parse
 import uuid
 import traceback
 from typing import Optional, List, Dict, Any
@@ -11,7 +12,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from config import settings
 from routers import export, okf
@@ -22,6 +23,7 @@ from utils.api_security import (
     record_user_request,
     check_anonymous_rate_limit,
     record_anonymous_request,
+    check_general_ip_rate_limit,
     validate_uuid,
     ALLOWED_VERDICTS,
     MAX_BODY_SIZE_BYTES,
@@ -48,21 +50,60 @@ app.add_middleware(
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Security Middleware: Request ID, nosniff, and max body size check
+def _security_headers(request_id: str) -> Dict[str, str]:
+    return {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "X-Request-ID": request_id,
+    }
+
+
+# Security Middleware: Request ID, security headers, per-IP rate limit, and max body size check
 @app.middleware("http")
 async def security_and_limits_middleware(request: Request, call_next):
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
+    sec_headers = _security_headers(request_id)
 
-    # Check request body size (cap at 8 KB, or 4 MB for PDF export)
+    # Check request body size (cap at 8 KB, or 4 MB for PDF export), including chunked bodies without Content-Length
     max_bytes = 4 * 1024 * 1024 if request.url.path == "/api/export/pdf" else MAX_BODY_SIZE_BYTES
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > max_bytes:
-        return JSONResponse(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            content={"detail": f"Request body exceeds {max_bytes // 1024} KB limit."},
-            headers={"X-Content-Type-Options": "nosniff", "X-Request-ID": request_id}
-        )
+    if content_length:
+        try:
+            cl_int = int(content_length)
+        except ValueError:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"detail": "Invalid Content-Length header."},
+                headers=sec_headers,
+            )
+        if cl_int > max_bytes:
+            return JSONResponse(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                content={"detail": f"Request body exceeds {max_bytes // 1024} KB limit."},
+                headers=sec_headers,
+            )
+    elif request.method in ("POST", "PUT", "PATCH") and path.startswith("/api/"):
+        raw_body = await request.body()
+        if len(raw_body) > max_bytes:
+            return JSONResponse(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                content={"detail": f"Request body exceeds {max_bytes // 1024} KB limit."},
+                headers=sec_headers,
+            )
+
+    # Sliding-window per-IP rate limit on auxiliary API routes (query/feedback enforce dedicated hourly limits)
+    path = request.url.path
+    if path.startswith("/api/") and path not in ("/api/query", "/api/research", "/api/feedback"):
+        client_ip = get_client_ip(request)
+        allowed, retry_after, limit_msg = check_general_ip_rate_limit(client_ip, max_per_minute=40)
+        if not allowed:
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={"detail": limit_msg, "request_id": request_id},
+                headers={**sec_headers, "Retry-After": str(retry_after)},
+            )
 
     try:
         response = await call_next(request)
@@ -71,11 +112,11 @@ async def security_and_limits_middleware(request: Request, call_next):
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": "An internal server error occurred.", "request_id": request_id},
-            headers={"X-Content-Type-Options": "nosniff", "X-Request-ID": request_id}
+            headers=sec_headers,
         )
 
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Request-ID"] = request_id
+    for k, v in sec_headers.items():
+        response.headers[k] = v
     return response
 
 # Global Exception Handler: never leak stack traces or env values
@@ -86,25 +127,25 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "An internal server error occurred.", "request_id": req_id},
-        headers={"X-Content-Type-Options": "nosniff", "X-Request-ID": req_id}
+        headers=_security_headers(req_id),
     )
 
 class QueryRequest(BaseModel):
     query: str
-    topic: Optional[str] = None
-    thread_id: Optional[str] = None
-    user_id: Optional[str] = None
+    topic: Optional[str] = Field(default=None, max_length=60)
+    thread_id: Optional[str] = Field(default=None, max_length=64)
+    user_id: Optional[str] = Field(default=None, max_length=64)
     compare_mode: bool = False
 
 class KeyTestRequest(BaseModel):
-    api_key: str
+    api_key: str = Field(..., min_length=10, max_length=200)
 
 class FeedbackRequest(BaseModel):
     message_id: str
-    thread_id: Optional[str] = None
+    thread_id: Optional[str] = Field(default=None, max_length=64)
     verdict: str
     query: Optional[str] = None
-    tiers: Optional[List[str]] = None
+    tiers: Optional[List[str]] = Field(default=None, max_length=10)
     route_engine: Optional[str] = None
 
 @app.get("/health")
@@ -394,7 +435,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
                         rev_status = "draft" if chunk.get("confidence") == "draft" else "verified"
                     elif chunk.get("tier") == "RAG":
                         rev_status = "draft" if chunk.get("confidence") == "draft" else "verified"
-                    elif chunk.get("source_type") == "openalex":
+                    elif chunk.get("source_type") in ("openalex", "crossref", "semantic_scholar"):
                         rev_status = "scholarly"
                     elif chunk.get("source_type") == "arxiv":
                         rev_status = "preprint"
@@ -434,7 +475,11 @@ async def query_pipeline(req: QueryRequest, request: Request):
             # Launch figure retrieval concurrently in the background during token synthesis
             from utils.media import fetch_verified_figures, extract_or_generate_topic_chart
             figures_task = asyncio.create_task(
-                fetch_verified_figures(current_state['query'], current_state.get('canonical_topic'))
+                fetch_verified_figures(
+                    current_state['query'],
+                    current_state.get('canonical_topic'),
+                    wikipedia_exact_title=current_state.get('wikipedia_exact_title'),
+                )
             )
 
             # 5. Token Events
@@ -442,7 +487,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 f"[[c:{i}]] {chunk.get('title', 'Unknown')} ({chunk.get('venue', chunk.get('source', 'Unknown'))})\n{chunk.get('snippet', chunk.get('content', ''))}" 
                 for i, chunk in enumerate(chunks)
             ])
-            from pipeline.nodes import build_synthesis_prompt, current_writer_llm
+            from pipeline.nodes import build_synthesis_prompt
             from utils.key_manager import KeyRotationManager
             km = KeyRotationManager(request_keys=initial_state.get("api_key_pool"))
             synthesis_prompt = build_synthesis_prompt(topic=current_state.get("topic") or initial_state.get("topic"))
@@ -607,8 +652,16 @@ async def query_pipeline(req: QueryRequest, request: Request):
             )
 
             # 7. Done Event (ensure final_answer is post-processed before done)
-            current_state["answer_final"] = strip_orphan_headings(current_state.get("answer_final", final_answer))
-            yield f"data: {json.dumps({'event': 'done', 'figures': figures, 'chart': chart, 'unanswerable': bool(current_state.get('unanswerable', False)), 'timing': {'retrieval_seconds': retrieval_seconds, 'time_to_first_token': time_to_first_token, 'total_seconds': total_seconds}, 'tokens': tok_summary})}\n\n"
+            from pipeline.nodes import generate_followup_questions
+            final_clean = strip_orphan_headings(current_state.get("answer_final", final_answer))
+            current_state["answer_final"] = final_clean
+            followup_questions = generate_followup_questions(
+                query=current_state.get("query", ""),
+                answer_final=final_clean,
+                claims=audit_res.get("claims", []),
+                canonical_topic=current_state.get("canonical_topic"),
+            )
+            yield f"data: {json.dumps({'event': 'done', 'figures': figures, 'chart': chart, 'followup_questions': followup_questions, 'unanswerable': bool(current_state.get('unanswerable', False)), 'timing': {'retrieval_seconds': retrieval_seconds, 'time_to_first_token': time_to_first_token, 'total_seconds': total_seconds}, 'tokens': tok_summary})}\n\n"
 
         except Exception as e:
             err_str = str(e).lower()
@@ -991,7 +1044,7 @@ async def get_visual_card(query: str):
 
                     # 3b. Universal visual verification gate
                     reject_reason = _validate_visual_candidate(
-                        {}, golden_terms, resolved_title, categories, extract, ""
+                        golden_terms, resolved_title, categories, extract, ""
                     )
                     if reject_reason:
                         logger.info(f"visual-card candidate rejected ({reject_reason}): {resolved_title}")
@@ -1040,14 +1093,14 @@ async def get_visual_card(query: str):
 
 
 class ExportPdfRequest(BaseModel):
-    query: str
-    answer_final: str
-    canonical_topic: Optional[str] = None
-    confidence: Optional[float] = 0.85
-    tiers: Optional[List[str]] = []
-    claims: Optional[List[Dict[str, Any]]] = []
-    sources: Optional[List[Dict[str, Any]]] = []
-    figures: Optional[List[Dict[str, Any]]] = None
+    query: str = Field(..., min_length=1, max_length=600)
+    answer_final: str = Field(..., min_length=1, max_length=250_000)
+    canonical_topic: Optional[str] = Field(default=None, max_length=300)
+    confidence: Optional[float] = Field(default=0.85, ge=0.0, le=1.0)
+    tiers: Optional[List[str]] = Field(default=[], max_length=10)
+    claims: Optional[List[Dict[str, Any]]] = Field(default=[], max_length=100)
+    sources: Optional[List[Dict[str, Any]]] = Field(default=[], max_length=40)
+    figures: Optional[List[Dict[str, Any]]] = Field(default=None, max_length=10)
     chart: Optional[Dict[str, Any]] = None
     timing: Optional[Dict[str, Any]] = None
     tokens: Optional[Dict[str, Any]] = None
@@ -1120,7 +1173,11 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
         figures_for_pdf = req.figures if req.figures is not None else []
         if not figures_for_pdf:
             try:
-                figures_for_pdf = await fetch_verified_figures(req.query, req.canonical_topic)
+                figures_for_pdf = await fetch_verified_figures(
+                    req.query,
+                    req.canonical_topic,
+                    wikipedia_exact_title=req.canonical_topic,
+                )
             except Exception as fig_err:
                 logger.debug(f"PDF figure fetch fallback error: {fig_err}")
                 figures_for_pdf = []
@@ -1182,10 +1239,11 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
             }
         )
     except Exception as e:
-        logger.error(f"PDF export generation failed: {e}\n{traceback.format_exc()}")
+        req_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        logger.error(f"[{req_id}] PDF export generation failed: {e}\n{traceback.format_exc()}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": f"Failed to generate PDF report: {str(e)}"}
+            content={"detail": "Failed to generate PDF report.", "request_id": req_id}
         )
 
 

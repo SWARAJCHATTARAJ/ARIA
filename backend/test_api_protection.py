@@ -1,8 +1,6 @@
-import asyncio
 import sys
 import os
 import uuid
-import httpx
 
 # Ensure backend in path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from utils.academic_search import search_all_free_sources, search_duckduckgo
+from utils.academic_search import search_all_free_sources
 
 async def test_duckduckgo_resilience():
     print("=" * 80)

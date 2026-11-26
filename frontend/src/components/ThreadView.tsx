@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Send,
   Loader2,
   Download,
   Copy,
@@ -20,16 +19,15 @@ import {
   Square,
   ChevronDown,
   PanelRightOpen,
-  Layers,
   Image as ImageIcon,
   BarChart2,
   ExternalLink,
 } from 'lucide-react';
-import MarkdownRenderer from './MarkdownRenderer';
+import MarkdownRenderer, { sanitizeHref } from './MarkdownRenderer';
 import { DomainPicker } from './ui/DomainPicker';
 import { saveOrDownloadFile, showDownloadToast } from '../utils/nativeDownload';
 import { streamQuery } from '../services/sseClient';
-import { Citation, Message, MessageTelemetry, PipelineStage, AuditClaim, HistoryEntry, FigureData, ChartData } from '../types';
+import { Citation, Message, MessageTelemetry, AuditClaim, HistoryEntry, FigureData, ChartData } from '../types';
 import { API_BASE_URL } from '../services/config';
 import { exportPdfApi, ExportPdfPayload } from '../services/api';
 import { useSettingsContext } from '../context/SettingsContext';
@@ -59,69 +57,87 @@ const TOPIC_PILLS = [
   },
 ];
 
-function getFollowUpQuestions(query: string, content: string): string[] {
-  const qLower = query.toLowerCase();
-  const cLower = content.toLowerCase();
-
-  if (qLower.includes('crispr') || cLower.includes('cas9')) {
-    return [
-      'How do high-fidelity Cas9 variants like SpCas9-HF1 compare in on-target efficiency?',
-      'What are the in vivo delivery barriers for prime editing guide RNAs?',
-      'How do base editors mitigate double-strand break insertions and deletions?',
-    ];
-  }
-  if (qLower.includes('autonomous') || cLower.includes('autonomy')) {
-    return [
-      'What formal verification methods certify Level 4 and Level 5 autonomous decision boundaries?',
-      'How do asynchronous multi-agent coordination protocols mitigate packet drops?',
-      'What architectural patterns prevent cascade failures in distributed perception pipelines?',
-    ];
-  }
-  if (qLower.includes('jwst') || qLower.includes('webb') || cLower.includes('redshift')) {
-    return [
-      'How do JWST high-redshift (z > 10) observations constrain Lambda-CDM cosmological models?',
-      'What spectroscopic signatures from NIRSpec confirm active galactic nuclei in early epochs?',
-      'What dust extinction correction parameters are applied to JWST deep-field spectra?',
-    ];
-  }
-  if (qLower.includes('byzantine') || qLower.includes('consensus') || cLower.includes('fault tolerance')) {
-    return [
-      'How does PBFT message complexity scale as node count increases beyond 100?',
-      'What are the formal latency bounds of DAG-based consensus protocols like Narwhal?',
-      'How do leaderless consensus mechanisms prevent eclipse attacks under network partitions?',
-    ];
-  }
-  if (qLower.includes('pvc') || cLower.includes('polyvinyl chloride')) {
-    return [
-      'What thermal degradation mechanisms trigger dehydrochlorination in unplasticized PVC?',
-      'How do bio-based plasticizers compare to phthalates in migration resistance?',
-      'What catalytic recycling pathways recover chlorine without generating dioxins?',
-    ];
+function getFollowUpQuestions(query: string, content: string, telemetry?: MessageTelemetry): string[] {
+  if (Array.isArray(telemetry?.followup_questions) && telemetry!.followup_questions!.length > 0) {
+    return telemetry!.followup_questions!.slice(0, 3);
   }
 
-  // Derive from headings if available
-  const headings = content.match(/^##\s+(.+)$/gm);
-  if (headings && headings.length >= 2) {
-    const cleanHeadings = headings.map((h) => h.replace(/^##\s+/, '').trim());
+  const qClean = query
+    .replace(/^(what is the|what are the|what is a|what is an|what is|what are|how does|how do|explain|describe|overview of)\s+/i, '')
+    .replace(/[?.!]+$/, '')
+    .trim();
+  const subject = qClean || 'this topic';
+
+  // Extract real proper nouns / concepts from prose lines only (NEVER plug section headings into templates)
+  const prose = content
+    .split('\n')
+    .filter((l) => {
+      const s = l.trim();
+      return s && !s.startsWith('#') && !s.startsWith('|') && !s.startsWith('```') && s !== '---';
+    })
+    .join(' ')
+    .replace(/\[\[c:\d+\]\]|\[\d+\]|[*_`]/g, '');
+
+  const entities: string[] = [];
+  const seen = new Set<string>();
+  const subjectLower = subject.toLowerCase();
+  const ignore = new Set([
+    'The', 'However', 'Moreover', 'Furthermore', 'Additionally', 'Therefore', 'Table', 'Figure', 'ARIA', 'OKF', 'RAG', 'LIVE',
+  ]);
+
+  const entityMatches = prose.match(/(?<![.!?]\s)\b([A-Z][a-zA-Z0-9-]+(?:\s+(?:of|and|the|for)?\s*[A-Z][a-zA-Z0-9-]+){0,2})\b/g) || [];
+  for (const raw of entityMatches) {
+    const ent = raw.trim();
+    const el = ent.toLowerCase();
+    if (ent.length < 3 || ent.length > 42 || ignore.has(ent) || subjectLower.includes(el) || seen.has(el)) {
+      continue;
+    }
+    seen.add(el);
+    entities.push(ent);
+    if (entities.length >= 3) break;
+  }
+
+  const lowerBlob = `${query} ${prose.slice(0, 1200)}`.toLowerCase();
+  const isGeoHistory = /(country|island|parliament|constitution|emperor|gdp|prefecture|economy|population|geography|history|republic|monarchy)/.test(lowerBlob);
+
+  if (entities.length >= 2) {
+    if (isGeoHistory) {
+      return [
+        `How did ${entities[0]} shape the modern institutions and development of ${subject}?`,
+        `What primary economic or demographic trends connect ${entities[1]} to ${subject} today?`,
+        entities[2]
+          ? `How have recent policy shifts influenced ${entities[2]} within ${subject}?`
+          : `Which historical turning points most strongly define contemporary ${subject}?`,
+      ];
+    }
     return [
-      `What empirical benchmarks validate ${cleanHeadings[1] || 'core mechanisms'}?`,
-      `How do technical limitations impact real-world applications in this domain?`,
-      `What recent comparative studies evaluate alternative architectures or formulations?`,
+      `How does ${entities[0]} interact with the core processes underlying ${subject}?`,
+      `What empirical evidence characterizes ${entities[1]} in studies of ${subject}?`,
+      entities[2]
+        ? `What trade-offs or constraints distinguish ${entities[2]} in ${subject}?`
+        : `What measurable limitations bound current findings on ${subject}?`,
+    ];
+  }
+
+  if (isGeoHistory) {
+    return [
+      `How have historical and constitutional reforms shaped contemporary governance in ${subject}?`,
+      `Which macroeconomic and demographic indicators define ${subject}'s current trajectory?`,
+      `What regional and international factors most influence ${subject}'s long-term outlook?`,
     ];
   }
 
   return [
-    'What empirical benchmarks validate the theoretical formulation?',
-    'What are the primary technical failure modes and operational limitations?',
-    'How do recent 2024–2026 experimental studies compare with prior findings?',
+    `What quantitative metrics verify the primary findings reported for ${subject}?`,
+    `What key trade-offs or constraints appear across real-world applications of ${subject}?`,
+    `How have recent peer-reviewed studies refined models of ${subject}?`,
   ];
 }
 
 /**
- * Inline Collapsible Research Trace:
- * Rendered directly inside the active answer header as a compact, single-line status bar:
- * PLAN -> RETRIEVE [OKF · RAG · LIVE] -> SYNTHESIZE -> VERIFY
- * Smoothly expands on click to show retrieval details and collapses cleanly into Verified pill.
+ * Sleek Single-Line Verification Pill:
+ * Shows verification status, confidence score, source count, and active tier(s) in a single pill.
+ * Expands smoothly with a spring cubic-bezier transition only when clicked.
  */
 function ResearchTraceBar({
   telemetry,
@@ -137,12 +153,6 @@ function ResearchTraceBar({
   const [isExpanded, setIsExpanded] = useState(false);
   const stage = telemetry?.stage;
   const tiers = telemetry?.retrieval?.tiers || [];
-
-  const isPlanning = stage === 'routing' || stage === 'retrieving';
-  const isRetrieving = stage === 'retrieving';
-  const isSynthesizing = stage === 'streaming';
-  const isAuditing = stage === 'auditing';
-  const isComplete = stage === 'complete';
 
   const entailmentScore = telemetry?.audit?.entailment_score ?? telemetry?.audit?.confidence;
   const verificationStatus =
@@ -176,132 +186,92 @@ function ResearchTraceBar({
       ? `${Math.round(entailmentScore * 100)}%`
       : null;
 
+  const activeTierLabel = tiers.length > 0 ? tiers.join(' · ') : 'LIVE';
+
   return (
     <div className="space-y-1.5 select-none w-full">
       <div className="flex items-center justify-between text-[11px] font-mono">
         <button
           type="button"
           onClick={() => setIsExpanded((prev) => !prev)}
-          className={`w-full sm:w-auto inline-flex items-center justify-between gap-2 px-3 py-1.5 sm:py-1 rounded-[6px] border transition-all cursor-pointer active:scale-[0.98] ${
+          aria-expanded={isExpanded}
+          className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border transition-all duration-200 cursor-pointer active:scale-[0.98] ${
             hasError
               ? 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/15'
-              : 'border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-[#09090B] hover:bg-slate-100 dark:hover:bg-[#18181E] text-slate-600 dark:text-[#8B8B8E] hover:text-slate-900 dark:hover:text-[#EDEDED]'
+              : 'border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-[#09090B] hover:bg-slate-100 dark:hover:bg-[#18181E] text-slate-600 dark:text-[#8B8B8E] hover:text-slate-900 dark:hover:text-[#EDEDED]'
           }`}
         >
-          {/* Left: Verified / Status badge */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {hasError ? (
-              <AlertCircle size={13} className="text-red-400 shrink-0" />
-            ) : isStreaming ? (
-              <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA] animate-pulse shrink-0" />
-            ) : verificationStatus === 'verified' ? (
-              <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
-            ) : (
-              <CheckCircle2 size={13} className="text-[#60A5FA] shrink-0" />
-            )}
+          {hasError ? (
+            <AlertCircle size={12} className="text-red-400 shrink-0" />
+          ) : isStreaming ? (
+            <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA] animate-pulse shrink-0" />
+          ) : verificationStatus === 'verified' ? (
+            <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
+          ) : (
+            <CheckCircle2 size={12} className="text-amber-400 shrink-0" />
+          )}
 
-            <span
-              className={`font-semibold ${
-                hasError
-                  ? 'text-red-400'
-                  : isStreaming
-                  ? 'text-[#60A5FA]'
-                  : verificationStatus === 'verified'
-                  ? 'text-emerald-400'
-                  : 'text-slate-900 dark:text-[#EDEDED]'
-              }`}
-            >
-              {statusLabel}
-            </span>
+          <span
+            className={`font-semibold ${
+              hasError
+                ? 'text-red-400'
+                : isStreaming
+                ? 'text-[#60A5FA]'
+                : verificationStatus === 'verified'
+                ? 'text-emerald-500 dark:text-emerald-400'
+                : 'text-amber-500 dark:text-amber-400'
+            }`}
+          >
+            {statusLabel}
+          </span>
 
-            {citationsCount > 0 && (
-              <span className="text-slate-500 dark:text-[#71717A] text-[10.5px]">
-                · {citationsCount} {citationsCount === 1 ? 'source' : 'sources'}
-              </span>
-            )}
-
-            {scorePct && !isStreaming && !hasError && (
-              <span className="hidden xs:inline-block ml-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-[10px] text-slate-700 dark:text-zinc-300 font-mono tabular-nums">
+          {scorePct && !isStreaming && !hasError && (
+            <>
+              <span className="text-slate-300 dark:text-white/15">·</span>
+              <span className="text-slate-800 dark:text-zinc-200 font-semibold tabular-nums">
                 {scorePct}
               </span>
-            )}
-          </div>
+            </>
+          )}
 
-          {/* Desktop: Stage transition arrows */}
-          <div className="hidden sm:flex items-center gap-1 text-[10px] text-slate-500 dark:text-[#71717A] font-mono ml-2">
-            <span className="text-slate-400 dark:text-[#71717A] text-[10px] mr-1">·</span>
-            <span className={isPlanning ? 'text-slate-900 dark:text-[#EDEDED] font-semibold' : ''}>PLAN</span>
-            <span>→</span>
-            <span className={isRetrieving ? 'text-slate-900 dark:text-[#EDEDED] font-semibold' : ''}>
-              RETRIEVE
-              {tiers.length > 0 && (
-                <span className="ml-1 inline-flex gap-1">
-                  {tiers.includes('OKF') && <span className="text-[#60A5FA]">OKF</span>}
-                  {tiers.includes('RAG') && <span className="text-[#A78BFA]">RAG</span>}
-                  {tiers.includes('LIVE') && <span className="text-[#F59E0B]">LIVE</span>}
-                </span>
-              )}
-            </span>
-            <span>→</span>
-            <span className={isSynthesizing ? 'text-slate-900 dark:text-[#EDEDED] font-semibold' : ''}>SYNTHESIZE</span>
-            <span>→</span>
-            <span
-              className={
-                hasError
-                  ? 'text-red-400 font-semibold'
-                  : isAuditing || isComplete
-                  ? 'text-[#60A5FA] font-semibold'
-                  : ''
-              }
-            >
-              {hasError ? 'FAILED' : 'VERIFY'}
-            </span>
-          </div>
+          {citationsCount > 0 && (
+            <>
+              <span className="text-slate-300 dark:text-white/15">·</span>
+              <span className="text-slate-500 dark:text-[#8B8B8E] tabular-nums">
+                {citationsCount} {citationsCount === 1 ? 'source' : 'sources'}
+              </span>
+            </>
+          )}
 
-          {/* Mobile Right: Compact Expandable Pipeline toggle */}
-          <div className="flex items-center gap-1 shrink-0 text-[10.5px] text-slate-500 dark:text-[#71717A]">
-            <span className="sm:hidden font-sans">Pipeline</span>
-            <ChevronDown
-              size={12}
-              className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-            />
-          </div>
+          <span className="text-slate-300 dark:text-white/15 hidden sm:inline">·</span>
+          <span className="hidden sm:inline text-[10px] tracking-wider text-slate-500 dark:text-[#71717A] uppercase">
+            {activeTierLabel}
+          </span>
+
+          <ChevronDown
+            size={12}
+            className={`text-slate-400 dark:text-[#71717A] transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+          />
         </button>
       </div>
 
-      {/* Accordion Smooth Height Expansion */}
+      {/* Spring-style Accordion Expansion on Click */}
       <div className={`accordion-grid ${isExpanded ? 'open' : ''}`}>
         <div className="accordion-inner">
-          <div className="p-3 bg-slate-50 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.07] rounded-[6px] space-y-2 text-[11px] font-mono mt-1">
-            <div className="flex items-center justify-between text-slate-600 dark:text-[#8B8B8E] pb-1.5 border-b border-slate-200 dark:border-white/[0.05]">
-              <span>Active Retrieval Route</span>
-              <span className="text-[#60A5FA] font-semibold">Cascade (Tri-Tier Concurrent)</span>
+          <div className="p-3 bg-slate-50/80 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.07] rounded-[8px] space-y-2 text-[11px] font-mono mt-1">
+            <div className="flex items-center justify-between text-slate-600 dark:text-[#8B8B8E]">
+              <span>Active Retrieval Tiers</span>
+              <span className="text-[#60A5FA] font-semibold">{activeTierLabel}</span>
             </div>
-            <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-              <div className="p-1.5 rounded-[4px] bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05]">
-                <div className="text-[10px] text-slate-500 dark:text-[#71717A]">OKF TIER</div>
-                <div className="text-[#60A5FA] font-semibold mt-0.5">
-                  {tiers.includes('OKF') ? 'Active' : 'Standby'}
-                </div>
-              </div>
-              <div className="p-1.5 rounded-[4px] bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05]">
-                <div className="text-[10px] text-slate-500 dark:text-[#71717A]">RAG TIER</div>
-                <div className="text-[#A78BFA] font-semibold mt-0.5">
-                  {tiers.includes('RAG') ? 'Active' : 'Standby'}
-                </div>
-              </div>
-              <div className="p-1.5 rounded-[4px] bg-white dark:bg-[#111115] border border-slate-200 dark:border-white/[0.05]">
-                <div className="text-[10px] text-slate-500 dark:text-[#71717A]">LIVE TIER</div>
-                <div className="text-[#F59E0B] font-semibold mt-0.5">
-                  {tiers.includes('LIVE') ? 'Active' : 'Standby'}
-                </div>
-              </div>
+            <div className="flex items-center justify-between text-slate-600 dark:text-[#8B8B8E]">
+              <span>Pipeline Stage</span>
+              <span className="text-slate-900 dark:text-[#EDEDED] uppercase">{stage || 'complete'}</span>
             </div>
-            {(telemetry?.audit?.confidence !== undefined || (telemetry as any)?.audit_confidence !== undefined) && (
-              <div className="flex items-center justify-between text-slate-600 dark:text-[#8B8B8E] pt-1">
-                <span>Deterministic Claim Entailment Score</span>
-                <span className={`${(telemetry?.audit?.confidence ?? (telemetry as any)?.audit_confidence ?? 0) >= 0.75 ? 'text-emerald-400' : 'text-amber-400'} tabular-nums font-semibold`}>
-                  {Math.round((telemetry?.audit?.confidence ?? (telemetry as any)?.audit_confidence ?? 0) * 100)}%
+            {scorePct && (
+              <div className="flex items-center justify-between text-slate-600 dark:text-[#8B8B8E]">
+                <span>Deterministic Entailment</span>
+                <span className={`${(entailmentScore ?? 0) >= 0.75 ? 'text-emerald-400' : 'text-amber-400'} tabular-nums font-semibold`}>
+                  {scorePct}
                 </span>
               </div>
             )}
@@ -353,9 +323,9 @@ function VisualFiguresGrid({ figures }: { figures?: FigureData[] }) {
             </div>
             <div className="flex items-center justify-between text-[10px] font-sans text-zinc-500 pt-1.5 border-t border-white/[0.05]">
               <span className="truncate max-w-[200px]">{fig.attribution || 'Wikimedia Commons'}</span>
-              {fig.source_url && (
+              {fig.source_url && sanitizeHref(fig.source_url) && (
                 <a
-                  href={fig.source_url}
+                  href={sanitizeHref(fig.source_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[#60A5FA] hover:underline flex items-center gap-1 shrink-0 cursor-pointer"
@@ -524,18 +494,6 @@ function TopicChart({ chart }: { chart?: ChartData }) {
   );
 }
 
-const DOMAIN_OPTIONS = [
-  { id: 'auto', label: 'All Domains' },
-  { id: 'cs', label: 'CS & AI' },
-  { id: 'chem', label: 'Chemistry & Materials' },
-  { id: 'bio', label: 'Bio & Medicine' },
-  { id: 'physics', label: 'Physics & Astronomy' },
-  { id: 'eng', label: 'Engineering' },
-  { id: 'math', label: 'Mathematics' },
-  { id: 'econ', label: 'Economics & Finance' },
-  { id: 'law', label: 'Law & Policy' },
-] as const;
-
 function SearchSubmitButton({
   disabled,
   isLoading,
@@ -673,7 +631,7 @@ const MessageItem = React.memo(
           )}
 
           {/* Markdown Content */}
-          <div className="text-[13.5px] text-slate-800 dark:text-[#EDEDED] leading-[1.6]">
+          <div className="text-[15px] text-slate-800 dark:text-[#EDEDED] leading-[1.7]">
             {msg.content ? (
               <MarkdownRenderer
                 content={msg.content}
@@ -709,7 +667,7 @@ const MessageItem = React.memo(
                 <span>Follow-up Research Questions</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {getFollowUpQuestions(msg.query || '', msg.content).map((fq, idx) => (
+                {getFollowUpQuestions(msg.query || '', msg.content, msg.telemetry).map((fq, idx) => (
                   <button
                     key={idx}
                     type="button"
@@ -881,7 +839,7 @@ export default function ThreadView({
   onUpdateActiveTelemetry,
   onUpdateActiveCitations,
   onMockStateChange,
-  activeTelemetry,
+  activeTelemetry: _activeTelemetry,
   activeCitations: _activeCitations,
   isMockActive = false,
   onToggleSidebar: _onToggleSidebar,
@@ -933,13 +891,15 @@ export default function ThreadView({
         query: msg.query || 'Research Overview',
         answer_final: msg.content,
         confidence: msg.telemetry?.audit?.confidence ?? 0.85,
-        tiers: msg.telemetry?.retrieval?.tiers || ['OKF'],
+        tiers: msg.telemetry?.retrieval?.tiers || ['LIVE'],
         claims: msg.telemetry?.audit?.claims || [],
         sources: msg.citations || [],
         figures: msg.figures || msg.telemetry?.figures || [],
         chart: msg.chart || msg.telemetry?.chart || null,
+        full_ledger: true,
+        clickable_urls: true,
       };
-      const blob = await exportPdfApi(payload, 45000, accessToken || undefined);
+      const blob = await exportPdfApi(payload, 90000, accessToken || undefined);
       const safeQuery = (msg.query || 'aria-research-paper').trim().slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_');
       await saveOrDownloadFile(blob, `${safeQuery}.pdf`, 'application/pdf');
     } catch (err: any) {
@@ -1251,6 +1211,9 @@ export default function ThreadView({
             updatedChart = evt.chart;
             updatedTelemetry.chart = evt.chart;
           }
+          if (Array.isArray(evt.followup_questions) && evt.followup_questions.length > 0) {
+            updatedTelemetry.followup_questions = evt.followup_questions;
+          }
           currentTelemetry = updatedTelemetry;
           return {
             ...msg,
@@ -1324,6 +1287,13 @@ export default function ThreadView({
 
       const prevTelemetryStage = currentTelemetry.stage;
 
+      let hasStructuralUpdate = false;
+      for (const e of coalescedEvents) {
+        if (e.event !== 'token') {
+          hasStructuralUpdate = true;
+        }
+      }
+
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.id !== ariaMsgId) return msg;
@@ -1335,8 +1305,8 @@ export default function ThreadView({
         })
       );
 
-      if (currentTelemetry.stage !== prevTelemetryStage && onUpdateActiveTelemetry) {
-        onUpdateActiveTelemetry(currentTelemetry);
+      if ((hasStructuralUpdate || currentTelemetry.stage !== prevTelemetryStage) && onUpdateActiveTelemetry) {
+        onUpdateActiveTelemetry({ ...currentTelemetry, query: queryText.trim() });
       }
 
       performAutoScroll();
@@ -1459,16 +1429,25 @@ export default function ThreadView({
             }
             setIsLoading(false);
             if (onQueryErrorChange) onQueryErrorChange(false);
+            const finalStage = currentTelemetry.stage === 'error' ? 'error' : 'complete';
+            currentTelemetry = {
+              ...currentTelemetry,
+              stage: finalStage,
+              query: queryText.trim(),
+            };
+            if (onUpdateActiveTelemetry) {
+              onUpdateActiveTelemetry(currentTelemetry);
+            }
             setMessages((prev) =>
               prev.map((msg) => {
                 if (msg.id !== ariaMsgId) return msg;
-                const finalStage = msg.telemetry?.stage === 'error' ? 'error' : 'complete';
+                const msgFinalStage = msg.telemetry?.stage === 'error' ? 'error' : 'complete';
                 return {
                   ...msg,
                   isStreaming: false,
                   telemetry: {
                     ...(msg.telemetry || {}),
-                    stage: finalStage,
+                    stage: msgFinalStage,
                   },
                   error: !msg.content && !msg.error ? 'No response received from model.' : msg.error,
                 };
@@ -1694,7 +1673,7 @@ export default function ThreadView({
       {/* Messages Area */}
       <div
         ref={messagesScrollRef}
-        className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28 sm:pb-24 space-y-6 select-text hud-scroll"
+        className="flex-1 overflow-y-auto p-4 sm:p-6 pb-32 sm:pb-28 space-y-6 select-text hud-scroll"
       >
         {/* Open Editorial Workspace (Empty State): pristine typography on canvas */}
         {messages.length === 0 && (

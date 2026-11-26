@@ -9,7 +9,6 @@ import {
   Plus,
   Trash2,
   RefreshCw,
-  Sliders,
   CheckCircle2,
   AlertTriangle,
   XCircle,
@@ -36,7 +35,6 @@ export default function SettingsView() {
   const {
     settings,
     onUpdateSettings,
-    toggleTheme,
     addApiKey,
     removeApiKey,
     toggleApiKey,

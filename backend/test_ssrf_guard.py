@@ -1,7 +1,6 @@
 import sys
 import os
 import asyncio
-import httpx
 from unittest.mock import patch, MagicMock
 
 # Ensure backend in path

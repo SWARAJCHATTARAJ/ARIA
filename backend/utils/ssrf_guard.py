@@ -3,10 +3,36 @@ import socket
 import urllib.parse
 from typing import Tuple
 
+# Explicit private / special-use networks for defense in depth
+_BLOCKED_V4_NETS = (
+    ipaddress.ip_network("127.0.0.0/8"),       # Loopback
+    ipaddress.ip_network("10.0.0.0/8"),        # RFC1918 Class A
+    ipaddress.ip_network("172.16.0.0/12"),     # RFC1918 Class B
+    ipaddress.ip_network("192.168.0.0/16"),    # RFC1918 Class C
+    ipaddress.ip_network("169.254.0.0/16"),    # Link-local & Cloud IMDS (169.254.169.254)
+    ipaddress.ip_network("100.64.0.0/10"),     # CGNAT RFC6598
+    ipaddress.ip_network("0.0.0.0/8"),         # Unspecified
+)
+_BLOCKED_V6_NETS = (
+    ipaddress.ip_network("::1/128"),           # Loopback
+    ipaddress.ip_network("fc00::/7"),          # Unique local (ULA)
+    ipaddress.ip_network("fe80::/10"),         # Link-local
+)
+
+ALLOWED_IMAGE_HOSTS = (
+    "upload.wikimedia.org",
+    "commons.wikimedia.org",
+    "en.wikipedia.org",
+    "wikimedia.org",
+    "wikipedia.org",
+    "arxiv.org",
+)
+
+
 def is_ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Tuple[bool, str]:
     """
     Checks if an IP address is blocked: loopback, private, link-local,
-    unique-local, IPv4-mapped, multicast, reserved, or cloud metadata.
+    unique-local, IPv4-mapped, multicast, reserved, CGNAT, or cloud metadata.
     """
     # Unpack IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1 or ::ffff:169.254.169.254)
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
@@ -15,6 +41,15 @@ def is_ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Tuple[bo
     # Cloud metadata endpoint (Azure, AWS, GCP)
     if str(ip) == "169.254.169.254":
         return True, f"Cloud metadata IP blocked: {ip}"
+
+    if isinstance(ip, ipaddress.IPv4Address):
+        for net in _BLOCKED_V4_NETS:
+            if ip in net:
+                return True, f"Blocked IPv4 network ({net}): {ip}"
+    elif isinstance(ip, ipaddress.IPv6Address):
+        for net in _BLOCKED_V6_NETS:
+            if ip in net:
+                return True, f"Blocked IPv6 network ({net}): {ip}"
 
     if ip.is_loopback:
         return True, f"Loopback address blocked: {ip}"
@@ -28,8 +63,38 @@ def is_ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Tuple[bo
         return True, f"Reserved address blocked: {ip}"
     if ip.is_unspecified:
         return True, f"Unspecified address blocked: {ip}"
-        
+
     return False, ""
+
+
+def is_allowed_image_url(url: str) -> Tuple[bool, str]:
+    """
+    Strict HTTPS-only domain-allowlisted + SSRF validation for image fetching.
+    Only permits HTTPS URLs from verified Wikimedia/Wikipedia/arXiv image hosts
+    whose resolved IPs pass is_safe_url().
+    """
+    if not url:
+        return False, "Empty image URL"
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except Exception as e:
+        return False, f"Invalid image URL: {e}"
+
+    if (parsed.scheme or "").lower() != "https":
+        return False, "Image fetching requires HTTPS"
+
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if not hostname:
+        return False, "Missing hostname in image URL"
+
+    domain_ok = any(
+        hostname == allowed or hostname.endswith(f".{allowed}")
+        for allowed in ALLOWED_IMAGE_HOSTS
+    )
+    if not domain_ok:
+        return False, f"Image host '{hostname}' is not in the HTTPS allowlist"
+
+    return is_safe_url(url)
 
 def is_safe_url(url: str) -> Tuple[bool, str]:
     """

@@ -1,8 +1,9 @@
+import asyncio
 import os
 import time
-import json
 import logging
 from typing import List, Optional, Dict, Any
+import httpx
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 from config import settings
@@ -180,10 +181,16 @@ async def test_groq_api_key(api_key: str) -> Dict[str, Any]:
             "response": str(resp.content).strip(),
         }
     except Exception as exc:
-        err_msg = str(exc)
-        logger.warning(f"Key test probe failed: {err_msg}")
+        logger.warning(f"Key test probe failed: {type(exc).__name__}: {exc}")
+        err_lower = str(exc).lower()
+        if "401" in err_lower or "invalid" in err_lower or "authentication" in err_lower:
+            safe_detail = "Groq API rejected the provided key (unauthorized)."
+        elif "429" in err_lower or "rate" in err_lower:
+            safe_detail = "Groq API rate limit reached while testing key."
+        else:
+            safe_detail = "Groq API key verification failed."
         return {
             "status": "invalid",
-            "detail": err_msg[:180],
+            "detail": safe_detail,
             "latency_ms": round((time.time() - t0) * 1000),
         }

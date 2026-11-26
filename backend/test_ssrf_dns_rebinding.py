@@ -7,7 +7,7 @@ import ipaddress
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from utils.ssrf_guard import is_safe_url, is_ip_blocked, SSRFSafeBackend, SSRFSafeTransport
+from utils.ssrf_guard import is_safe_url, is_ip_blocked, SSRFSafeBackend
 
 async def test_dns_rebinding():
     print("=" * 80)
