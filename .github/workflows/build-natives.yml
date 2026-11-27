@@ -195,12 +195,14 @@ jobs:
           java-version: '21'
 
       - name: Setup Gradle Cache
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
 
       - name: Install Android SDK Build-Tools and Platforms
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "platforms;android-36" "build-tools;34.0.0" "build-tools;36.0.0"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       # Sequence 1: npm ci + npm run build in frontend/
       - name: Install frontend dependencies and build frontend
@@ -233,12 +235,12 @@ jobs:
       - name: Generate Capacitor Android Adaptive Icons
         run: npx --yes @capacitor/assets generate --android --iconBackgroundColor '#09090B' --iconBackgroundColorDark '#09090B' --splashBackgroundColor '#09090B' --splashBackgroundColorDark '#09090B'
 
-      # Sequence 3: ./gradlew assembleDebug (or assembleRelease)
+      # Sequence 3: ./gradlew assembleDebug --stacktrace
       - name: Make Gradle wrapper executable and Build APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
       - name: Stage Android APK
         run: |
@@ -282,7 +284,7 @@ jobs:
           | Metric | Value |
           |---|---|
           | **Status** | $EMOJI |
-          | **Target** | Android SDK 34 (Capacitor) |
+          | **Target** | Android SDK 36 (Capacitor 8) |
           | **Artifact** | \`ARIA-v*-android.apk\` |
           | **Release Tag** | \`$TAG\` |
           EOF
