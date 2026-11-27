@@ -474,6 +474,7 @@ async def permanently_delete_user_account(user_id: str) -> Dict[str, Any]:
         ("threads", "user_id"),
         ("collections", "user_id"),
         ("okf_docs", "user_id"),
+        ("feedback", "user_id"),
         ("profiles", "id"),
     ]
 
@@ -481,7 +482,7 @@ async def permanently_delete_user_account(user_id: str) -> Dict[str, Any]:
         for table, col in user_scoped_tables:
             del_url = f"{base_url}/rest/v1/{table}"
             resp = await client.delete(del_url, headers=headers, params={col: f"eq.{user_id}"})
-            if resp.status_code not in (200, 204, 404):
+            if resp.status_code not in (200, 204, 400, 404):
                 logger.warning(f"Table cleanup warning for {table} (user={str(user_id)[:8]}): HTTP {resp.status_code}")
 
         admin_url = f"{base_url}/auth/v1/admin/users/{user_id}"

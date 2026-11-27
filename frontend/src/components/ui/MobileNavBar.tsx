@@ -34,7 +34,7 @@ export function MobileTopBar({
         <button
           type="button"
           onClick={onOpenDrawer}
-          className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-white/[0.04] active:scale-[0.98] transition-all cursor-pointer"
+          className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-white/[0.04] active:scale-[0.98] transition-colors transition-transform cursor-pointer"
           aria-label="Open navigation menu"
         >
           <Menu size={18} strokeWidth={1.8} />
@@ -58,9 +58,9 @@ export function MobileTopBar({
           <button
             type="button"
             onClick={onToggleInspector}
-            className={`p-1.5 rounded-[6px] transition-all active:scale-[0.98] cursor-pointer ${
+            className={`p-1.5 rounded-[6px] transition-colors transition-transform active:scale-[0.98] cursor-pointer ${
               isInspectorOpen
-                ? 'text-[#60A5FA] bg-white/[0.08]'
+                ? 'text-[var(--aria-accent)] bg-white/[0.08]'
                 : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-white/[0.04]'
             }`}
             title="Toggle Research Inspector"
@@ -73,7 +73,7 @@ export function MobileTopBar({
         <button
           type="button"
           onClick={handleNewQuestion}
-          className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-white/[0.04] active:scale-[0.98] transition-all cursor-pointer"
+          className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-white/[0.04] active:scale-[0.98] transition-colors transition-transform cursor-pointer"
           title="New Question"
           aria-label="New Question"
         >

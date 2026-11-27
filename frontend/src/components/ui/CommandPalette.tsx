@@ -54,7 +54,7 @@ export default function CommandPalette({
         category: 'Actions',
         label: 'Start New Research Question',
         sublabel: 'Open a fresh editorial workspace',
-        icon: <PlusCircle size={14} className="text-[#60A5FA]" />,
+        icon: <PlusCircle size={14} className="text-[var(--aria-accent)]" />,
         onSelect: () => {
           onNavigate('query');
           onClose();
@@ -132,7 +132,7 @@ export default function CommandPalette({
           category: 'Collections',
           label: c.query,
           sublabel: c.content ? c.content.slice(0, 75) + '...' : undefined,
-          icon: <FolderGit2 size={14} className="text-[#60A5FA]" />,
+          icon: <FolderGit2 size={14} className="text-[var(--aria-accent)]" />,
           onSelect: () => {
             if (onStartQuery) onStartQuery(c.query);
             else onNavigate('collections');
@@ -264,10 +264,10 @@ export default function CommandPalette({
                 else onNavigate('query');
                 onClose();
               }}
-              className="p-2.5 rounded-[6px] text-[12px] font-mono flex items-center justify-between cursor-pointer bg-[#18181E] border border-white/[0.12] text-[#EDEDED] mb-1 active:scale-[0.98] transition-all"
+              className="p-2.5 rounded-[6px] text-[12px] font-mono flex items-center justify-between cursor-pointer bg-[#18181E] border border-white/[0.12] text-[#EDEDED] mb-1 active:scale-[0.98] transition-colors transition-transform"
             >
               <span className="flex items-center gap-2 truncate pr-2">
-                <Sparkles size={14} className="text-[#60A5FA] shrink-0" />
+                <Sparkles size={14} className="text-[var(--aria-accent)] shrink-0" />
                 <span className="truncate">Synthesize &quot;{query.trim()}&quot;</span>
               </span>
               <span className="text-[10px] text-[#71717A] shrink-0 flex items-center gap-1 font-mono">
@@ -289,14 +289,14 @@ export default function CommandPalette({
                 key={action.id}
                 onClick={() => action.onSelect()}
                 onMouseEnter={() => setSelectedIndex(idx)}
-                className={`p-2.5 rounded-[6px] text-[13px] font-sans flex items-center justify-between cursor-pointer transition-all active:scale-[0.98] ${
+                className={`p-2.5 rounded-[6px] text-[13px] font-sans flex items-center justify-between cursor-pointer transition-colors transition-transform active:scale-[0.98] ${
                   isSelected
                     ? 'bg-[#18181E] text-[#EDEDED] pl-3'
                     : 'text-[#8B8B8E] hover:bg-[#18181E]/60 hover:text-[#EDEDED]'
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0 pr-3">
-                  <span className={isSelected ? 'text-[#60A5FA]' : 'text-[#71717A]'}>
+                  <span className={isSelected ? 'text-[var(--aria-accent)]' : 'text-[#71717A]'}>
                     {action.icon}
                   </span>
                   <div className="min-w-0">
@@ -312,7 +312,7 @@ export default function CommandPalette({
                   <span className="text-[9px] font-mono uppercase tracking-wider text-[#71717A] bg-[#0C0C0F] px-1.5 py-0.5 rounded-[3px] border border-white/[0.07]">
                     {action.category}
                   </span>
-                  {isSelected && <ArrowRight size={12} className="text-[#60A5FA]" />}
+                  {isSelected && <ArrowRight size={12} className="text-[var(--aria-accent)]" />}
                 </div>
               </div>
             );

@@ -34,7 +34,7 @@ function HubShell({
       <div className="max-w-4xl mx-auto w-full p-6 md:p-8">
         <div className="flex flex-wrap items-center justify-between gap-4 pb-4 mb-6 border-b border-white/[0.07]">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-[6px] bg-[#111115] border border-white/[0.07] flex items-center justify-center text-[#60A5FA]">
+            <div className="w-8 h-8 rounded-[6px] bg-[#111115] border border-white/[0.07] flex items-center justify-center text-[var(--aria-accent)]">
               {icon}
             </div>
             <div>
@@ -83,7 +83,7 @@ export function HistoryView({ onOpenQuery }: { onOpenQuery?: (query: string) => 
               clearHistory();
               setEntries([]);
             }}
-            className="text-[11px] font-mono flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] border border-white/[0.07] text-[#8B8B8E] hover:text-red-400 hover:border-red-500/30 active:scale-[0.98] transition-all"
+            className="text-[11px] font-mono flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] border border-white/[0.07] text-[#8B8B8E] hover:text-red-400 hover:border-red-500/30 active:scale-[0.98] transition-colors transition-transform"
           >
             <Trash2 size={12} /> Clear all
           </button>
@@ -100,14 +100,14 @@ export function HistoryView({ onOpenQuery }: { onOpenQuery?: (query: string) => 
           {entries.map((h) => (
             <div
               key={h.id}
-              className="p-4 bg-[#111115] border border-white/[0.07] hover:border-white/[0.14] rounded-[8px] transition-all flex items-start gap-4"
+              className="p-4 bg-[#111115] border border-white/[0.07] hover:border-white/[0.14] rounded-[8px] transition-colors transition-transform flex items-start gap-4"
             >
               <div className="flex-1 min-w-0">
                 <p className="text-[14px] text-[#EDEDED] font-medium truncate">{h.query}</p>
                 <div className="flex items-center gap-3 mt-1.5 font-mono text-[11px] text-[#71717A]">
                   <span className="tabular-nums">{new Date(h.timestamp).toLocaleString()}</span>
                   {typeof h.confidence === 'number' && h.confidence > 0 && (
-                    <span className="text-[#60A5FA] tabular-nums font-semibold">
+                    <span className="text-[var(--aria-accent)] tabular-nums font-semibold">
                       {Math.round(h.confidence * 100)}% verified
                     </span>
                   )}
@@ -128,7 +128,7 @@ export function HistoryView({ onOpenQuery }: { onOpenQuery?: (query: string) => 
                     deleteHistoryEntry(h.id);
                     setEntries(getHistory());
                   }}
-                  className="p-1.5 text-[#8B8B8E] hover:text-red-400 rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-all"
+                  className="p-1.5 text-[#8B8B8E] hover:text-red-400 rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-colors transition-transform"
                   title="Delete entry"
                 >
                   <Trash2 size={14} />
@@ -167,7 +167,7 @@ export function CollectionsView() {
             return (
               <div
                 key={c.id}
-                className="p-4 bg-[#111115] border border-white/[0.07] hover:border-white/[0.14] rounded-[8px] transition-all space-y-3"
+                className="p-4 bg-[#111115] border border-white/[0.07] hover:border-white/[0.14] rounded-[8px] transition-colors transition-transform space-y-3"
               >
                 <div className="flex items-start justify-between gap-4">
                   <button
@@ -178,7 +178,7 @@ export function CollectionsView() {
                     <div className="flex items-center gap-3 mt-1.5 font-mono text-[11px] text-[#71717A]">
                       <span className="tabular-nums">{new Date(c.timestamp).toLocaleDateString()}</span>
                       {typeof c.confidence === 'number' && (
-                        <span className="text-[#60A5FA] tabular-nums font-semibold">
+                        <span className="text-[var(--aria-accent)] tabular-nums font-semibold">
                           {Math.round(c.confidence * 100)}% verified
                         </span>
                       )}
@@ -189,7 +189,7 @@ export function CollectionsView() {
                       removeFromCollection(c.id);
                       setEntries(getCollections());
                     }}
-                    className="p-1.5 text-[#8B8B8E] hover:text-red-400 rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-all shrink-0"
+                    className="p-1.5 text-[#8B8B8E] hover:text-red-400 rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-colors transition-transform shrink-0"
                     title="Remove from collections"
                   >
                     <Trash2 size={14} />
@@ -278,7 +278,7 @@ export function OkfSpaceView() {
       <span
         className={`text-[9px] font-mono px-1.5 py-0.5 rounded-[3px] border flex items-center gap-1 ${
           isVerified
-            ? 'text-[#60A5FA] border-[#60A5FA]/40 bg-[#60A5FA]/10'
+            ? 'text-[var(--aria-accent)] border-[var(--aria-accent)]/40 bg-[var(--aria-accent)]/10'
             : 'text-[#F59E0B] border-[#F59E0B]/40 bg-[#F59E0B]/10'
         }`}
       >
@@ -310,7 +310,7 @@ export function OkfSpaceView() {
           </div>
           <button
             onClick={() => setReloadKey((k) => k + 1)}
-            className="p-1.5 border border-white/[0.07] bg-[#111115] hover:bg-[#18181E] rounded-[6px] text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+            className="p-1.5 border border-white/[0.07] bg-[#111115] hover:bg-[#18181E] rounded-[6px] text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98] transition-colors transition-transform cursor-pointer"
             title="Reload graph"
           >
             <RefreshCw size={13} />
@@ -337,9 +337,9 @@ export function OkfSpaceView() {
                 <button
                   key={n.id}
                   onClick={() => setSelectedId(isSelected ? null : n.id)}
-                  className={`w-full text-left p-3.5 border rounded-[8px] transition-all active:scale-[0.99] cursor-pointer ${
+                  className={`w-full text-left p-3.5 border rounded-[8px] transition-colors transition-transform active:scale-[0.99] cursor-pointer ${
                     isSelected
-                      ? 'border-[#60A5FA] bg-[#111115]'
+                      ? 'border-[var(--aria-accent)] bg-[#111115]'
                       : 'border-white/[0.07] hover:border-white/[0.14] bg-[#111115]'
                   }`}
                 >
@@ -367,7 +367,7 @@ export function OkfSpaceView() {
           {/* Selected node detail panel */}
           <div className="lg:sticky lg:top-4 h-fit">
             {selected ? (
-              <div className="p-4 bg-[#111115] border border-[#60A5FA]/40 rounded-[8px] space-y-3">
+              <div className="p-4 bg-[#111115] border border-[var(--aria-accent)]/40 rounded-[8px] space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-[13px] font-mono font-semibold text-[#EDEDED] uppercase tracking-wide truncate">
                     {selected.title}
@@ -390,7 +390,7 @@ export function OkfSpaceView() {
                     {selected.topic.map((t, i) => (
                       <span
                         key={i}
-                        className="text-[10px] font-mono px-1.5 py-0.5 bg-[#09090B] border border-white/[0.07] text-[#60A5FA] rounded-[3px]"
+                        className="text-[10px] font-mono px-1.5 py-0.5 bg-[#09090B] border border-white/[0.07] text-[var(--aria-accent)] rounded-[3px]"
                       >
                         {String(t)}
                       </span>
@@ -409,7 +409,7 @@ export function OkfSpaceView() {
                           <button
                             key={rid}
                             onClick={() => setSelectedId(rid)}
-                            className="text-[10px] font-mono px-2 py-0.5 bg-[#09090B] border border-white/[0.07] text-[#EDEDED] hover:border-[#60A5FA]/50 active:scale-[0.98] transition-all rounded-[3px]"
+                            className="text-[10px] font-mono px-2 py-0.5 bg-[#09090B] border border-white/[0.07] text-[#EDEDED] hover:border-[var(--aria-accent)]/50 active:scale-[0.98] transition-colors transition-transform rounded-[3px]"
                           >
                             {rn?.title || rid}
                           </button>

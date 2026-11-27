@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     groq_api_keys: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     groq_writer_model: str = "openai/gpt-oss-120b"
-    groq_judge_model: str = "llama-3.1-8b-instant"
+    groq_judge_model: str = "qwen/qwen3.8-27b"
     groq_writer_tpm: int = 7500
     groq_writer_tpd: int = 160000
     groq_judge_tpm: int = 30000

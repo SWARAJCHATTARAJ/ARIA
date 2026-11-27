@@ -335,11 +335,23 @@ def _score_image_candidate(filename: str, desc: str, keywords: List[str]) -> flo
 
     return score
 
+DOMAIN_COMMONS_CLAUSES = {
+    "arts_performance": "(diagram OR anatomy OR spectrogram OR notation OR acoustic)",
+    "zoology_botany_earth": "(diagram OR taxonomy OR anatomy OR botanical OR profile OR horizon OR cross-section OR map)",
+    "medicine_clinical": "(anatomy OR diagram OR pathway OR physiology OR histology OR schematic)",
+    "instruments_engineering": "(schematic OR ray OR diagram OR cross-section OR micrograph OR architecture)",
+    "cs_math": "(diagram OR architecture OR tree OR graph OR flowchart OR schematic)",
+    "geography_history_social": "(orthographic OR topographic OR map OR climate OR historical OR satellite)",
+    "pure_science": "(diagram OR structure OR spectrum OR crystal OR formula OR schematic)",
+    "general": "(diagram OR structure OR schematic OR map OR cross-section)",
+}
+
 async def fetch_verified_figures(
     query: str,
     canonical_topic: Optional[str] = None,
     max_figures: int = 2,
     wikipedia_exact_title: Optional[str] = None,
+    domain_discipline: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Queries Wikipedia and Wikimedia APIs for verified, topic-relevant scientific diagrams,
@@ -473,7 +485,8 @@ async def fetch_verified_figures(
         # 3. Wikimedia Commons Search (ONLY as fallback if Wikipedia had no suitable image)
         if not figures:
             try:
-                search_query = f'"{resolved_title}" (diagram OR structure OR schematic OR architecture OR map)'
+                clause = DOMAIN_COMMONS_CLAUSES.get(domain_discipline or "general", DOMAIN_COMMONS_CLAUSES["general"])
+                search_query = f'"{resolved_title}" {clause}'
                 commons_url = (
                     "https://commons.wikimedia.org/w/api.php?action=query&format=json"
                     f"&generator=search&gsrnamespace=6&gsrsearch={urllib.parse.quote(search_query)}"

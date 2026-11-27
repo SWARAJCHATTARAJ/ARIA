@@ -277,7 +277,6 @@ async def query_pipeline(req: QueryRequest, request: Request):
     from utils.token_tracker import TokenTracker, token_rate_limiter
     from utils.query_queue import global_query_queue
     thread_id = req.thread_id or str(uuid.uuid4())
-    config = {"configurable": {"thread_id": thread_id}}
     token_tracker = TokenTracker(query_id=thread_id)
     
     # Parse client-provided BYOK Groq API key pool from header if present
@@ -518,13 +517,15 @@ async def query_pipeline(req: QueryRequest, request: Request):
                     current_state['query'],
                     current_state.get('canonical_topic'),
                     wikipedia_exact_title=current_state.get('wikipedia_exact_title'),
+                    domain_discipline=current_state.get('domain_discipline'),
                 )
             )
 
             # 5. Token Events
             context = "\n\n".join([
-                f"[[c:{i}]] {chunk.get('title', 'Unknown')} ({chunk.get('venue', chunk.get('source', 'Unknown'))})\n{chunk.get('snippet', chunk.get('content', ''))}" 
+                f"[[c:{i}]] {chunk.get('title', 'Unknown')} ({chunk.get('venue', chunk.get('source', 'Unknown'))})\n{chunk.get('snippet', chunk.get('content', ''))}"
                 for i, chunk in enumerate(chunks)
+                if not chunk.get("is_retracted")
             ])
             from pipeline.nodes import build_synthesis_prompt
             from utils.key_manager import KeyRotationManager
@@ -534,6 +535,9 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 strict_academic=bool(current_state.get("strict_academic", False)),
                 source_tier=current_state.get("source_tier") or "all",
                 recency=current_state.get("recency") or "all",
+                domain_discipline=current_state.get("domain_discipline"),
+                planned_outline=current_state.get("planned_outline"),
+                is_debated_or_empirical=bool(current_state.get("is_debated_or_empirical", False)),
             )
             messages = [
                 SystemMessage(content=synthesis_prompt),
@@ -545,7 +549,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
             max_writer_attempts = max(1, len(km.keys))
             for attempt in range(max_writer_attempts):
                 try:
-                    allowed_pace, pace_msg = await token_rate_limiter.check_and_pace(settings.groq_writer_model, estimated_tokens=1200)
+                    allowed_pace, pace_msg = await token_rate_limiter.check_and_pace(settings.groq_writer_model, estimated_tokens=1800)
                     if not allowed_pace and attempt == max_writer_attempts - 1:
                         logger.warning(f"[{request_id}] Pacing limit reached before synthesis.")
                         yield f"data: {json.dumps({'event': 'error', 'message': pace_msg, 'request_id': request_id})}\n\n"
@@ -558,7 +562,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
                         request_timeout=25.0,
                         max_retries=0
                     )
-                    stream_iter = active_writer.astream(messages, max_tokens=1200).__aiter__()
+                    stream_iter = active_writer.astream(messages, max_tokens=1800).__aiter__()
                     while True:
                         if time.time() - start_time > MAX_STREAM_DURATION_SECONDS:
                             logger.warning(f"[{request_id}] Stream exceeded 90s limit during token streaming.")
@@ -1156,7 +1160,12 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
             )
 
         from utils.pdf_generator import generate_research_pdf
-        from pipeline.nodes import expand_to_full_research_paper
+        from pipeline.nodes import (
+            expand_to_full_research_paper,
+            classify_domain_discipline,
+            build_specialist_outline,
+            detect_debated_or_empirical_query,
+        )
         from utils.media import (
             fetch_verified_figures,
             extract_or_generate_topic_chart,
@@ -1168,6 +1177,10 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
         claims_for_pdf = req.claims or []
         confidence_for_pdf = req.confidence if req.confidence is not None else 0.85
         sources_for_pdf = req.sources or []
+        pdf_discipline = classify_domain_discipline(req.query, req.canonical_topic)
+        pdf_outline = build_specialist_outline(
+            pdf_discipline, req.query, is_debated=detect_debated_or_empirical_query(req.query)
+        )
 
         # When exporting PDF, expand concise chat answers (<750 words) into a publication-grade manuscript (1,200–2,000 words)
         word_count = len((req.answer_final or "").split())
@@ -1180,7 +1193,9 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
                     sources=sources_for_pdf,
                     canonical_topic=req.canonical_topic,
                     existing_claims=req.claims,
-                    existing_confidence=req.confidence
+                    existing_confidence=req.confidence,
+                    domain_discipline=pdf_discipline,
+                    planned_outline=pdf_outline,
                 )
                 answer_for_pdf = expanded_text
                 claims_for_pdf = audited_claims
@@ -1200,6 +1215,7 @@ async def export_pdf_report(req: ExportPdfRequest, request: Request):
                     req.query,
                     req.canonical_topic,
                     wikipedia_exact_title=req.canonical_topic,
+                    domain_discipline=pdf_discipline,
                 )
             except Exception as fig_err:
                 logger.debug(f"PDF figure fetch fallback error: {fig_err}")

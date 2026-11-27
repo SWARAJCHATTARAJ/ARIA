@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import {
   Loader2,
   Download,
@@ -28,8 +28,12 @@ import {
   Flame,
   HelpCircle,
   FileCode2,
+  Microscope,
+  ZoomIn,
 } from 'lucide-react';
-import MarkdownRenderer, { sanitizeHref } from './MarkdownRenderer';
+import MarkdownRenderer, { sanitizeHref, extractMarkdownSections } from './MarkdownRenderer';
+import SectionOutlineRail from './SectionOutlineRail';
+import SelectionPopover from './SelectionPopover';
 import { DomainPicker } from './ui/DomainPicker';
 import { saveOrDownloadFile, showDownloadToast } from '../utils/nativeDownload';
 import { streamQuery } from '../services/sseClient';
@@ -50,9 +54,11 @@ import { exportPdfApi, ExportPdfPayload } from '../services/api';
 import { useSettingsStore } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { addHistoryEntry, getHistory, addToCollection, isInCollection } from '../services/storage';
-import { exportAllBibtex, exportAllRis, exportLatexArticle } from '../utils/citations';
+import { exportAllBibtex, exportAllRis, exportLatexArticle, formatCitation } from '../utils/citations';
 import { getResearchPulse, recordQueryCompleted } from '../utils/researchPulse';
 import { triggerLightHaptic } from '../utils/haptics';
+
+const FigureLightbox = lazy(() => import('./FigureLightbox'));
 
 const TOPIC_PILLS = [
   {
@@ -172,15 +178,15 @@ function getFollowUpCards(query: string, content: string, telemetry?: MessageTel
 }
 
 const STREAM_STEPS = [
-  { id: 'routing', label: 'Planning' },
-  { id: 'retrieving', label: 'Retrieving' },
-  { id: 'streaming', label: 'Synthesizing' },
-  { id: 'auditing', label: 'Verifying' },
+  { id: 'routing', label: 'Plan' },
+  { id: 'retrieving', label: 'Fetch' },
+  { id: 'streaming', label: 'Write' },
+  { id: 'auditing', label: 'Verify' },
 ] as const;
 
 /**
  * Kinetic Research Stage Pill:
- * - While streaming: smooth animated stage indicator (`Planning` -> `Retrieving [N]` -> `Synthesizing` -> `Verifying`)
+ * - While streaming: strictly single-row animated stage indicator (`Plan · Fetch (N) · Write · Verify`)
  *   with live retrieved source chips fading in cleanly.
  * - When complete: collapses cleanly into a single verification summary pill expandable on click.
  */
@@ -215,14 +221,14 @@ function ResearchTraceBar({
   if (isStreaming && !hasError) {
     return (
       <div className="space-y-2 select-none w-full">
-        <div className="inline-flex flex-wrap items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--aria-accent)]/30 bg-slate-50 dark:bg-[#09090B] text-[11px] font-mono transition-all duration-300">
+        <div className="inline-flex flex-nowrap whitespace-nowrap items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-xl border border-[var(--aria-accent)]/30 bg-slate-50 dark:bg-[#09090B] text-[11px] font-mono max-w-full overflow-x-auto">
           {STREAM_STEPS.map((step, idx) => {
             const isCurrent = idx === activeStageIdx;
             const isDone = idx < activeStageIdx;
             return (
               <React.Fragment key={step.id}>
                 <span
-                  className={`inline-flex items-center gap-1.5 transition-all duration-200 ${
+                  className={`inline-flex items-center gap-1.5 shrink-0 transition-colors duration-200 ${
                     isCurrent
                       ? 'text-[var(--aria-accent)] font-semibold'
                       : isDone
@@ -239,14 +245,14 @@ function ResearchTraceBar({
                         : 'bg-slate-300 dark:bg-[#27272A]'
                     }`}
                   />
-                  <span>
+                  <span className="tabular-nums">
                     {step.id === 'retrieving' && citationsCount > 0
-                      ? `Retrieving (${citationsCount})`
+                      ? `Fetch (${citationsCount})`
                       : step.label}
                   </span>
                 </span>
                 {idx < STREAM_STEPS.length - 1 && (
-                  <span className="text-slate-300 dark:text-white/15">→</span>
+                  <span className="text-slate-300 dark:text-white/15 shrink-0">·</span>
                 )}
               </React.Fragment>
             );
@@ -294,7 +300,7 @@ function ResearchTraceBar({
           type="button"
           onClick={() => setIsExpanded((prev) => !prev)}
           aria-expanded={isExpanded}
-          className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border transition-all duration-200 cursor-pointer active:scale-[0.98] ${
+          className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border transition-colors transition-transform duration-200 cursor-pointer active:scale-[0.98] ${
             hasError
               ? 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/15'
               : 'border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-[#09090B] hover:bg-slate-100 dark:hover:bg-[#18181E] text-slate-600 dark:text-[#8B8B8E] hover:text-slate-900 dark:hover:text-[#EDEDED]'
@@ -375,7 +381,13 @@ function ResearchTraceBar({
   );
 }
 
-function VisualFiguresGrid({ figures }: { figures?: FigureData[] }) {
+function VisualFiguresGrid({
+  figures,
+  onOpenLightbox,
+}: {
+  figures?: FigureData[];
+  onOpenLightbox?: (index: number) => void;
+}) {
   const [failedUrls, setFailedUrls] = useState<Record<string, boolean>>({});
 
   if (!figures || figures.length === 0) return null;
@@ -386,24 +398,33 @@ function VisualFiguresGrid({ figures }: { figures?: FigureData[] }) {
   return (
     <div className="my-4 space-y-2">
       <div className="flex items-center gap-1.5 text-[11px] font-sans text-zinc-400 uppercase tracking-wider font-medium">
-        <ImageIcon size={13} className="text-[#60A5FA]" />
+        <ImageIcon size={13} className="text-[var(--aria-accent)]" />
         <span>Verified Topic Figures & Diagrams</span>
       </div>
       <div className={`grid gap-3 ${validFigures.length > 1 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
         {validFigures.map((fig, idx) => (
           <div
             key={idx}
-            className="p-3 bg-[#09090B] border border-white/[0.08] hover:border-white/[0.16] rounded-[8px] space-y-2.5 transition-all"
+            className="p-3 bg-[#09090B] border border-white/[0.08] hover:border-white/[0.16] rounded-[8px] space-y-2.5 transition-colors"
           >
-            <div className="relative overflow-hidden rounded-[6px] bg-[#050811] flex items-center justify-center min-h-[170px] max-h-72 border border-white/[0.04]">
+            <button
+              type="button"
+              onClick={() => onOpenLightbox?.(idx)}
+              className="group relative w-full overflow-hidden rounded-[6px] bg-[#050811] flex items-center justify-center min-h-[170px] max-h-72 border border-white/[0.04] cursor-zoom-in"
+              title="Inspect Scientific Plate (1×–4×)"
+            >
               <img
                 src={fig.url}
                 alt={fig.title || 'Topic figure'}
                 loading="lazy"
-                className="max-h-72 w-full object-contain mx-auto transition-transform hover:scale-[1.02] duration-300"
+                className="max-h-72 w-full object-contain mx-auto transition-transform group-hover:scale-[1.02] duration-300"
                 onError={() => setFailedUrls((prev) => ({ ...prev, [fig.url]: true }))}
               />
-            </div>
+              <span className="absolute right-2 bottom-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/65 text-[10px] font-mono text-white opacity-80 group-hover:opacity-100">
+                <ZoomIn size={10} />
+                <span>Inspect</span>
+              </span>
+            </button>
             <div className="space-y-1">
               <div className="text-[12px] font-semibold text-[#EDEDED] font-sans leading-snug">
                 Figure {idx + 1}: {fig.title}
@@ -421,7 +442,7 @@ function VisualFiguresGrid({ figures }: { figures?: FigureData[] }) {
                   href={sanitizeHref(fig.source_url)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[#60A5FA] hover:underline flex items-center gap-1 shrink-0 cursor-pointer"
+                  className="text-[var(--aria-accent)] hover:underline flex items-center gap-1 shrink-0 cursor-pointer"
                   title="View primary image record"
                 >
                   <span>Source</span>
@@ -442,7 +463,7 @@ function TopicChart({ chart }: { chart?: ChartData }) {
   }
 
   const { title, caption, x_label, y_label, categories, series, source_citation } = chart;
-  const seriesColors = ['#60A5FA', '#34D399', '#A78BFA', '#F59E0B', '#EC4899'];
+  const seriesColors = ['var(--aria-accent)', '#34D399', '#A78BFA', '#F59E0B', '#EC4899'];
 
   const allValues = series.flatMap((s) => s.data);
   const maxVal = Math.max(...allValues, 10.0);
@@ -461,7 +482,7 @@ function TopicChart({ chart }: { chart?: ChartData }) {
       <div className="space-y-1">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#EDEDED] font-sans">
-            <BarChart2 size={13} className="text-[#60A5FA]" />
+            <BarChart2 size={13} className="text-[var(--aria-accent)]" />
             <span>{title || 'Quantitative Comparative Analysis'}</span>
           </div>
           {series.length > 1 && (
@@ -536,7 +557,7 @@ function TopicChart({ chart }: { chart?: ChartData }) {
                   const color = seriesColors[sIdx % seriesColors.length];
 
                   return (
-                    <g key={sIdx} className="transition-all hover:opacity-80">
+                    <g key={sIdx} className="transition-colors transition-transform hover:opacity-80">
                       <rect
                         x={barX}
                         y={barY}
@@ -601,7 +622,7 @@ function SearchSubmitButton({
       <button
         type="button"
         onClick={onStop}
-        className="w-7 h-7 bg-[#18181E] hover:bg-[#202026] border border-red-500/40 text-red-400 rounded-full flex items-center justify-center transition-all active:scale-[0.95] cursor-pointer shrink-0"
+        className="w-7 h-7 bg-[#18181E] hover:bg-[#202026] border border-red-500/40 text-red-400 rounded-full flex items-center justify-center transition-colors transition-transform active:scale-[0.95] cursor-pointer shrink-0"
         title="Stop streaming (Esc)"
         aria-label="Stop streaming"
       >
@@ -614,7 +635,7 @@ function SearchSubmitButton({
     <button
       type="submit"
       disabled={disabled}
-      className="search-btn-trigger w-7 h-7 bg-[#60A5FA] hover:bg-[#3B82F6] disabled:opacity-30 disabled:cursor-not-allowed text-[#09090B] hover:text-white rounded-full transition-all active:scale-[0.94] flex items-center justify-center cursor-pointer shadow-sm shrink-0"
+      className="search-btn-trigger w-7 h-7 bg-[var(--aria-accent)] hover:bg-[#3B82F6] disabled:opacity-30 disabled:cursor-not-allowed text-[#09090B] hover:text-white rounded-full transition-colors transition-transform active:scale-[0.94] flex items-center justify-center cursor-pointer shadow-sm shrink-0"
       title="Synthesize Evidence (Enter)"
       aria-label="Synthesize query"
     >
@@ -649,6 +670,8 @@ interface MessageItemProps {
   isBackendReachable: boolean;
   isMockActive: boolean;
   feedbackStatus?: string;
+  showVerificationLens?: boolean;
+  onOpenFigureLightbox?: (figures: FigureData[], index: number, queryTitle?: string) => void;
   onCitationClick: (citation: Citation, claim?: AuditClaim) => void;
   onExecuteQuery: (query: string) => void;
   onCopy: (id: string, content: string) => void;
@@ -674,6 +697,8 @@ const MessageItem = React.memo(
     isBackendReachable,
     isMockActive,
     feedbackStatus,
+    showVerificationLens = false,
+    onOpenFigureLightbox,
     onCitationClick,
     onExecuteQuery,
     onCopy,
@@ -741,10 +766,11 @@ const MessageItem = React.memo(
                 isStreaming={msg.isStreaming}
                 auditClaims={msg.telemetry?.audit?.claims?.filter((c): c is AuditClaim => typeof c === 'object' && c !== null)}
                 answerFinal={msg.telemetry?.audit?.answer_final}
+                showVerificationLens={showVerificationLens}
               />
             ) : msg.isStreaming ? (
               <div className="flex items-center gap-2 py-4 text-slate-500 dark:text-[#8B8B8E] text-[13px] font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA] animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--aria-accent)] animate-pulse" />
                 <span>Retrieving and synthesizing primary evidence...</span>
               </div>
             ) : null}
@@ -752,7 +778,15 @@ const MessageItem = React.memo(
 
           {/* Verified Topic Figures & Diagrams */}
           {!msg.isStreaming && (msg.figures || msg.telemetry?.figures) && (
-            <VisualFiguresGrid figures={msg.figures || msg.telemetry?.figures} />
+            <VisualFiguresGrid
+              figures={msg.figures || msg.telemetry?.figures}
+              onOpenLightbox={(idx) => {
+                const figs = msg.figures || msg.telemetry?.figures || [];
+                if (figs.length > 0 && onOpenFigureLightbox) {
+                  onOpenFigureLightbox(figs, idx, msg.query);
+                }
+              }}
+            />
           )}
 
           {/* Topic-Wise Quantitative Data Graph */}
@@ -786,7 +820,7 @@ const MessageItem = React.memo(
                       key={idx}
                       type="button"
                       onClick={() => onExecuteQuery(card.question)}
-                      className="text-left p-2.5 bg-slate-50 dark:bg-[#09090B] hover:bg-slate-100 dark:hover:bg-[#18181E] border border-slate-200 dark:border-white/[0.07] hover:border-slate-300 dark:hover:border-white/[0.15] rounded-[7px] space-y-1.5 transition-all duration-200 hover:translate-x-[3px] active:scale-[0.985] cursor-pointer group"
+                      className="text-left p-2.5 bg-slate-50 dark:bg-[#09090B] hover:bg-slate-100 dark:hover:bg-[#18181E] border border-slate-200 dark:border-white/[0.07] hover:border-slate-300 dark:hover:border-white/[0.15] rounded-[7px] space-y-1.5 transition-colors transition-transform duration-200 hover:translate-x-[3px] active:scale-[0.985] cursor-pointer group"
                     >
                       <div className="flex items-center justify-between text-[10px] font-mono">
                         <span className={`inline-flex items-center gap-1 font-semibold uppercase tracking-wider ${intentAccent}`}>
@@ -811,7 +845,7 @@ const MessageItem = React.memo(
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => onCopy(msg.id, msg.content)}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.96] transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.96] transition-colors transition-transform cursor-pointer"
                 >
                   {isCopied ? <Check size={13} className="text-emerald-400 morph-pop" /> : <Copy size={13} />}
                   <span>{isCopied ? 'Copied' : 'Copy'}</span>
@@ -820,7 +854,7 @@ const MessageItem = React.memo(
                 <button
                   onClick={() => onDownloadBibtex(msg.citations, msg)}
                   disabled={isExportingBib || !msg.citations || msg.citations.length === 0}
-                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-all cursor-pointer"
+                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-colors transition-transform cursor-pointer"
                   title="Export BibTeX (.bib)"
                 >
                   {isExportingBib ? <Loader2 size={12} className="animate-spin text-[var(--aria-accent)]" /> : <Download size={12} />}
@@ -830,7 +864,7 @@ const MessageItem = React.memo(
                 <button
                   onClick={() => onDownloadLatex(msg.citations, msg)}
                   disabled={isExportingTex || !msg.citations || msg.citations.length === 0}
-                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-all cursor-pointer"
+                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-colors transition-transform cursor-pointer"
                   title="Export Overleaf LaTeX (.tex)"
                 >
                   {isExportingTex ? <Loader2 size={12} className="animate-spin text-[var(--aria-accent)]" /> : <FileCode2 size={12} />}
@@ -840,7 +874,7 @@ const MessageItem = React.memo(
                 <button
                   onClick={() => onDownloadRis(msg.citations, msg)}
                   disabled={isExportingRis || !msg.citations || msg.citations.length === 0}
-                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-all cursor-pointer"
+                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-colors transition-transform cursor-pointer"
                   title="Export RIS for Zotero / Mendeley (.ris)"
                 >
                   {isExportingRis ? <Loader2 size={12} className="animate-spin text-[var(--aria-accent)]" /> : <Download size={12} />}
@@ -850,7 +884,7 @@ const MessageItem = React.memo(
                 <button
                   onClick={() => onDownloadMarkdown(msg)}
                   disabled={isExportingMd}
-                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-all cursor-pointer"
+                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] disabled:opacity-40 active:scale-[0.96] transition-colors transition-transform cursor-pointer"
                   title="Export Markdown (.md)"
                 >
                   {isExportingMd ? <Loader2 size={12} className="animate-spin text-[var(--aria-accent)]" /> : <FileText size={12} />}
@@ -860,7 +894,7 @@ const MessageItem = React.memo(
                 <button
                   onClick={() => onDownloadPdf(msg)}
                   disabled={isExportingPdf}
-                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-[var(--aria-accent)] dark:hover:text-[var(--aria-accent)] disabled:opacity-40 active:scale-[0.96] transition-all cursor-pointer"
+                  className="flex items-center gap-1 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-[var(--aria-accent)] dark:hover:text-[var(--aria-accent)] disabled:opacity-40 active:scale-[0.96] transition-colors transition-transform cursor-pointer"
                   title="Export Publication PDF"
                 >
                   {isExportingPdf ? <Loader2 size={12} className="animate-spin text-[var(--aria-accent)]" /> : <FileText size={12} />}
@@ -869,7 +903,7 @@ const MessageItem = React.memo(
 
                 <button
                   onClick={() => onSaveToCollection(msg)}
-                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.96] transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-[#EDEDED] active:scale-[0.96] transition-colors transition-transform cursor-pointer"
                   title="Save to Collection"
                 >
                   <Bookmark
@@ -883,21 +917,21 @@ const MessageItem = React.memo(
               {isBackendReachable && !isMockActive && (
                 <div className="flex items-center gap-2">
                   {feedbackStatus ? (
-                    <span className="text-[12px] font-mono text-[#60A5FA] flex items-center gap-1">
+                    <span className="text-[12px] font-mono text-[var(--aria-accent)] flex items-center gap-1">
                       <Check size={13} /> Feedback Recorded
                     </span>
                   ) : (
                     <>
                       <button
                         onClick={() => onFeedback(msg, 'positive')}
-                        className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98] transition-all cursor-pointer"
+                        className="p-1 text-[#8B8B8E] hover:text-[#EDEDED] active:scale-[0.98] transition-colors transition-transform cursor-pointer"
                         title="Helpful"
                       >
                         <ThumbsUp size={13} />
                       </button>
                       <button
                         onClick={() => onFeedback(msg, 'negative')}
-                        className="p-1 text-[#8B8B8E] hover:text-red-400 active:scale-[0.98] transition-all cursor-pointer"
+                        className="p-1 text-[#8B8B8E] hover:text-red-400 active:scale-[0.98] transition-colors transition-transform cursor-pointer"
                         title="Unhelpful"
                       >
                         <ThumbsDown size={13} />
@@ -924,7 +958,8 @@ const MessageItem = React.memo(
       prev.isExportingMd === next.isExportingMd &&
       prev.isBackendReachable === next.isBackendReachable &&
       prev.isMockActive === next.isMockActive &&
-      prev.feedbackStatus === next.feedbackStatus
+      prev.feedbackStatus === next.feedbackStatus &&
+      prev.showVerificationLens === next.showVerificationLens
     );
   }
 );
@@ -987,6 +1022,10 @@ export default function ThreadView({
   const [isExportingMd, setIsExportingMd] = useState<Record<string, boolean>>({});
   const [recentHistory, setRecentHistory] = useState<HistoryEntry[]>([]);
   const [pulse, setPulse] = useState(() => getResearchPulse());
+  const [showVerificationLens, setShowVerificationLens] = useState<boolean>(false);
+  const [lightboxState, setLightboxState] = useState<{ figures: FigureData[]; index: number; queryTitle?: string } | null>(null);
+  const [selectionPopover, setSelectionPopover] = useState<{ text: string; x: number; y: number; citationLabel?: string } | null>(null);
+  const progressFillRef = useRef<HTMLDivElement | null>(null);
 
   const { settings } = useSettingsStore();
   const { accessToken } = useAuth();
@@ -1022,6 +1061,34 @@ export default function ThreadView({
       // storage quiet fallback
     }
   }, [messages.length]);
+
+  // Fix React 18 deferred-updater desync: always mirror the latest ARIA message telemetry & citations to Inspector
+  useEffect(() => {
+    const lastAria = [...messages].reverse().find((m) => m.role === 'aria');
+    if (!lastAria) return;
+    onUpdateActiveCitations?.(lastAria.citations || []);
+    onUpdateActiveTelemetry?.(
+      lastAria.telemetry
+        ? { ...lastAria.telemetry, query: lastAria.query || lastAria.telemetry.query }
+        : undefined
+    );
+  }, [messages, onUpdateActiveCitations, onUpdateActiveTelemetry]);
+
+  // Allow SourcePanel Figure clicks to open the shared Zoomable Plate Lightbox
+  useEffect(() => {
+    const handleOpenLightbox = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ figures?: FigureData[]; index?: number; queryTitle?: string }>).detail;
+      if (detail?.figures && detail.figures.length > 0) {
+        setLightboxState({
+          figures: detail.figures,
+          index: detail.index ?? 0,
+          queryTitle: detail.queryTitle,
+        });
+      }
+    };
+    window.addEventListener('aria:open-lightbox', handleOpenLightbox);
+    return () => window.removeEventListener('aria:open-lightbox', handleOpenLightbox);
+  }, []);
 
   const handleDownloadPdf = async (msg: Message) => {
     try {
@@ -1140,13 +1207,18 @@ export default function ThreadView({
     const el = messagesScrollRef.current;
     if (!el) return;
 
-    // Track user scroll position: if scrolled > 80px up, pause auto-scroll immediately
+    // Track user scroll position & update Focus/Manuscript progress hairline cleanly via ref (zero re-render thrash)
     const checkScrollPosition = () => {
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       if (distanceFromBottom > 80) {
         isAutoScrollEnabledRef.current = false;
       } else if (distanceFromBottom <= 20) {
         isAutoScrollEnabledRef.current = true;
+      }
+      if (progressFillRef.current) {
+        const scrollable = el.scrollHeight - el.clientHeight;
+        const ratio = scrollable > 0 ? Math.min(1, Math.max(0, el.scrollTop / scrollable)) : 0;
+        progressFillRef.current.style.transform = `scaleX(${ratio})`;
       }
     };
 
@@ -1812,74 +1884,169 @@ export default function ThreadView({
     }
   };
 
+  const latestAriaMsg = [...messages].reverse().find((m) => m.role === 'aria' && m.content);
+  const focusHeadings = React.useMemo(
+    () => (isFocusMode && latestAriaMsg ? extractMarkdownSections(latestAriaMsg.content) : []),
+    [isFocusMode, latestAriaMsg]
+  );
+
+  const handleProseSelectionCheck = () => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) {
+      setSelectionPopover(null);
+      return;
+    }
+    const text = sel.toString().trim();
+    if (text.length < 10 || text.length > 600) {
+      setSelectionPopover(null);
+      return;
+    }
+    const anchorNode = sel.anchorNode;
+    const anchorEl = anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
+    if (!anchorEl?.closest('.editorial-prose')) {
+      setSelectionPopover(null);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) {
+      setSelectionPopover(null);
+      return;
+    }
+    const x = Math.min(window.innerWidth - 110, Math.max(110, rect.left + rect.width / 2));
+    const y = Math.max(56, rect.top - 8);
+    const primaryCit = latestAriaMsg?.citations?.[0];
+    const citationLabel = primaryCit ? formatCitation(primaryCit, settings.defaultCitationStyle || 'apa7', 0) : undefined;
+    setSelectionPopover({ text, x, y, citationLabel });
+  };
+
   return (
-    <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full relative h-full overflow-hidden select-text bg-[#09090B]">
-      {/* Thread Header: desktop only (>= md:flex), mobile is handled by unified MobileTopBar */}
-      <div className="hidden md:flex px-6 py-3 border-b border-white/[0.07] justify-between items-center bg-[#09090B] shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-[13px] font-medium text-[#EDEDED] font-sans tracking-[-0.01em]">
-            ARIA Workspace
-          </span>
-          {isMockActive && (
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-[4px] bg-[#111115] border border-[#60A5FA] text-[#60A5FA]">
-              MOCK DATA
+    <div className={`flex-1 flex flex-col ${isFocusMode ? 'max-w-3xl' : 'max-w-4xl'} mx-auto w-full relative h-full overflow-hidden select-text bg-[#09090B]`}>
+      {/* Focus / Manuscript Mode Sticky Bar + 2px Hairline Progress */}
+      {isFocusMode && (
+        <div className="shrink-0 bg-[#09090B] border-b border-white/[0.07] z-20">
+          <div className="px-4 sm:px-6 py-2 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-[var(--aria-accent)] truncate">
+              Manuscript Mode · {latestAriaMsg?.query || 'ARIA'}
             </span>
-          )}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowVerificationLens((v) => !v)}
+                className={`px-2 py-1 rounded-[5px] text-[10.5px] font-mono inline-flex items-center gap-1 border cursor-pointer transition-colors ${
+                  showVerificationLens
+                    ? 'border-[var(--aria-accent)]/45 bg-[var(--aria-accent)]/12 text-[var(--aria-accent)]'
+                    : 'border-white/[0.08] text-[#8B8B8E] hover:text-[#EDEDED]'
+                }`}
+                title="Toggle Optical Verification Lens"
+              >
+                <Microscope size={12} />
+                <span>Lens</span>
+              </button>
+              <button
+                type="button"
+                onClick={onToggleFocus}
+                className="px-2 py-1 rounded-[5px] text-[10.5px] font-mono inline-flex items-center gap-1 border border-white/[0.08] text-[#EDEDED] hover:bg-white/[0.06] cursor-pointer transition-colors"
+                title="Exit Manuscript Mode (F)"
+              >
+                <Minimize2 size={12} />
+                <span>Exit Focus</span>
+              </button>
+            </div>
+          </div>
+          <div className="focus-progress-track">
+            <div ref={progressFillRef} className="focus-progress-fill" />
+          </div>
         </div>
+      )}
 
-        <div className="flex items-center gap-2">
-          {isLoading && (
+      {/* Thread Header: desktop only (>= md:flex), hidden in Focus Mode */}
+      {!isFocusMode && (
+        <div className="hidden md:flex px-6 py-3 border-b border-white/[0.07] justify-between items-center bg-[#09090B] shrink-0">
+          <div className="flex items-center gap-3">
+            <span className="text-[13px] font-medium text-[#EDEDED] font-sans tracking-[-0.01em]">
+              ARIA Workspace
+            </span>
+            {isMockActive && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-[4px] bg-[#111115] border border-[var(--aria-accent)] text-[var(--aria-accent)]">
+                MOCK DATA
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {isLoading && (
+              <button
+                onClick={handleStopGeneration}
+                className="px-2.5 py-1 bg-[#111115] hover:bg-[#18181E] border border-red-500/40 text-red-400 rounded-[6px] text-[11px] font-sans font-medium flex items-center gap-1.5 transition-colors transition-transform active:scale-[0.98] cursor-pointer"
+                title="Stop streaming"
+              >
+                <Square size={11} className="fill-current" />
+                <span>Stop</span>
+              </button>
+            )}
+
             <button
-              onClick={handleStopGeneration}
-              className="px-2.5 py-1 bg-[#111115] hover:bg-[#18181E] border border-red-500/40 text-red-400 rounded-[6px] text-[11px] font-sans font-medium flex items-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer"
-              title="Stop streaming"
-            >
-              <Square size={11} className="fill-current" />
-              <span>Stop</span>
-            </button>
-          )}
-
-          {onOpenShortcuts && (
-            <button
-              onClick={onOpenShortcuts}
-              className="hidden md:inline-flex items-center gap-1 px-2 py-1 text-[11px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#111115] border border-transparent hover:border-white/[0.08] transition-colors cursor-pointer"
-              title="Keyboard Shortcuts (?)"
-              aria-label="Keyboard Shortcuts"
-            >
-              <HelpCircle size={13} />
-              <span>?</span>
-            </button>
-          )}
-
-          <button
-            onClick={onToggleFocus}
-            className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#111115] transition-colors cursor-pointer active:scale-[0.98]"
-            title={isFocusMode ? 'Exit Focus' : 'Focus'}
-          >
-            {isFocusMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </button>
-
-          {onToggleInspector && (
-            <button
-              onClick={onToggleInspector}
-              className={`p-1.5 rounded-[6px] transition-all cursor-pointer active:scale-[0.98] ${
-                isInspectorOpen
-                  ? 'text-[#60A5FA] bg-[#18181E] border border-[#60A5FA]/30'
-                  : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#111115] border border-transparent'
+              type="button"
+              onClick={() => setShowVerificationLens((v) => !v)}
+              className={`p-1.5 rounded-[6px] transition-colors transition-transform cursor-pointer active:scale-[0.98] border ${
+                showVerificationLens
+                  ? 'text-[var(--aria-accent)] bg-[#18181E] border-[var(--aria-accent)]/35'
+                  : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#111115] border-transparent'
               }`}
-              title="Toggle Research Inspector (Ctrl+] / ⌘])"
-              aria-label="Toggle Research Inspector"
+              title="Toggle Optical Verification Lens (sentence-level entailment underlines)"
+              aria-label="Toggle Optical Verification Lens"
+              aria-pressed={showVerificationLens}
             >
-              <PanelRightOpen size={15} />
+              <Microscope size={15} />
             </button>
-          )}
+
+            {onOpenShortcuts && (
+              <button
+                onClick={onOpenShortcuts}
+                className="hidden md:inline-flex items-center gap-1 px-2 py-1 text-[11px] font-mono text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#111115] border border-transparent hover:border-white/[0.08] transition-colors cursor-pointer"
+                title="Keyboard Shortcuts (?)"
+                aria-label="Keyboard Shortcuts"
+              >
+                <HelpCircle size={13} />
+                <span>?</span>
+              </button>
+            )}
+
+            <button
+              onClick={onToggleFocus}
+              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#111115] transition-colors cursor-pointer active:scale-[0.98]"
+              title="Focus / Manuscript Mode (F)"
+              aria-label="Toggle Focus Mode"
+            >
+              <Maximize2 size={15} />
+            </button>
+
+            {onToggleInspector && (
+              <button
+                onClick={onToggleInspector}
+                className={`p-1.5 rounded-[6px] transition-colors transition-transform cursor-pointer active:scale-[0.98] border ${
+                  isInspectorOpen
+                    ? 'text-[var(--aria-accent)] bg-[#18181E] border-[var(--aria-accent)]/35'
+                    : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#111115] border-transparent'
+                }`}
+                title="Toggle Research Inspector (Ctrl+] / ⌘])"
+                aria-label="Toggle Research Inspector"
+              >
+                <PanelRightOpen size={15} />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Messages Area */}
       <div
         ref={messagesScrollRef}
-        className="flex-1 overflow-y-auto p-4 sm:p-6 pb-32 sm:pb-28 space-y-6 select-text hud-scroll"
+        onMouseUp={handleProseSelectionCheck}
+        onTouchEnd={handleProseSelectionCheck}
+        onScroll={() => selectionPopover && setSelectionPopover(null)}
+        className={`flex-1 overflow-y-auto p-4 sm:p-6 ${isFocusMode ? 'pb-20' : 'pb-36 sm:pb-32'} space-y-6 select-text hud-scroll`}
       >
         {/* Open Editorial Workspace (Empty State): pristine typography on canvas */}
         {messages.length === 0 && (
@@ -1912,7 +2079,7 @@ export default function ThreadView({
             {/* Sleek Input Card */}
             <form
               onSubmit={handleEmptySubmit}
-              className="w-full max-w-2xl bg-white dark:bg-[#0B0F1A] border border-slate-200 dark:border-white/[0.08] focus-within:border-slate-400 dark:focus-within:border-white/[0.18] rounded-2xl p-3 shadow-sm dark:shadow-xl transition-all duration-150"
+              className="w-full max-w-2xl bg-white dark:bg-[#0B0F1A] border border-slate-200 dark:border-white/[0.08] focus-within:border-slate-400 dark:focus-within:border-white/[0.18] rounded-2xl p-3 shadow-sm dark:shadow-xl transition-colors transition-transform duration-150"
             >
               <textarea
                 ref={emptyTextareaRef}
@@ -1946,14 +2113,14 @@ export default function ThreadView({
                   <button
                     type="button"
                     onClick={() => setSourceTier((prev) => (prev === 'all' ? 'peer_reviewed' : 'all'))}
-                    className={`px-2 py-1 rounded-lg border text-[11px] font-mono transition-all cursor-pointer ${
+                    className={`px-2 py-1 rounded-lg border text-[11px] font-mono whitespace-nowrap transition-colors cursor-pointer ${
                       sourceTier === 'peer_reviewed'
                         ? 'border-[var(--aria-accent)] bg-[var(--aria-accent)]/12 text-[var(--aria-accent)] font-semibold'
                         : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-zinc-200'
                     }`}
                     title="Toggle between All Verified Sources and Peer-Reviewed Academic Literature Only"
                   >
-                    {sourceTier === 'peer_reviewed' ? 'Peer-Reviewed' : 'All Sources'}
+                    {sourceTier === 'peer_reviewed' ? 'Peer-Rev' : 'Sources: All'}
                   </button>
 
                   <button
@@ -1961,14 +2128,14 @@ export default function ThreadView({
                     onClick={() =>
                       setRecency((prev) => (prev === 'all' ? '5y' : prev === '5y' ? '2y' : 'all'))
                     }
-                    className={`px-2 py-1 rounded-lg border text-[11px] font-mono transition-all cursor-pointer ${
+                    className={`px-2 py-1 rounded-lg border text-[11px] font-mono whitespace-nowrap transition-colors cursor-pointer ${
                       recency !== 'all'
                         ? 'border-[var(--aria-accent)] bg-[var(--aria-accent)]/12 text-[var(--aria-accent)] font-semibold'
                         : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-zinc-200'
                     }`}
-                    title="Cycle publication recency cutoff: All Time -> Last 5 Years -> Last 2 Years"
+                    title="Cycle publication recency cutoff: Any Time -> Last 5 Years -> Last 2 Years"
                   >
-                    {recency === '2y' ? 'Last 2 Yrs' : recency === '5y' ? 'Last 5 Yrs' : 'All Time'}
+                    {recency === '2y' ? 'Time: 2Y' : recency === '5y' ? 'Time: 5Y' : 'Time: Any'}
                   </button>
                 </div>
 
@@ -1993,7 +2160,7 @@ export default function ThreadView({
                     key={pill.id}
                     type="button"
                     onClick={() => executeQuery(pill.query)}
-                    className="text-[11.5px] font-sans text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200 border border-slate-200 dark:border-white/[0.06] hover:border-slate-300 dark:hover:border-white/[0.14] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.05] rounded-full px-2.5 py-1 transition-all active:scale-[0.98] cursor-pointer"
+                    className="text-[11.5px] font-sans text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200 border border-slate-200 dark:border-white/[0.06] hover:border-slate-300 dark:hover:border-white/[0.14] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.05] rounded-full px-2.5 py-1 transition-colors transition-transform active:scale-[0.98] cursor-pointer"
                   >
                     {pill.label}
                   </button>
@@ -2014,12 +2181,12 @@ export default function ThreadView({
                       key={h.id}
                       type="button"
                       onClick={() => executeQuery(h.query)}
-                      className="w-full text-left px-3.5 py-2.5 bg-white hover:bg-slate-50 dark:bg-[#111115] dark:hover:bg-[#18181E] border border-slate-200 hover:border-slate-300 dark:border-white/[0.07] dark:hover:border-white/[0.14] rounded-[6px] text-[13px] font-sans text-slate-800 hover:text-slate-900 dark:text-[#EDEDED] dark:hover:text-white flex items-center justify-between group active:scale-[0.98] transition-all"
+                      className="w-full text-left px-3.5 py-2.5 bg-white hover:bg-slate-50 dark:bg-[#111115] dark:hover:bg-[#18181E] border border-slate-200 hover:border-slate-300 dark:border-white/[0.07] dark:hover:border-white/[0.14] rounded-[6px] text-[13px] font-sans text-slate-800 hover:text-slate-900 dark:text-[#EDEDED] dark:hover:text-white flex items-center justify-between group active:scale-[0.98] transition-colors transition-transform"
                     >
                       <span className="truncate pr-4">{h.query}</span>
                       <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-500 dark:text-[#71717A]">
                         {typeof h.confidence === 'number' && (
-                          <span className="text-blue-600 dark:text-[#60A5FA] tabular-nums">
+                          <span className="text-blue-600 dark:text-[var(--aria-accent)] tabular-nums">
                             {Math.round(h.confidence * 100)}%
                           </span>
                         )}
@@ -2057,17 +2224,58 @@ export default function ThreadView({
             onDownloadPdf={handleDownloadPdf}
             onSaveToCollection={handleSaveToCollection}
             onFeedback={handleFeedback}
+            showVerificationLens={showVerificationLens}
+            onOpenFigureLightbox={(figs, index, queryTitle) =>
+              setLightboxState({ figures: figs, index, queryTitle })
+            }
           />
         ))}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Docked Composer (Visible once a query exists) */}
-      {messages.length > 0 && (
+      {/* Highlight-to-Cite & Explain Popover */}
+      {selectionPopover && (
+        <SelectionPopover
+          selectedText={selectionPopover.text}
+          position={{ x: selectionPopover.x, y: selectionPopover.y }}
+          citationLabel={selectionPopover.citationLabel}
+          onProbeDeeper={(excerpt) => executeQuery(`Explain and verify the evidence for: "${excerpt}"`)}
+          onClose={() => setSelectionPopover(null)}
+        />
+      )}
+
+      {/* Focus / Manuscript Mode Section Outline Rail */}
+      {isFocusMode && (
+        <SectionOutlineRail
+          headings={focusHeadings}
+          onJump={(id) => {
+            document.getElementById(id)?.scrollIntoView({
+              behavior: settings.reducedMotion ? 'auto' : 'smooth',
+              block: 'start',
+            });
+          }}
+        />
+      )}
+
+      {/* Zoomable Scientific Plate Lightbox (Lazy-loaded) */}
+      {lightboxState && (
+        <Suspense fallback={null}>
+          <FigureLightbox
+            figures={lightboxState.figures}
+            initialIndex={lightboxState.index}
+            queryTitle={lightboxState.queryTitle}
+            nativeHaptics={settings.nativeHaptics}
+            onClose={() => setLightboxState(null)}
+          />
+        </Suspense>
+      )}
+
+      {/* Docked Composer (Visible once a query exists and not in Focus Mode) */}
+      {messages.length > 0 && !isFocusMode && (
         <div className="p-3 bg-slate-50/95 dark:bg-[#050811] border-t border-slate-200 dark:border-white/[0.06] shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
           <form
             onSubmit={handleSubmit}
-            className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2 max-w-4xl mx-auto bg-white dark:bg-[#0B0F1A] border border-slate-200 dark:border-white/[0.08] focus-within:border-slate-400 dark:focus-within:border-white/[0.18] rounded-2xl p-2 transition-all duration-150 shadow-sm dark:shadow-none"
+            className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2 max-w-4xl mx-auto bg-white dark:bg-[#0B0F1A] border border-slate-200 dark:border-white/[0.08] focus-within:border-slate-400 dark:focus-within:border-white/[0.18] rounded-2xl p-2 transition-colors duration-150 shadow-sm dark:shadow-none"
           >
             <div className="flex items-center gap-1 shrink-0">
               <DomainPicker
@@ -2079,28 +2287,28 @@ export default function ThreadView({
               <button
                 type="button"
                 onClick={() => setSourceTier((prev) => (prev === 'all' ? 'peer_reviewed' : 'all'))}
-                className={`px-1.5 py-1 rounded-lg border text-[10px] font-mono transition-all cursor-pointer ${
+                className={`px-2 py-1 rounded-lg border text-[10.5px] font-mono whitespace-nowrap transition-colors cursor-pointer ${
                   sourceTier === 'peer_reviewed'
                     ? 'border-[var(--aria-accent)] bg-[var(--aria-accent)]/12 text-[var(--aria-accent)] font-semibold'
                     : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-zinc-200'
                 }`}
-                title="Peer-Reviewed Only toggle"
+                title="Toggle All Sources vs Peer-Reviewed Only"
               >
-                {sourceTier === 'peer_reviewed' ? 'Peer-Rev' : 'All'}
+                {sourceTier === 'peer_reviewed' ? 'Peer-Rev' : 'Sources: All'}
               </button>
               <button
                 type="button"
                 onClick={() =>
                   setRecency((prev) => (prev === 'all' ? '5y' : prev === '5y' ? '2y' : 'all'))
                 }
-                className={`px-1.5 py-1 rounded-lg border text-[10px] font-mono transition-all cursor-pointer ${
+                className={`px-2 py-1 rounded-lg border text-[10.5px] font-mono whitespace-nowrap transition-colors cursor-pointer ${
                   recency !== 'all'
                     ? 'border-[var(--aria-accent)] bg-[var(--aria-accent)]/12 text-[var(--aria-accent)] font-semibold'
                     : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-zinc-200'
                 }`}
-                title="Recency window: All Time / Last 5 Years / Last 2 Years"
+                title="Recency window: Any Time / Last 5 Years / Last 2 Years"
               >
-                {recency === '2y' ? '2Y' : recency === '5y' ? '5Y' : 'All'}
+                {recency === '2y' ? 'Time: 2Y' : recency === '5y' ? 'Time: 5Y' : 'Time: Any'}
               </button>
             </div>
 

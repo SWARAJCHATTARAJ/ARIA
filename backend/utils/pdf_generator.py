@@ -126,25 +126,6 @@ def _to_sup(s: str) -> str:
 def _to_sub(s: str) -> str:
     return "".join(_SUB_MAP.get(c, c) for c in s)
 
-# Greek / math symbols -> readable Unicode math
-_GREEK_MAP = {
-    "α": "α", "β": "β", "γ": "γ", "δ": "δ", "ε": "ε",
-    "ζ": "ζ", "η": "η", "θ": "θ", "ι": "ι", "κ": "κ",
-    "λ": "λ", "µ": "μ", "μ": "μ", "ν": "ν", "ξ": "ξ", "ο": "o",
-    "π": "π", "ρ": "ρ", "ς": "s", "σ": "σ", "τ": "τ", "υ": "υ",
-    "φ": "φ", "χ": "χ", "ψ": "ψ", "ω": "ω",
-    "Γ": "Γ", "Δ": "Δ", "Θ": "Θ", "Λ": "Λ", "Π": "Π",
-    "Σ": "Σ", "Φ": "Φ", "Ψ": "Ψ", "Ω": "Ω", "Ξ": "Ξ",
-    "∂": "∂", "∞": "∞",
-}
-_MATH_MAP = {
-    "°": "°", "±": "±", "×": "×", "·": "·", "÷": "/", "•": "•",
-    "≤": "≤", "≥": "≥", "≠": "≠", "≈": "≈", "∼": "~", "≡": "=",
-    "→": "→", "←": "←", "⇒": "⇒", "⇐": "⇐", "↔": "↔",
-    "∴": "therefore", "∈": "∈", "∉": "∉", "∑": "∑", "∏": "∏", "√": "√",
-    "∫": "∫", "∇": "∇", "⊕": "⊕", "⊗": "⊗", "‰": "‰",
-}
-
 def is_complex_latex_block(expr: str) -> bool:
     """
     Detects if a LaTeX math block contains fractions, integrals, roots, summations, or key Greek formulas.
@@ -427,17 +408,20 @@ def generate_academic_paper_title(query: str, canonical_topic: Optional[str] = N
     cased_words = [format_title_word(w, i == 0) for i, w in enumerate(words)]
     title = " ".join(cased_words).strip(" ?.:,")
 
-    is_stem = any(k in title.lower() for k in (
-        "algorithm", "polymer", "chemical", "protein", "quantum", "neural", "system",
-        "data structure", "database", "operating", "processor", "genome", "telescope",
-        "synthesis", "thermodynamic", "consensus", "network", "molecule", "cell", "gene"
-    ))
-
+    from pipeline.nodes import classify_domain_discipline
+    disc = classify_domain_discipline(query, canonical_topic or title)
+    _SUBTITLE_BY_DISCIPLINE = {
+        "cs_math": ": Formal Foundations, Algorithmic Properties, and Empirical Analysis",
+        "instruments_engineering": ": Operating Principles, Architecture, and Quantitative Characterization",
+        "arts_performance": ": Acoustic Mechanics, Technique Taxonomy, and Historical Synthesis",
+        "zoology_botany_earth": ": Taxonomy, Structural Morphology, and Ecological Processes",
+        "medicine_clinical": ": Mechanisms, Pathophysiology, and Clinical Evidence Synthesis",
+        "geography_history_social": ": Geography, Historical Trajectory, Institutions, and Socioeconomic Profile",
+    }
     if len(words) <= 2:
-        if is_stem:
-            title += ": Core Mechanisms, Quantitative Properties, and Empirical Synthesis"
-        else:
-            title += ": Historical Foundations, Structural Dynamics, and Comparative Overview"
+        title += _SUBTITLE_BY_DISCIPLINE.get(
+            disc, ": Foundational Overview, Empirical Mechanisms, and Comparative Analysis"
+        )
     elif ":" not in title and not any(k in title.lower() for k in ("analysis", "synthesis", "review", "properties", "mechanisms", "principles", "overview", "foundations")):
         title += ": Synthesis and Comparative Analysis"
 
@@ -1807,31 +1791,15 @@ class AcademicTwoColumnPaper:
                 if last_kind == "paragraph":
                     sections_content[s_idx][-1] = (last_kind, trim_incomplete_sentence(last_text))
 
-        # Domain-adaptive defaults (used only if manuscript had fewer than 5 headings)
-        is_stem_topic = any(
-            k in f"{self.query} {self.canonical_topic}".lower()
-            for k in (
-                "pvc", "polymer", "algorithm", "data structure", "dsa", "quantum",
-                "crispr", "dna", "rna", "llm", "neural", "database", "operating system",
-                "processor", "cpu", "consensus", "bft", "galaxy", "jwst", "molecule", "cell",
-            )
-        )
-        if is_stem_topic:
-            default_titles = [
-                "I. INTRODUCTION & EXECUTIVE DEFINITION",
-                "II. CORE MECHANISMS, THEORETICAL ARCHITECTURE & METHODOLOGY",
-                "III. QUANTITATIVE PROPERTIES & COMPARATIVE ANALYSIS",
-                "IV. EMPIRICAL APPLICATIONS, OPERATIONAL IMPACT & TECHNICAL LIMITATIONS",
-                "V. CONCLUSION & OPEN RESEARCH DIRECTIONS",
-            ]
-        else:
-            default_titles = [
-                "I. INTRODUCTION & FOUNDATIONAL OVERVIEW",
-                "II. STRUCTURAL CONTEXT, GOVERNANCE & KEY DEVELOPMENTS",
-                "III. COMPARATIVE INDICATORS & EMPIRICAL PROFILE",
-                "IV. CONTEMPORARY SIGNIFICANCE, IMPACT & CHALLENGES",
-                "V. CONCLUSION & OPEN RESEARCH DIRECTIONS",
-            ]
+        # Domain-adaptive defaults (used only when headings do not fill all 5 slots)
+        from pipeline.nodes import classify_domain_discipline, build_specialist_outline
+        pdf_disc = classify_domain_discipline(self.query, self.canonical_topic)
+        specialist_headings = build_specialist_outline(pdf_disc, self.query, is_debated=False)
+        padded_headings = (specialist_headings + ["Conclusion & Open Research Directions"])[:5]
+        default_titles = [
+            f"{romans[idx]} {padded_headings[idx].upper()}"
+            for idx in range(5)
+        ]
 
         canonical_sections = [
             (custom_titles.get(idx, default_titles[idx]), idx)

@@ -26,6 +26,45 @@ interface MarkdownRendererProps {
   isStreaming?: boolean;
   auditClaims?: AuditClaim[];
   answerFinal?: string;
+  showVerificationLens?: boolean;
+}
+
+function headingSlug(rawHeading: string, occurrenceIdx: number): string {
+  const base = rawHeading
+    .replace(/\[+c:\d+\]+|\[\d+\]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return `aria-sec-${occurrenceIdx}-${base || 'section'}`;
+}
+
+export function extractMarkdownSections(content: string): Array<{ id: string; label: string; level: number }> {
+  if (!content) return [];
+  const sections: Array<{ id: string; label: string; level: number }> = [];
+  let inCode = false;
+  let headingIdx = 0;
+  for (const rawLine of content.split('\n')) {
+    const trimmed = rawLine.trim();
+    if (trimmed.startsWith('```')) {
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) continue;
+    const m = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (m) {
+      const level = m[1].length;
+      const cleanLabel = m[2].replace(/\[+c:\d+\]+|\[\d+\]/g, '').replace(/[*_`]/g, '').trim();
+      if (cleanLabel) {
+        sections.push({
+          id: headingSlug(m[2], headingIdx++),
+          label: cleanLabel,
+          level,
+        });
+      }
+    }
+  }
+  return sections;
 }
 
 export function cleanCompoundHyphens(text: string): string {
@@ -201,6 +240,7 @@ function MarkdownRendererInner({
   isStreaming = false,
   auditClaims = [],
   answerFinal,
+  showVerificationLens = false,
 }: MarkdownRendererProps) {
   // Use answerFinal if audit completed and available
   const rawText = (!isStreaming && answerFinal) ? answerFinal : content;
@@ -425,12 +465,18 @@ function MarkdownRendererInner({
           );
         }
 
-        // Clean editorial prose with subtle claim association for citation popovers
+        // Clean editorial prose with optional Optical Verification Lens underline semantics
         const claimText = answerFinal.slice(cStart, cEnd);
+        const lensCls =
+          claim.polarity === 'supported' || claim.status === 'supported'
+            ? 'claim-supported'
+            : claim.polarity === 'contested' || claim.status === 'unsupported'
+            ? 'claim-contested'
+            : 'claim-partial';
         nodes.push(
           <span
             key={`${keyPrefix}-claim-${claim.claim_id ?? idx}`}
-            className="audit-claim-highlight inline transition-colors"
+            className={`audit-claim-highlight ${lensCls} inline transition-colors`}
             style={{
               animationDelay: `calc(${globalIdx} * 120ms * var(--motion-scale, 1))`,
             }}
@@ -455,8 +501,15 @@ function MarkdownRendererInner({
       return nodes;
     }
 
+    const firstLensCls =
+      overlapping[0].polarity === 'supported' || overlapping[0].status === 'supported'
+        ? 'claim-supported'
+        : overlapping[0].polarity === 'contested' || overlapping[0].status === 'unsupported'
+        ? 'claim-contested'
+        : 'claim-partial';
+
     return (
-      <span className="audit-claim-highlight inline transition-colors">
+      <span className={`audit-claim-highlight ${firstLensCls} inline transition-colors`}>
         {renderInline(text, `${keyPrefix}-blkhl`, overlapping[0])}
       </span>
     );
@@ -483,6 +536,7 @@ function MarkdownRendererInner({
     let lIdx = 0;
     let blockId = 0;
     let orderedSeq = 1;
+    let headingCounter = 0;
 
     while (lIdx < lineSpans.length) {
       const line = lineSpans[lIdx];
@@ -610,8 +664,9 @@ function MarkdownRendererInner({
         const leadWs = line.text.length - line.text.trimStart().length;
         const headingStart = line.start + leadWs + 2;
         const headingEnd = line.end;
+        const secId = headingSlug(trimmed.slice(2), headingCounter++);
         result.push(
-          <h1 key={`blk-${blockId++}`} className="text-[19px] font-sans font-semibold text-slate-900 dark:text-zinc-100 tracking-[-0.02em] mt-6 mb-2.5 leading-snug">
+          <h1 id={secId} key={`blk-${blockId++}`} className="scroll-mt-16 text-[19px] font-sans font-semibold text-slate-900 dark:text-zinc-100 tracking-[-0.02em] mt-6 mb-2.5 leading-snug">
             {renderAuditedText(trimmed.slice(2), headingStart, headingEnd, `h1-${blockId}`)}
           </h1>
         );
@@ -623,8 +678,9 @@ function MarkdownRendererInner({
         const leadWs = line.text.length - line.text.trimStart().length;
         const headingStart = line.start + leadWs + 3;
         const headingEnd = line.end;
+        const secId = headingSlug(trimmed.slice(3), headingCounter++);
         result.push(
-          <h2 key={`blk-${blockId++}`} className="text-[16px] font-sans font-semibold text-slate-900 dark:text-zinc-100 tracking-[-0.015em] mt-6 mb-2 pt-1 leading-snug">
+          <h2 id={secId} key={`blk-${blockId++}`} className="scroll-mt-16 text-[16px] font-sans font-semibold text-slate-900 dark:text-zinc-100 tracking-[-0.015em] mt-6 mb-2 pt-1 leading-snug">
             {renderAuditedText(trimmed.slice(3), headingStart, headingEnd, `h2-${blockId}`)}
           </h2>
         );
@@ -636,8 +692,9 @@ function MarkdownRendererInner({
         const leadWs = line.text.length - line.text.trimStart().length;
         const headingStart = line.start + leadWs + 4;
         const headingEnd = line.end;
+        const secId = headingSlug(trimmed.slice(4), headingCounter++);
         result.push(
-          <h3 key={`blk-${blockId++}`} className="text-[14.5px] font-sans font-semibold text-slate-900 dark:text-zinc-200 tracking-[-0.01em] mt-4 mb-1.5 leading-snug">
+          <h3 id={secId} key={`blk-${blockId++}`} className="scroll-mt-16 text-[14.5px] font-sans font-semibold text-slate-900 dark:text-zinc-200 tracking-[-0.01em] mt-4 mb-1.5 leading-snug">
             {renderAuditedText(trimmed.slice(4), headingStart, headingEnd, `h3-${blockId}`)}
           </h3>
         );
@@ -659,7 +716,7 @@ function MarkdownRendererInner({
         result.push(
           <blockquote
             key={`blk-${blockId++}`}
-            className="my-3.5 pl-3.5 pr-3 py-2.5 border-l-2 border-l-blue-500/70 dark:border-l-[#60A5FA]/70 bg-slate-50/80 dark:bg-white/[0.025] rounded-r-[6px] text-[14.5px] text-slate-700 dark:text-zinc-300 leading-[1.7] italic"
+            className="my-3.5 pl-3.5 pr-3 py-2.5 border-l-2 border-l-blue-500/70 dark:border-l-[var(--aria-accent)]/70 bg-slate-50/80 dark:bg-white/[0.025] rounded-r-[6px] text-[14.5px] text-slate-700 dark:text-zinc-300 leading-[1.7] italic"
           >
             {renderAuditedText(quoteLines.join(' '), qStart, qEnd, `bq-${blockId}`)}
           </blockquote>
@@ -758,7 +815,7 @@ function MarkdownRendererInner({
   }, [displayContent, answerFinal, validClaims, claimIndexMap, citationMap, claimByCitationId]);
 
   return (
-    <div className="editorial-prose space-y-1 select-text max-w-[70ch] leading-[1.7]">
+    <div className={`editorial-prose space-y-1 select-text max-w-[70ch] leading-[1.7] ${showVerificationLens ? 'verification-lens-active' : ''}`}>
       {blocks}
       {/* Stream Caret: subtle vertical blinking caret at stream end */}
       {isStreaming && <span className="streaming-caret" aria-hidden="true" />}
@@ -844,7 +901,7 @@ function InlineCitationPill({
           setShowPreview(false);
           if (onCitationClick) onCitationClick(cit, claim);
         }}
-        className={`inline-flex items-center gap-1 font-mono text-[10.5px] font-medium px-1.5 py-[1px] mx-0.5 rounded-[4px] border tabular-nums transition-all duration-150 select-none cursor-pointer align-baseline hover:brightness-110 active:scale-[0.95] ${colorClass}`}
+        className={`inline-flex items-center gap-1 font-mono text-[10.5px] font-medium px-1.5 py-[1px] mx-0.5 rounded-[4px] border tabular-nums transition-colors transition-transform duration-150 select-none cursor-pointer align-baseline hover:brightness-110 active:scale-[0.95] ${colorClass}`}
         aria-label={`Citation [${citId + 1}]: ${cit.title || 'Source'}`}
         aria-expanded={showPreview}
       >
@@ -893,13 +950,13 @@ function InlineCitationPill({
           </span>
 
           {supportingQuote && (
-            <span className="block text-[10.5px] font-sans text-slate-600 dark:text-zinc-300 leading-snug line-clamp-1 pl-2 border-l-2 border-l-[#60A5FA] mb-1.5">
+            <span className="block text-[10.5px] font-sans text-slate-600 dark:text-zinc-300 leading-snug line-clamp-1 pl-2 border-l-2 border-l-[var(--aria-accent)] mb-1.5">
               &ldquo;{supportingQuote}&rdquo;
             </span>
           )}
 
           <span className="flex items-center justify-between pt-1 border-t border-slate-200/70 dark:border-white/[0.06] text-[9.5px] font-mono">
-            <span className="text-[#60A5FA] inline-flex items-center gap-1">
+            <span className="text-[var(--aria-accent)] inline-flex items-center gap-1">
               <BookOpen size={9} />
               <span>Click to verify proof</span>
             </span>
@@ -908,7 +965,7 @@ function InlineCitationPill({
                 href={targetUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-slate-500 hover:text-[#60A5FA] inline-flex items-center gap-0.5"
+                className="text-slate-500 hover:text-[var(--aria-accent)] inline-flex items-center gap-0.5"
               >
                 <ExternalLink size={9} />
               </a>

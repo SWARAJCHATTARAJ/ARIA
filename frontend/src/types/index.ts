@@ -34,6 +34,8 @@ export interface AuditClaim {
   supported?: boolean;
   status: ClaimStatus;
   verdict?: 'supported' | 'partial' | 'unverified';
+  polarity?: 'supported' | 'contested' | 'partial';
+  confidence?: number;
   coverage?: number;
   start?: number;
   end?: number;

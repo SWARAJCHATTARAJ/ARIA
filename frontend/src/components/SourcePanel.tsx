@@ -13,6 +13,7 @@ import {
   Loader2,
   BarChart2,
   FileCode2,
+  ZoomIn,
 } from 'lucide-react';
 import { Citation, CitationStyle, MessageTelemetry, AuditClaim, ClaimStatus } from '../types';
 import { saveOrDownloadFile, showDownloadToast } from '../utils/nativeDownload';
@@ -37,6 +38,7 @@ interface SourcePanelProps {
   selectedCitationId?: number | null;
   highlightedEvidenceQuote?: string | null;
   onSelectCitation?: (id: number | null, evidenceQuote?: string | null) => void;
+  onOpenFigureLightbox?: (index: number) => void;
   isMockActive?: boolean;
   onExportPdf?: () => void;
   hasError?: boolean;
@@ -67,7 +69,7 @@ function renderHighlightedSnippet(snippet: string, quote?: string | null, pulseA
     return (
       <>
         {snippet.slice(0, cIdx)}
-        <mark className={pulseActive ? 'evidence-quote-pulse' : 'bg-[#60A5FA]/15 text-inherit rounded px-0.5'}>
+        <mark className={pulseActive ? 'evidence-quote-pulse' : 'bg-[var(--aria-accent)]/15 text-inherit rounded px-0.5'}>
           {snippet.slice(cIdx, endIdx)}
         </mark>
         {snippet.slice(endIdx)}
@@ -77,7 +79,7 @@ function renderHighlightedSnippet(snippet: string, quote?: string | null, pulseA
   return (
     <>
       {snippet.slice(0, idx)}
-      <mark className={pulseActive ? 'evidence-quote-pulse' : 'bg-[#60A5FA]/15 text-inherit rounded px-0.5'}>
+      <mark className={pulseActive ? 'evidence-quote-pulse' : 'bg-[var(--aria-accent)]/15 text-inherit rounded px-0.5'}>
         {snippet.slice(idx, idx + cleanQuote.length)}
       </mark>
       {snippet.slice(idx + cleanQuote.length)}
@@ -93,6 +95,7 @@ export default function SourcePanel({
   selectedCitationId = null,
   highlightedEvidenceQuote = null,
   onSelectCitation,
+  onOpenFigureLightbox,
   onExportPdf,
   hasError = false,
 }: SourcePanelProps) {
@@ -389,7 +392,7 @@ export default function SourcePanel({
                 type="button"
                 onClick={() => void handleDownloadPackFile('bib')}
                 disabled={isExportingBib}
-                className="px-1.5 py-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-all text-[10px] font-mono inline-flex items-center gap-0.5 cursor-pointer"
+                className="px-1.5 py-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-colors transition-transform text-[10px] font-mono inline-flex items-center gap-0.5 cursor-pointer"
                 title="Download BibTeX (.bib)"
               >
                 {copiedAllBib ? <Check size={11} className="text-emerald-400 morph-pop" /> : <Download size={11} />}
@@ -400,7 +403,7 @@ export default function SourcePanel({
                 type="button"
                 onClick={() => void handleDownloadPackFile('ris')}
                 disabled={isExportingRis}
-                className="px-1.5 py-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-all text-[10px] font-mono inline-flex items-center cursor-pointer"
+                className="px-1.5 py-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-colors transition-transform text-[10px] font-mono inline-flex items-center cursor-pointer"
                 title="Export RIS (Zotero / Mendeley)"
               >
                 <span>.RIS</span>
@@ -410,7 +413,7 @@ export default function SourcePanel({
                 type="button"
                 onClick={() => void handleDownloadPackFile('tex')}
                 disabled={isExportingTex}
-                className="px-1.5 py-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-all text-[10px] font-mono inline-flex items-center gap-0.5 cursor-pointer"
+                className="px-1.5 py-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-colors transition-transform text-[10px] font-mono inline-flex items-center gap-0.5 cursor-pointer"
                 title="Export Overleaf-ready LaTeX (.tex)"
               >
                 <FileCode2 size={11} />
@@ -421,7 +424,7 @@ export default function SourcePanel({
                 type="button"
                 onClick={handleExportPdf}
                 disabled={isExportingPdf}
-                className="px-1.5 py-1 text-slate-600 hover:text-[var(--aria-accent)] dark:text-[#8B8B8E] dark:hover:text-[var(--aria-accent)] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-all text-[10px] font-mono inline-flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
+                className="px-1.5 py-1 text-slate-600 hover:text-[var(--aria-accent)] dark:text-[#8B8B8E] dark:hover:text-[var(--aria-accent)] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-colors transition-transform text-[10px] font-mono inline-flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
                 title="Export PDF report"
               >
                 {isExportingPdf ? <Loader2 size={11} className="animate-spin text-[var(--aria-accent)]" /> : <FileText size={11} />}
@@ -433,7 +436,7 @@ export default function SourcePanel({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-all cursor-pointer"
+            className="p-1 text-slate-600 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded-[5px] hover:bg-slate-100 dark:hover:bg-[#18181E] active:scale-[0.96] transition-colors transition-transform cursor-pointer"
             title="Close Inspector (Esc)"
             aria-label="Close Inspector"
           >
@@ -539,7 +542,7 @@ export default function SourcePanel({
                           key={t}
                           type="button"
                           onClick={() => setTierFilter(t)}
-                          className={`px-1.5 py-0.5 rounded-[4px] border transition-all cursor-pointer ${
+                          className={`px-1.5 py-0.5 rounded-[4px] border transition-colors transition-transform cursor-pointer ${
                             tierFilter === t
                               ? 'border-[var(--aria-accent)] text-[var(--aria-accent)] bg-[var(--aria-accent)]/10 font-semibold'
                               : 'border-slate-200 dark:border-white/[0.07] text-slate-600 dark:text-[#71717A] hover:text-slate-900 dark:hover:text-[#EDEDED]'
@@ -578,7 +581,7 @@ export default function SourcePanel({
                       ? highlightedEvidenceQuote || quoteByCitationId.get(cit.id)
                       : quoteByCitationId.get(cit.id);
                     const tierColor =
-                      cit.tier === 'OKF' ? '#60A5FA' : cit.tier === 'RAG' ? '#A78BFA' : '#F59E0B';
+                      cit.tier === 'OKF' ? 'var(--aria-accent)' : cit.tier === 'RAG' ? '#A78BFA' : '#F59E0B';
                     const targetUrl = sanitizeHref(resolveCitationUrl(cit));
                     const authorDisplay = formatSourceAuthors(cit.authors, cit.venue);
                     const showVenueSeparately = cit.venue && !authorDisplay.includes(cit.venue);
@@ -590,7 +593,7 @@ export default function SourcePanel({
                         ref={(el) => (cardRefs.current[cit.id] = el)}
                         onClick={() => onSelectCitation && onSelectCitation(cit.id, quoteByCitationId.get(cit.id))}
                         style={{ ['--stagger-i' as any]: idx }}
-                        className={`stagger-card p-3 bg-slate-50/70 dark:bg-[#09090B] border rounded-[8px] space-y-2 cursor-pointer transition-all duration-200 ${
+                        className={`stagger-card p-3 bg-slate-50/70 dark:bg-[#09090B] border rounded-[8px] space-y-2 cursor-pointer transition-colors transition-transform duration-200 ${
                           isSelected
                             ? 'border-[var(--aria-accent)] ring-1 ring-[var(--aria-accent)]/25'
                             : 'border-slate-200 dark:border-white/[0.07] hover:border-slate-300 dark:hover:border-white/[0.15]'
@@ -622,7 +625,7 @@ export default function SourcePanel({
                             <button
                               type="button"
                               onClick={(e) => handleCopyFormatted(cit, e)}
-                              className="px-1.5 py-0.5 text-[10px] font-mono text-slate-500 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded hover:bg-slate-200 dark:hover:bg-[#18181E] transition-all inline-flex items-center gap-1 cursor-pointer"
+                              className="px-1.5 py-0.5 text-[10px] font-mono text-slate-500 hover:text-slate-900 dark:text-[#8B8B8E] dark:hover:text-[#EDEDED] rounded hover:bg-slate-200 dark:hover:bg-[#18181E] transition-colors transition-transform inline-flex items-center gap-1 cursor-pointer"
                               title={`Copy ${citationStyle.toUpperCase()} citation`}
                             >
                               {copiedId === cit.id ? (
@@ -643,7 +646,7 @@ export default function SourcePanel({
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
-                                className="p-1 text-slate-500 hover:text-[var(--aria-accent)] dark:text-[#8B8B8E] dark:hover:text-[var(--aria-accent)] rounded hover:bg-slate-200 dark:hover:bg-[#18181E] transition-all"
+                                className="p-1 text-slate-500 hover:text-[var(--aria-accent)] dark:text-[#8B8B8E] dark:hover:text-[var(--aria-accent)] rounded hover:bg-slate-200 dark:hover:bg-[#18181E] transition-colors transition-transform"
                                 title="Open source URL"
                               >
                                 <ExternalLink size={11} />
@@ -711,10 +714,10 @@ export default function SourcePanel({
                       {entailmentPctNumber !== null && (
                         <div className="w-16 h-1.5 bg-slate-200 dark:bg-white/[0.06] rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full transition-all duration-300 ${
+                            className={`h-full w-full origin-left rounded-full transition-transform duration-300 ${
                               entailmentPctNumber >= 75 ? 'bg-emerald-400' : 'bg-amber-400'
                             }`}
-                            style={{ width: `${Math.min(100, entailmentPctNumber)}%` }}
+                            style={{ transform: `scaleX(${Math.min(1, entailmentPctNumber / 100)})` }}
                           />
                         </div>
                       )}
@@ -766,11 +769,11 @@ export default function SourcePanel({
                           <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/70 dark:border-white/[0.05]">
                             <div className="flex items-center gap-1.5">
                               <span className="text-[10px] font-mono text-slate-500 dark:text-[#8B8B8E]">
-                                {claim.status === 'supported'
+                                {claim.polarity === 'contested' || claim.status === 'unsupported'
+                                  ? 'Contested'
+                                  : claim.polarity === 'supported' || claim.status === 'supported'
                                   ? 'Supported'
-                                  : claim.status === 'partially_supported'
-                                  ? 'Partial'
-                                  : 'Unsupported'}
+                                  : 'Partial'}
                               </span>
                               {claim.citation_ids &&
                                 claim.citation_ids.map((cid) => (
@@ -791,8 +794,8 @@ export default function SourcePanel({
                             <div className="flex items-center gap-1.5">
                               <div className="w-14 h-1 bg-slate-200 dark:bg-white/[0.08] rounded-full overflow-hidden">
                                 <div
-                                  className={`h-full rounded-full ${dotClass}`}
-                                  style={{ width: `${Math.min(100, covPct)}%` }}
+                                  className={`h-full w-full origin-left rounded-full ${dotClass}`}
+                                  style={{ transform: `scaleX(${Math.min(1, covPct / 100)})` }}
                                 />
                               </div>
                               <span className="text-[9.5px] font-mono text-slate-500 dark:text-[#8B8B8E] tabular-nums">
@@ -841,15 +844,24 @@ export default function SourcePanel({
                           style={{ ['--stagger-i' as any]: idx }}
                           className="stagger-card p-3 bg-slate-50/70 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.08] rounded-[8px] space-y-2"
                         >
-                          <div className="overflow-hidden rounded-[6px] bg-white dark:bg-[#050811] border border-slate-200 dark:border-white/[0.06] flex items-center justify-center max-h-56">
+                          <button
+                            type="button"
+                            onClick={() => onOpenFigureLightbox?.(idx)}
+                            className="group relative w-full overflow-hidden rounded-[6px] bg-white dark:bg-[#050811] border border-slate-200 dark:border-white/[0.06] flex items-center justify-center max-h-56 cursor-zoom-in"
+                            title="Inspect Scientific Plate (1×–4×)"
+                          >
                             <img
                               src={fig.url}
                               alt={fig.title || `Figure ${idx + 1}`}
                               loading="lazy"
-                              className="max-h-56 w-full object-contain"
+                              className="max-h-56 w-full object-contain transition-transform duration-200 group-hover:scale-[1.02]"
                               onError={() => setFailedFigures((prev) => ({ ...prev, [fig.url]: true }))}
                             />
-                          </div>
+                            <span className="absolute right-2 bottom-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/65 text-[9.5px] font-mono text-white opacity-85 group-hover:opacity-100">
+                              <ZoomIn size={10} />
+                              <span>Inspect</span>
+                            </span>
+                          </button>
                           <div className="space-y-1">
                             <p className="text-[12px] font-semibold text-slate-900 dark:text-[#EDEDED] leading-snug">
                               Figure {idx + 1}: {fig.title}

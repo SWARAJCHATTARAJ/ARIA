@@ -27,11 +27,14 @@ class AgentState(TypedDict):
     v2_confidence: Optional[float]
     latency_ms: Optional[float]
     
-    # Universal LLM Query Reformulation (router phase)
+    # Universal LLM Query Reformulation & Domain-Cognitive Planner
     canonical_topic: str
     academic_search_query: str
     wikipedia_exact_title: str
     query_is_english: bool
+    domain_discipline: Optional[str]
+    planned_outline: Optional[List[str]]
+    is_debated_or_empirical: Optional[bool]
     
     # Plan phase
     sub_queries: Annotated[List[str], append_to_list]

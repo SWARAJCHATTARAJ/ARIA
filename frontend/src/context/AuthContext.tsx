@@ -1,4 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../services/config';
@@ -8,10 +11,14 @@ export const isTauriRuntime =
   Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
 export const isCapacitorRuntime =
   typeof window !== 'undefined' &&
-  Boolean((window as any).Capacitor?.isNativePlatform?.());
+  (Capacitor.isNativePlatform() || Boolean((window as any).Capacitor?.isNativePlatform?.()));
 export const isNativeRuntime = isTauriRuntime || isCapacitorRuntime;
 
+export const SIGNUP_CONFIRM_REDIRECT_URL = 'https://aria.swarajchattaraj.tech';
 export const PASSWORD_RESET_REDIRECT_URL = 'https://aria.swarajchattaraj.tech/reset-password';
+export const WEB_OAUTH_REDIRECT_URL = 'https://aria.swarajchattaraj.tech';
+export const TAURI_OAUTH_REDIRECT_URL = 'http://tauri.localhost/';
+export const ANDROID_OAUTH_REDIRECT_URL = 'aria://auth/callback';
 
 export interface AuthUserProfile {
   id: string;
@@ -41,6 +48,7 @@ interface AuthContextType {
   signInWithGitHub: () => Promise<{ error: Error | null }>;
   signInWithPassword: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUpWithPassword: (email: string, password: string) => Promise<{ error: Error | null; needsEmailConfirmation?: boolean }>;
+  resendConfirmationEmail: (email: string) => Promise<{ error: Error | null }>;
   requestPasswordReset: (email: string) => Promise<{ error: Error | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
   deleteAccount: (params: { confirmText: string; password?: string }) => Promise<DeleteAccountResult>;
@@ -198,8 +206,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (isRecoveryUrl && mounted) {
           setIsPasswordRecovery(true);
         }
+        const rawSearch = typeof window !== 'undefined' ? window.location.search : '';
+        const rawHash = typeof window !== 'undefined' ? window.location.hash : '';
+        const isSignupConfirmUrl =
+          rawSearch.includes('type=signup') ||
+          rawHash.includes('type=signup') ||
+          rawSearch.includes('confirmation_sent=');
 
-        // Handle hash fragment tokens (e.g., OAuth implicit redirect or password recovery link)
+        // Handle hash fragment tokens (e.g., OAuth implicit redirect, signup confirmation, or password recovery)
         if (typeof window !== 'undefined' && window.location.hash.includes('access_token=')) {
           const params = new URLSearchParams(window.location.hash.substring(1));
           const access_token = params.get('access_token');
@@ -214,6 +228,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setSession(data.session);
               setAccessToken(data.session.access_token);
               setUser(mapSupabaseUser(data.session.user));
+              if (hashType === 'signup' || isSignupConfirmUrl) {
+                setAccountNotice('Email confirmed. Welcome to ARIA.');
+              }
               setIsLoading(false);
               try {
                 window.history.replaceState(null, '', window.location.pathname);
@@ -225,7 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Handle PKCE ?code= query parameter cleanly (including /reset-password?code=...)
+        // Handle PKCE ?code= query parameter cleanly (including /reset-password?code=... & email confirmation)
         if (typeof window !== 'undefined') {
           const searchParams = new URLSearchParams(window.location.search);
           const pkceCode = searchParams.get('code');
@@ -238,6 +255,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setUser(mapSupabaseUser(exchangeData.session.user));
                 if (isRecoveryUrl) {
                   setIsPasswordRecovery(true);
+                } else if (isSignupConfirmUrl) {
+                  setAccountNotice('Email confirmed. Welcome to ARIA.');
                 }
                 setIsLoading(false);
                 try {
@@ -249,6 +268,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               }
             } catch {
               // Code may have already been exchanged automatically by detectSessionInUrl
+            }
+          } else if (isSignupConfirmUrl && mounted) {
+            setAccountNotice('Email confirmed. You can now sign in to your ARIA workspace.');
+            try {
+              window.history.replaceState(null, '', window.location.pathname);
+            } catch {
+              // ignore
             }
           }
         }
@@ -284,6 +310,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('hashchange', handleHashChange);
 
+    let nativeAppListener: { remove: () => Promise<void> } | null = null;
+    if (Capacitor.isNativePlatform()) {
+      App.addListener('appUrlOpen', async ({ url }) => {
+        if (!url || !url.startsWith(ANDROID_OAUTH_REDIRECT_URL)) return;
+        try {
+          const parsed = new URL(url.replace(ANDROID_OAUTH_REDIRECT_URL, 'https://aria.local/auth/callback'));
+          const code = parsed.searchParams.get('code');
+          const hashParams = new URLSearchParams(parsed.hash.startsWith('#') ? parsed.hash.slice(1) : '');
+          if (code && supabase) {
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+            if (!error && data?.session?.user && mounted) {
+              setSession(data.session);
+              setAccessToken(data.session.access_token);
+              setUser(mapSupabaseUser(data.session.user));
+              setIsPasswordRecovery(false);
+              setIsLoading(false);
+            }
+          } else {
+            const access_token = hashParams.get('access_token');
+            const refresh_token = hashParams.get('refresh_token');
+            if (access_token && refresh_token && supabase) {
+              const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
+              if (!error && data?.session?.user && mounted) {
+                setSession(data.session);
+                setAccessToken(data.session.access_token);
+                setUser(mapSupabaseUser(data.session.user));
+                setIsPasswordRecovery(false);
+                setIsLoading(false);
+              }
+            }
+          }
+        } catch (cbErr) {
+          console.error('Native OAuth deep link error:', cbErr);
+        } finally {
+          try {
+            await Browser.close();
+          } catch {
+            // ignore if already closed
+          }
+        }
+      })
+        .then((handle) => {
+          nativeAppListener = handle;
+        })
+        .catch(() => {
+          // ignore
+        });
+    }
+
     if (supabase) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
         if (!mounted) return;
@@ -305,6 +380,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return () => {
         mounted = false;
         window.removeEventListener('hashchange', handleHashChange);
+        nativeAppListener?.remove().catch(() => {});
         subscription.unsubscribe();
       };
     }
@@ -312,6 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
       window.removeEventListener('hashchange', handleHashChange);
+      nativeAppListener?.remove().catch(() => {});
     };
   }, []);
 
@@ -321,7 +398,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
+      if (Capacitor.isNativePlatform()) {
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'github',
+          options: {
+            redirectTo: ANDROID_OAUTH_REDIRECT_URL,
+            skipBrowserRedirect: true,
+          },
+        });
+        if (error) throw error;
+        if (data?.url) {
+          await Browser.open({ url: data.url, presentationStyle: 'popover' });
+        }
+        return { error: null };
+      }
+
+      const redirectUrl = isTauriRuntime
+        ? TAURI_OAUTH_REDIRECT_URL
+        : WEB_OAUTH_REDIRECT_URL;
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
@@ -399,12 +493,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('Password must be at least 8 characters long.');
       }
 
-      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
       const { data, error } = await supabase.auth.signUp({
         email: trimmedEmail,
         password,
         options: {
-          emailRedirectTo: redirectUrl,
+          emailRedirectTo: SIGNUP_CONFIRM_REDIRECT_URL,
         },
       });
 
@@ -431,6 +524,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       return { error: null, needsEmailConfirmation: true };
+    } catch (err: any) {
+      return { error: err instanceof Error ? err : new Error(String(err)) };
+    }
+  };
+
+  const resendConfirmationEmail = async (email: string): Promise<{ error: Error | null }> => {
+    if (!supabase) {
+      return { error: new Error('Supabase client is not configured.') };
+    }
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      return { error: new Error('Please enter your account email address first.') };
+    }
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: trimmedEmail,
+        options: {
+          emailRedirectTo: SIGNUP_CONFIRM_REDIRECT_URL,
+        },
+      });
+      if (error) throw error;
+      return { error: null };
     } catch (err: any) {
       return { error: err instanceof Error ? err : new Error(String(err)) };
     }
@@ -567,6 +683,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithGitHub,
         signInWithPassword,
         signUpWithPassword,
+        resendConfirmationEmail,
         requestPasswordReset,
         updatePassword,
         deleteAccount,

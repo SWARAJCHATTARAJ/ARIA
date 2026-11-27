@@ -58,6 +58,72 @@ OPENALEX_TOPIC_CONCEPTS = {
 
 SCHOLARLY_SOURCE_TYPES = {"openalex", "crossref", "arxiv", "semantic_scholar", "pubmed"}
 
+DISCIPLINE_EXPANSION_TERMS = {
+    "arts_performance": "acoustics biomechanics pedagogy technique history",
+    "zoology_botany_earth": "taxonomy morphology ecology physiology habitat classification",
+    "medicine_clinical": "pathophysiology clinical trials epidemiology mechanism efficacy",
+    "instruments_engineering": "optics resolution instrumentation architecture calibration",
+    "cs_math": "algorithmic complexity formal analysis architecture benchmarks",
+    "geography_history_social": "geography history governance economy demographics culture",
+    "pure_science": "physical principles mechanism quantitative properties spectroscopy",
+    "general": "comprehensive review mechanisms taxonomy properties",
+}
+
+NICHE_CASE_PENALTY_TERMS = (
+    "unfpa", "futon", "memorandum", "letter to the editor", "erratum",
+    "corrigendum", "book review", "obituary", "conference report",
+    "case report:", "news in brief", "reply to:", "comment on:",
+)
+
+
+def _is_retracted_title(title: str) -> bool:
+    tl = (title or "").lower()
+    return (
+        tl.startswith("retracted:")
+        or tl.startswith("retraction:")
+        or "[retracted]" in tl
+        or "(retracted)" in tl
+        or "retraction notice" in tl
+    )
+
+
+def normalize_source_metadata(chunk: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensures every retrieved chunk carries clean authors, venue, title, and readable prose."""
+    c = dict(chunk)
+    title = (c.get("title") or "").strip()
+    if not title or title.lower() == "unknown":
+        title = c.get("source") or "Reference Source"
+    c["title"] = title
+
+    venue = (c.get("venue") or "").strip()
+    if not venue or venue.lower() in ("unknown", "n/a"):
+        stype = c.get("source_type", "")
+        venue = {
+            "openalex": "OpenAlex Indexed Journal",
+            "crossref": "Crossref Scholarly Archive",
+            "semantic_scholar": "Semantic Scholar",
+            "arxiv": "arXiv Preprint",
+            "pubmed": "PubMed / MEDLINE",
+            "wikipedia": "Wikipedia",
+        }.get(stype, _domain_from_url(c.get("url"), fallback="Web Reference"))
+    c["venue"] = venue
+
+    authors = c.get("authors")
+    if isinstance(authors, list):
+        clean_auth = [str(a).strip() for a in authors if a and str(a).strip().lower() != "unknown"]
+        c["authors"] = clean_auth if clean_auth else None
+    elif isinstance(authors, str) and authors.strip().lower() == "unknown":
+        c["authors"] = None
+
+    if not c.get("authors") and c.get("source_type") == "wikipedia":
+        c["authors"] = ["Wikipedia Contributors"]
+
+    snip = clean_scraped_reference_text(c.get("snippet") or c.get("content") or "")
+    if snip:
+        c["snippet"] = snip
+        c["content"] = snip
+    return c
+
 
 def resolve_min_year(recency: Optional[str] = None) -> Optional[int]:
     """Resolves UI recency filter ('all' | '5y' | '2y') to an inclusive cutoff year."""
@@ -250,6 +316,14 @@ def evaluate_topical_relevance(
     if not core_phrase_in_title and matched_title < len(core_entities):
         if phrase_count <= 1:
             score -= 20.0
+
+    # 6. Hyper-niche tangential artifact penalty for broad overview queries (1-2 entity tokens)
+    if len(core_entities) <= 2:
+        if any(np_term in title_norm for np_term in NICHE_CASE_PENALTY_TERMS):
+            score -= 24.0
+        # Penalize hyper-specific numeric memo/year micro-studies when user didn't ask for a specific year
+        if re.search(r'\b19\d{2}\b', title_norm) and not re.search(r'\b19\d{2}\b', subj_norm):
+            score -= 10.0
 
     # Negative domain check for ambiguous acronyms (e.g. PVC medical vs polymer)
     if "pvc" in subj_norm and any(neg in f"{title_norm} {text_norm}" for neg in ("ventricular", "arrhythmia", "cardiac", "myocardial", "ecg", "cardiomyopathy", "extrasystole", "systolic", "diastolic")):
@@ -457,7 +531,7 @@ async def search_openalex(
                     # Primary Location / Venue
                     primary_loc = work.get("primary_location") or {}
                     source_obj = primary_loc.get("source") or {}
-                    venue = source_obj.get("display_name") or "OpenAlex"
+                    venue = source_obj.get("display_name") or "OpenAlex Indexed Journal"
 
                     # Extract authors
                     raw_authors = []
@@ -478,7 +552,7 @@ async def search_openalex(
                     inv_index = work.get("abstract_inverted_index")
                     if inv_index and isinstance(inv_index, dict):
                         words = sorted([(pos, word) for word, positions in inv_index.items() for pos in positions])
-                        abstract = " ".join([w[1] for w in words[:180]])
+                        abstract = " ".join([w[1] for w in words[:220]])
 
                     # Strict topical relevance evaluation
                     rel_score, is_relevant = evaluate_topical_relevance(title, abstract, core_subject, core_entities)
@@ -486,25 +560,31 @@ async def search_openalex(
                         logger.info(f"Dropping off-topic OpenAlex paper for '{core_subject}': {title}")
                         continue
 
-                    snippet = abstract if abstract else f"Published in {year}. Authoritative work indexed by OpenAlex ({cited_by_count} citations)."
-                    source_str = f"OpenAlex [{year}]: {title}"
-                    if raw_doi:
-                        source_str = raw_doi
+                    # Guard against hyper-niche low-citation tangents hijacking broad 1-2 word topics
+                    if len(core_entities) <= 2 and cited_by_count < 3 and work_type not in ("review", "book-chapter", "reference-entry"):
+                        if not abstract or len(abstract) < 160:
+                            continue
+
+                    snippet = clean_scraped_reference_text(abstract) if abstract else f"Published in {year or 'peer-reviewed literature'} ({venue}, {cited_by_count} citations)."
+                    source_str = raw_doi or f"{venue} ({year or 'n.d.'})"
 
                     raw_work_id = work.get("id") or ""
                     work_url = raw_work_id if raw_work_id.startswith("http") else (f"https://openalex.org/{raw_work_id}" if raw_work_id else None)
                     final_url = raw_doi or work_url
 
                     # Citation weighting and review preference:
-                    citation_weight = math.log10(max(1, cited_by_count) + 1.0) * 2.5
-                    is_review = work_type in ("review", "book-chapter") or "review" in title.lower()
-                    review_bonus = 6.0 if is_review else 0.0
+                    citation_weight = math.log10(max(1, cited_by_count) + 1.0) * 3.0
+                    is_review = work_type in ("review", "book-chapter", "reference-entry") or any(
+                        kw in title.lower() for kw in ("review", "overview", "handbook", "survey", "principles of")
+                    )
+                    review_bonus = 7.0 if is_review else 0.0
+                    retracted_flag = is_retracted or _is_retracted_title(title)
                     authoritative_score = rel_score + citation_weight + review_bonus
 
-                    candidates.append((authoritative_score, {
+                    candidates.append((authoritative_score, normalize_source_metadata({
                         "tier": "LIVE",
                         "source_type": "openalex",
-                        "review_status": "scholarly",
+                        "review_status": "retracted" if retracted_flag else "scholarly",
                         "title": title,
                         "path": None,
                         "url": final_url,
@@ -515,10 +595,10 @@ async def search_openalex(
                         "source": source_str,
                         "doi": doi,
                         "arxiv_id": arxiv_id,
-                        "is_retracted": is_retracted,
+                        "is_retracted": retracted_flag,
                         "published": pub_date,
                         "cited_by_count": cited_by_count
-                    }))
+                    })))
     except Exception as e:
         status_str = f"failed: {type(e).__name__}"
         logger.warning(f"OpenAlex search error: {e}")
@@ -665,25 +745,27 @@ async def search_semantic_scholar(
     query: str,
     max_results: int = 3,
     min_year: Optional[int] = None,
+    canonical_topic: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Queries the free Semantic Scholar Graph API for scholarly papers with abstracts.
-    Applies the same evidence-density discipline as arXiv/OpenAlex (>=120 char abstracts
-    and >=2 content-word overlap) so Semantic Scholar citations stay substantive.
+    Queries the free Semantic Scholar Graph API for scholarly papers with abstracts & TL;DR.
+    Applies strict topical relevance + citation authority ranking.
     """
-    clean_q = re.sub(r"[?*#&%=+\[\]\"]", " ", query).strip()
+    core_subject, core_entities = extract_core_subject_entities(query, canonical_topic)
+    clean_q = re.sub(r"[?*#&%=+\[\]\"]", " ", core_subject or query).strip()
     clean_query = " ".join(clean_q.split())[:200]
     year_param = f"&year={min_year}-" if min_year else ""
+    fetch_limit = max(6, max_results * 3)
     url = (
         "https://api.semanticscholar.org/graph/v1/paper/search"
         f"?query={urllib.parse.quote_plus(clean_query)}"
         f"{year_param}"
-        "&fields=title,abstract,year,venue,externalIds,url,authors,citationCount,openAccessPdf"
-        f"&limit={max_results}"
+        "&fields=title,abstract,tldr,year,venue,externalIds,url,authors,citationCount,openAccessPdf"
+        f"&limit={fetch_limit}"
     )
     headers = {"User-Agent": "ARIA-Research-Assistant/2.0 (mailto:swarajchattaraj@users.noreply.github.com)"}
 
-    results = []
+    candidates: List[Tuple[float, Dict[str, Any]]] = []
     t0 = time.time()
     start_iso = datetime.datetime.now().isoformat()
     status_str = "error"
@@ -693,14 +775,16 @@ async def search_semantic_scholar(
             status_str = f"HTTP {resp.status_code}"
             if resp.status_code == 200:
                 data = resp.json()
-                q_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", query.lower())) - STOP_WORDS
                 for paper in data.get("data", []):
                     title = (paper.get("title") or "").strip()
                     abstract = (paper.get("abstract") or "").strip().replace("\n", " ")
-                    if not title or len(abstract) < 120:
+                    tldr_txt = ((paper.get("tldr") or {}).get("text") or "").strip() if isinstance(paper.get("tldr"), dict) else ""
+                    combined_text = abstract if len(abstract) >= 120 else (f"{tldr_txt} {abstract}".strip() if len(tldr_txt) >= 80 else "")
+                    if not title or len(combined_text) < 100:
                         continue
-                    paper_tokens = set(re.findall(r"\b[a-zA-Z]{3,}\b", (title + " " + abstract).lower()))
-                    if q_tokens and len(q_tokens.intersection(paper_tokens)) < 2:
+
+                    rel_score, is_rel = evaluate_topical_relevance(title, combined_text, core_subject, core_entities)
+                    if not is_rel:
                         continue
 
                     ext = paper.get("externalIds") or {}
@@ -708,6 +792,7 @@ async def search_semantic_scholar(
                     arxiv_id = ext.get("ArXiv")
                     year = paper.get("year")
                     venue = paper.get("venue") or "Semantic Scholar"
+                    cited_by_count = paper.get("citationCount") or 0
                     raw_authors = [
                         a.get("name") for a in (paper.get("authors") or [])
                         if isinstance(a, dict) and a.get("name")
@@ -715,25 +800,27 @@ async def search_semantic_scholar(
                     authors = clean_authors_list(raw_authors)
                     author_str = f" ({', '.join(authors[:2])}{' et al.' if len(authors) > 2 else ''})" if authors else ""
                     paper_url = paper.get("url") or (f"https://doi.org/{doi}" if doi else None)
+                    retracted_flag = _is_retracted_title(title)
+                    auth_score = rel_score + math.log10(max(1, cited_by_count) + 1.0) * 2.5
 
-                    results.append({
+                    candidates.append((auth_score, normalize_source_metadata({
                         "tier": "LIVE",
                         "source_type": "semantic_scholar",
-                        "review_status": "scholarly",
+                        "review_status": "retracted" if retracted_flag else "scholarly",
                         "title": title,
                         "path": None,
                         "url": paper_url,
                         "authors": authors,
                         "year": int(year) if isinstance(year, int) or (isinstance(year, str) and year.isdigit()) else None,
                         "venue": venue,
-                        "snippet": abstract,
+                        "snippet": combined_text[:1800],
                         "source": f"Semantic Scholar:{arxiv_id or doi or title[:60]}{author_str}",
                         "arxiv_id": arxiv_id,
                         "doi": doi,
-                        "is_retracted": False,
+                        "is_retracted": retracted_flag,
                         "published": str(year) if year else None,
-                        "cited_by_count": paper.get("citationCount", 0)
-                    })
+                        "cited_by_count": cited_by_count
+                    })))
     except Exception as e:
         status_str = f"failed: {type(e).__name__}"
         logger.warning(f"Semantic Scholar search error: {e}")
@@ -742,7 +829,8 @@ async def search_semantic_scholar(
         end_iso = datetime.datetime.now().isoformat()
         retrieval_tracker.record("provider_semantic_scholar", t0, t1, start_iso, end_iso, status_str)
 
-    return results
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return [c[1] for c in candidates[:max_results]]
 
 async def _fetch_wikipedia_api_entry(
     client: httpx.AsyncClient,
@@ -939,7 +1027,7 @@ async def search_crossref(
     date_filter = f"&filter=from-pub-date:{min_year}-01-01" if min_year else ""
     url = (
         f"https://api.crossref.org/works?query={clean_query}"
-        f"{date_filter}&rows={max(6, max_results * 3)}&select=DOI,title,author,published-print,published-online,issued,container-title,abstract,type"
+        f"{date_filter}&rows={max(6, max_results * 3)}&select=DOI,title,author,published-print,published-online,issued,container-title,abstract,type,update-to,relation,is-referenced-by-count"
     )
     headers = {"User-Agent": "ARIA-Research-Assistant/2.0 (mailto:swarajchattaraj@users.noreply.github.com)"}
 
@@ -969,7 +1057,18 @@ async def search_crossref(
 
                     doi = item.get("DOI")
                     containers = item.get("container-title") or []
-                    venue = (containers[0] if containers else "Crossref").strip()
+                    venue = (containers[0] if containers else "Crossref Scholarly Archive").strip()
+
+                    # Detect Crossmark/Crossref retraction notices or retracted-work relations
+                    item_type = str(item.get("type") or "").lower()
+                    updates = item.get("update-to") or []
+                    relations = item.get("relation") or {}
+                    retracted_flag = (
+                        item_type == "retraction"
+                        or _is_retracted_title(title)
+                        or any(str(u.get("type") or "").lower() == "retraction" for u in updates if isinstance(u, dict))
+                        or bool(isinstance(relations, dict) and (relations.get("is-retracted-by") or relations.get("retraction-of")))
+                    )
 
                     date_parts = (
                         (item.get("published-print") or {}).get("date-parts")
@@ -990,11 +1089,13 @@ async def search_crossref(
                             raw_authors.append(full_name)
                     authors = clean_authors_list(raw_authors)
 
+                    cited_by_count = int(item.get("is-referenced-by-count") or 0)
                     work_url = f"https://doi.org/{doi}" if doi else None
-                    candidates.append((rel_score, {
+                    auth_score = rel_score + math.log10(max(1, cited_by_count) + 1.0) * 2.5
+                    candidates.append((auth_score, normalize_source_metadata({
                         "tier": "LIVE",
                         "source_type": "crossref",
-                        "review_status": "scholarly",
+                        "review_status": "retracted" if retracted_flag else "scholarly",
                         "title": title,
                         "path": None,
                         "url": work_url,
@@ -1005,9 +1106,10 @@ async def search_crossref(
                         "source": work_url or venue,
                         "doi": doi,
                         "arxiv_id": None,
-                        "is_retracted": False,
+                        "is_retracted": retracted_flag,
                         "published": str(year) if year else None,
-                    }))
+                        "cited_by_count": cited_by_count,
+                    })))
     except Exception as e:
         status_str = f"failed: {type(e).__name__}"
         logger.debug(f"Crossref search error: {e}")
@@ -1442,6 +1544,8 @@ async def search_all_free_sources(
     topic: Optional[str] = None,
     source_tier: str = "all",
     recency: str = "all",
+    sub_queries: Optional[List[str]] = None,
+    domain_discipline: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Executes parallel multi-source search across scholarly and general providers.
@@ -1449,6 +1553,8 @@ async def search_all_free_sources(
       Crossref, Semantic Scholar, and PubMed (skipping Wikipedia & DuckDuckGo).
     - When recency is '5y' or '2y': pushes publication-year cutoff to providers,
       filters older works, and boosts recent papers in ranking.
+    - Runs a targeted query expansion pass (Pass 2) when Pass 1 yields fewer than
+      3 high-relevance scholarly sources.
     """
     t_retrieval_start = time.time()
     iso_start = datetime.datetime.now().isoformat()
@@ -1466,22 +1572,28 @@ async def search_all_free_sources(
     peer_reviewed_only = (source_tier == "peer_reviewed")
 
     provider_tasks = [
-        asyncio.create_task(search_openalex(query, max_results=3, topic=topic, canonical_topic=canonical_topic, min_year=min_year)),
-        asyncio.create_task(search_crossref(query, max_results=2, canonical_topic=canonical_topic, min_year=min_year)),
+        asyncio.create_task(search_openalex(query, max_results=4, topic=topic, canonical_topic=canonical_topic, min_year=min_year)),
+        asyncio.create_task(search_crossref(query, max_results=3, canonical_topic=canonical_topic, min_year=min_year)),
         asyncio.create_task(search_arxiv(query, max_results=3, canonical_topic=canonical_topic, topic=topic, min_year=min_year)),
-        asyncio.create_task(search_semantic_scholar(query, max_results=2, min_year=min_year)),
+        asyncio.create_task(search_semantic_scholar(query, max_results=3, min_year=min_year, canonical_topic=canonical_topic)),
         asyncio.create_task(search_pubmed(query, max_results=2, canonical_topic=canonical_topic, min_year=min_year)),
     ]
+    # Include a secondary sub-query facet on OpenAlex when planned sub_queries diversify coverage
+    facet_queries = [sq for sq in (sub_queries or []) if sq and sq.strip().lower() != query.strip().lower()]
+    if facet_queries:
+        provider_tasks.append(
+            asyncio.create_task(search_openalex(facet_queries[0], max_results=2, topic=topic, canonical_topic=canonical_topic, min_year=min_year))
+        )
     if not peer_reviewed_only:
         provider_tasks.extend([
             asyncio.create_task(search_wikipedia(query, max_results=1, exact_title=wikipedia_title, canonical_topic=canonical_topic)),
             asyncio.create_task(search_duckduckgo(query, max_results=3)),
         ])
-    
-    # Cap providers at 10.0s so total retrieval stays well within 15.0s
-    done, pending = await asyncio.wait(provider_tasks, timeout=10.0)
+
+    # Cap Pass 1 providers at 8.5s so Pass 2 expansion (if needed) still fits inside 15s
+    done, pending = await asyncio.wait(provider_tasks, timeout=8.5)
     if pending:
-        logger.warning(f"[RETRIEVAL] {len(pending)} provider task(s) timed out at 10.0s cap and will be cancelled.")
+        logger.warning(f"[RETRIEVAL] {len(pending)} provider task(s) timed out at 8.5s cap and will be cancelled.")
         for p in pending:
             p.cancel()
 
@@ -1494,18 +1606,58 @@ async def search_all_free_sources(
         except Exception as e:
             logger.warning(f"Provider task failed: {e}")
 
+    # Pass 2 targeted query expansion if fewer than 3 high-relevance scholarly sources returned
+    high_rel_scholarly = [
+        c for c in combined
+        if c.get("source_type") in SCHOLARLY_SOURCE_TYPES
+        and not c.get("is_retracted")
+        and evaluate_topical_relevance(c.get("title", ""), c.get("snippet", "") or c.get("content", ""), core_subject, core_entities)[0] >= 10.0
+    ]
+    if len(high_rel_scholarly) < 3 and (time.time() - t_retrieval_start) < 9.5:
+        disc_terms = DISCIPLINE_EXPANSION_TERMS.get(domain_discipline or "general", DISCIPLINE_EXPANSION_TERMS["general"])
+        expanded_q = f"{core_subject or query} {disc_terms}".strip()
+        if facet_queries and len(facet_queries) > 1:
+            expanded_q = facet_queries[1]
+        logger.info(f"[RETRIEVAL] Pass 1 yielded {len(high_rel_scholarly)} scholarly sources (<3); running Pass 2 expansion: '{expanded_q[:80]}'")
+        pass2_tasks = [
+            asyncio.create_task(search_openalex(expanded_q, max_results=3, topic=topic, canonical_topic=canonical_topic, min_year=min_year)),
+            asyncio.create_task(search_semantic_scholar(expanded_q, max_results=3, min_year=min_year, canonical_topic=canonical_topic)),
+            asyncio.create_task(search_crossref(expanded_q, max_results=2, canonical_topic=canonical_topic, min_year=min_year)),
+        ]
+        done_p2, pending_p2 = await asyncio.wait(pass2_tasks, timeout=4.0)
+        for p in pending_p2:
+            p.cancel()
+        for t in done_p2:
+            try:
+                res = t.result()
+                if isinstance(res, list):
+                    combined.extend(res)
+            except Exception:
+                pass
+
     if peer_reviewed_only:
         combined = [c for c in combined if c.get("source_type") in SCHOLARLY_SOURCE_TYPES]
             
-    # Strict Topical Relevance Filtering against Core Subject & Entities:
+    # Strict Topical Relevance Filtering & Deduplication against Core Subject & Entities:
     valid_chunks = []
+    seen_source_keys = set()
     for chunk in combined:
+        chunk = normalize_source_metadata(chunk)
         title = chunk.get("title", "")
         text = chunk.get("snippet", "") or chunk.get("content", "")
+        dedup_key = (
+            (chunk.get("doi") or "").strip().lower()
+            or (chunk.get("url") or "").strip().lower()
+            or re.sub(r'\W+', '', title.lower())
+        )
+        if dedup_key and dedup_key in seen_source_keys:
+            continue
         score, is_relevant = evaluate_topical_relevance(title, text, core_subject, core_entities)
         if not is_relevant:
             logger.info(f"Cross-provider filter: Dropped off-topic source for '{core_subject}': {title}")
             continue
+        if dedup_key:
+            seen_source_keys.add(dedup_key)
         chunk["_topical_score"] = score
         valid_chunks.append(chunk)
 

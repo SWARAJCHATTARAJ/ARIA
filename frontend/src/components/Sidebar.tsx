@@ -65,7 +65,7 @@ export default function Sidebar({
             </div>
           ) : (
             <span
-              className="text-[13px] font-sans font-semibold text-[#60A5FA] cursor-pointer hover:opacity-85 transition-opacity"
+              className="text-[13px] font-sans font-semibold text-[var(--aria-accent)] cursor-pointer hover:opacity-85 transition-opacity"
               onClick={() => onTabChange('query')}
               title="New Question (Research Workspace)"
             >
@@ -76,7 +76,7 @@ export default function Sidebar({
           {onToggleCollapsed && (
             <button
               onClick={onToggleCollapsed}
-              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-all"
+              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-colors transition-transform"
               title={isRail ? 'Expand sidebar (Ctrl+B / ⌘B)' : 'Collapse sidebar (Ctrl+B / ⌘B)'}
               aria-label={isRail ? 'Expand sidebar' : 'Collapse sidebar'}
             >
@@ -89,7 +89,7 @@ export default function Sidebar({
         {onOpenCommandPalette && !isRail && (
           <button
             onClick={onOpenCommandPalette}
-            className="w-full flex items-center justify-between px-3 py-2 bg-[#09090B] border border-white/[0.07] rounded-[6px] text-[12px] text-[#8B8B8E] hover:text-[#EDEDED] hover:border-white/[0.15] active:scale-[0.98] transition-all cursor-pointer"
+            className="w-full flex items-center justify-between px-3 py-2 bg-[#09090B] border border-white/[0.07] rounded-[6px] text-[12px] text-[#8B8B8E] hover:text-[#EDEDED] hover:border-white/[0.15] active:scale-[0.98] transition-colors transition-transform cursor-pointer"
           >
             <span className="flex items-center gap-2">
               <Command size={13} className="text-[#71717A]" />
@@ -110,13 +110,13 @@ export default function Sidebar({
                 key={id}
                 onClick={() => onTabChange(id)}
                 title={isRail ? label : undefined}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-[6px] text-[13px] tracking-[-0.01em] transition-all active:scale-[0.98] cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-[6px] text-[13px] tracking-[-0.01em] transition-colors transition-transform active:scale-[0.98] cursor-pointer ${
                   isActive
                     ? 'bg-[#18181E] text-[#EDEDED] font-medium border border-white/[0.07]'
                     : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#111115] border border-transparent'
                 } ${isRail ? 'justify-center px-0' : ''}`}
               >
-                <Icon size={16} className={isActive ? 'text-[#60A5FA]' : 'text-[#8B8B8E]'} />
+                <Icon size={16} className={isActive ? 'text-[var(--aria-accent)]' : 'text-[#8B8B8E]'} />
                 {!isRail && <span>{label}</span>}
               </button>
             );
@@ -131,7 +131,7 @@ export default function Sidebar({
           {!isRail && (
             <button
               onClick={toggleTheme}
-              className="flex items-center gap-2 text-[12px] font-sans text-[#8B8B8E] hover:text-[#EDEDED] p-1.5 rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-all cursor-pointer"
+              className="flex items-center gap-2 text-[12px] font-sans text-[#8B8B8E] hover:text-[#EDEDED] p-1.5 rounded-[6px] hover:bg-[#18181E] active:scale-[0.98] transition-colors transition-transform cursor-pointer"
               title={`Switch to ${settings.theme === 'dark' ? 'Light' : 'Dark'} theme`}
             >
               {settings.theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
@@ -141,7 +141,7 @@ export default function Sidebar({
           {isRail && (
             <button
               onClick={toggleTheme}
-              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#18181E] active:scale-[0.98] rounded-[6px] transition-all cursor-pointer"
+              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#18181E] active:scale-[0.98] rounded-[6px] transition-colors transition-transform cursor-pointer"
               title={`Switch to ${settings.theme === 'dark' ? 'Light' : 'Dark'} theme`}
             >
               {settings.theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
@@ -153,7 +153,7 @@ export default function Sidebar({
               onClick={() => signOut()}
               title="Sign out"
               aria-label="Sign out"
-              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#18181E] active:scale-[0.98] rounded-[6px] transition-all"
+              className="p-1.5 text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-[#18181E] active:scale-[0.98] rounded-[6px] transition-colors transition-transform"
             >
               <LogOut size={15} />
             </button>

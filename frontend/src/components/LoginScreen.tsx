@@ -20,6 +20,7 @@ export default function LoginScreen() {
     signInWithGitHub,
     signInWithPassword,
     signUpWithPassword,
+    resendConfirmationEmail,
     requestPasswordReset,
     updatePassword,
     isPasswordRecovery,
@@ -34,8 +35,10 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Forgot-password cooldown (60s anti-enumeration throttle)
+  // Forgot-password & confirmation-resend cooldowns (60s)
   const [resetCooldownSeconds, setResetCooldownSeconds] = useState(0);
+  const [resendCooldownSeconds, setResendCooldownSeconds] = useState(0);
+  const [isResendingConfirm, setIsResendingConfirm] = useState(false);
 
   // Set New Password state (for /reset-password and PASSWORD_RECOVERY)
   const [newPassword, setNewPassword] = useState('');
@@ -82,7 +85,7 @@ export default function LoginScreen() {
     };
   }, []);
 
-  // 60-second countdown timer for password reset submissions
+  // 60-second countdown timer for password reset & resend confirmation submissions
   useEffect(() => {
     if (resetCooldownSeconds <= 0) return;
     const timer = window.setInterval(() => {
@@ -90,6 +93,29 @@ export default function LoginScreen() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [resetCooldownSeconds]);
+
+  useEffect(() => {
+    if (resendCooldownSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      setResendCooldownSeconds((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCooldownSeconds]);
+
+  const handleResendConfirmation = async () => {
+    if (resendCooldownSeconds > 0 || isResendingConfirm) return;
+    setIsResendingConfirm(true);
+    setAuthSuccess(null);
+    const { error } = await resendConfirmationEmail(email);
+    setIsResendingConfirm(false);
+    if (error) {
+      setAuthError(error.message || 'Unable to resend confirmation email.');
+    } else {
+      setAuthError(null);
+      setAuthSuccess('Confirmation email resent. Check your inbox and click the verification link.');
+      setResendCooldownSeconds(60);
+    }
+  };
 
   const handleGitHub = async () => {
     setGitHubError(null);
@@ -236,7 +262,7 @@ export default function LoginScreen() {
           </div>
 
           <div className="flex items-start gap-2.5">
-            <KeyRound size={18} className="text-[#60A5FA] shrink-0 mt-1" />
+            <KeyRound size={18} className="text-[var(--aria-accent)] shrink-0 mt-1" />
             <div>
               <h1 className="text-[20px] font-semibold text-[#EDEDED] tracking-[-0.02em]">
                 Set New Password
@@ -279,7 +305,7 @@ export default function LoginScreen() {
                     placeholder="Minimum 8 characters"
                     disabled={isSubmitting}
                     autoComplete="new-password"
-                    className="w-full bg-[#111115] pl-9 pr-10 py-2 text-[13px] text-[#EDEDED] placeholder-[#71717A] border border-white/[0.08] focus:border-[#60A5FA]/50 focus:outline-none rounded-[6px] transition-colors font-mono"
+                    className="w-full bg-[#111115] pl-9 pr-10 py-2 text-[13px] text-[#EDEDED] placeholder-[#71717A] border border-white/[0.08] focus:border-[var(--aria-accent)]/50 focus:outline-none rounded-[6px] transition-colors font-mono"
                     aria-label="New password"
                   />
                   <button
@@ -310,7 +336,7 @@ export default function LoginScreen() {
                     placeholder="Re-enter password"
                     disabled={isSubmitting}
                     autoComplete="new-password"
-                    className="w-full bg-[#111115] pl-9 pr-3 py-2 text-[13px] text-[#EDEDED] placeholder-[#71717A] border border-white/[0.08] focus:border-[#60A5FA]/50 focus:outline-none rounded-[6px] transition-colors font-mono"
+                    className="w-full bg-[#111115] pl-9 pr-3 py-2 text-[13px] text-[#EDEDED] placeholder-[#71717A] border border-white/[0.08] focus:border-[var(--aria-accent)]/50 focus:outline-none rounded-[6px] transition-colors font-mono"
                     aria-label="Confirm new password"
                   />
                 </div>
@@ -332,7 +358,7 @@ export default function LoginScreen() {
               <button
                 type="submit"
                 disabled={isSubmitting || newPassword.length < 8 || newPassword !== confirmNewPassword}
-                className="w-full py-2.5 px-4 bg-[#EDEDED] hover:bg-white text-[#09090B] font-medium text-[13px] rounded-[6px] flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                className="w-full py-2.5 px-4 bg-[#EDEDED] hover:bg-white text-[#09090B] font-medium text-[13px] rounded-[6px] flex items-center justify-center gap-2 transition-colors transition-transform active:scale-[0.98] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
               >
                 {isSubmitting ? (
                   <>
@@ -348,7 +374,7 @@ export default function LoginScreen() {
             <button
               type="button"
               onClick={() => clearPasswordRecovery()}
-              className="w-full py-2.5 px-4 bg-[#EDEDED] hover:bg-white text-[#09090B] font-medium text-[13px] rounded-[6px] flex items-center justify-center gap-2 transition-all cursor-pointer"
+              className="w-full py-2.5 px-4 bg-[#EDEDED] hover:bg-white text-[#09090B] font-medium text-[13px] rounded-[6px] flex items-center justify-center gap-2 transition-colors transition-transform cursor-pointer"
             >
               <span>{user ? 'Enter Workspace' : 'Continue to Sign In'}</span>
             </button>
@@ -426,7 +452,7 @@ export default function LoginScreen() {
                 setAuthError(null);
                 setAuthSuccess(null);
               }}
-              className={`py-1.5 text-[12px] font-mono font-medium rounded-[5px] transition-all cursor-pointer ${
+              className={`py-1.5 text-[12px] font-mono font-medium rounded-[5px] transition-colors transition-transform cursor-pointer ${
                 mode === 'signin'
                   ? 'bg-[#18181E] text-[#EDEDED] shadow-sm border border-white/[0.08]'
                   : 'text-[#8B8B8E] hover:text-[#EDEDED]'
@@ -441,7 +467,7 @@ export default function LoginScreen() {
                 setAuthError(null);
                 setAuthSuccess(null);
               }}
-              className={`py-1.5 text-[12px] font-mono font-medium rounded-[5px] transition-all cursor-pointer ${
+              className={`py-1.5 text-[12px] font-mono font-medium rounded-[5px] transition-colors transition-transform cursor-pointer ${
                 mode === 'signup'
                   ? 'bg-[#18181E] text-[#EDEDED] shadow-sm border border-white/[0.08]'
                   : 'text-[#8B8B8E] hover:text-[#EDEDED]'
@@ -454,15 +480,33 @@ export default function LoginScreen() {
 
         {/* Inline Alerts */}
         {authError && (
-          <div className="p-3 bg-[#0D090B] border border-red-500/40 text-[12px] text-red-400 rounded-[6px] flex items-start gap-2">
-            <AlertCircle size={14} className="shrink-0 mt-0.5 text-red-400" />
-            <span className="leading-snug">{authError}</span>
+          <div className="p-3 bg-[#0D090B] border border-red-500/40 text-[12px] text-red-400 rounded-[6px] flex flex-col gap-2">
+            <div className="flex items-start gap-2">
+              <AlertCircle size={14} className="shrink-0 mt-0.5 text-red-400" />
+              <span className="leading-snug">{authError}</span>
+            </div>
+            {authError.toLowerCase().includes('not been confirmed') && (
+              <div className="pl-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResendConfirmation}
+                  disabled={resendCooldownSeconds > 0 || isResendingConfirm}
+                  className="px-2.5 py-1 text-[11px] font-mono rounded-[5px] border border-red-400/35 bg-red-500/10 text-red-200 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer tabular-nums"
+                >
+                  {isResendingConfirm
+                    ? 'Sending...'
+                    : resendCooldownSeconds > 0
+                    ? `Resend in ${resendCooldownSeconds}s`
+                    : 'Resend confirmation email'}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
         {authSuccess && (
-          <div className="p-3 bg-[#090D11] border border-[#60A5FA]/40 text-[12px] text-[#60A5FA] rounded-[6px] flex items-start gap-2">
-            <CheckCircle2 size={14} className="shrink-0 mt-0.5 text-[#60A5FA]" />
+          <div className="p-3 bg-[#090D11] border border-[var(--aria-accent)]/40 text-[12px] text-[var(--aria-accent)] rounded-[6px] flex items-start gap-2">
+            <CheckCircle2 size={14} className="shrink-0 mt-0.5 text-[var(--aria-accent)]" />
             <span className="leading-snug">{authSuccess}</span>
           </div>
         )}
@@ -492,7 +536,7 @@ export default function LoginScreen() {
                 placeholder="name@university.edu"
                 disabled={isSubmitting}
                 autoComplete="email"
-                className="w-full bg-[#111115] pl-9 pr-3 py-2 text-[13px] text-[#EDEDED] placeholder-[#71717A] border border-white/[0.08] focus:border-[#60A5FA]/50 focus:outline-none rounded-[6px] transition-colors"
+                className="w-full bg-[#111115] pl-9 pr-3 py-2 text-[13px] text-[#EDEDED] placeholder-[#71717A] border border-white/[0.08] focus:border-[var(--aria-accent)]/50 focus:outline-none rounded-[6px] transition-colors"
                 aria-label="Email address"
               />
             </div>
@@ -517,7 +561,7 @@ export default function LoginScreen() {
                       setAuthSuccess(null);
                       setGitHubError(null);
                     }}
-                    className="text-[11px] font-mono text-[#60A5FA] hover:text-[#93C5FD] transition-colors cursor-pointer"
+                    className="text-[11px] font-mono text-[var(--aria-accent)] hover:text-[#93C5FD] transition-colors cursor-pointer"
                   >
                     Forgot password?
                   </button>
@@ -535,7 +579,7 @@ export default function LoginScreen() {
                   placeholder="••••••••"
                   disabled={isSubmitting}
                   autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                  className="w-full bg-[#111115] pl-9 pr-10 py-2 text-[13px] text-[#EDEDED] placeholder-[#71717A] border border-white/[0.08] focus:border-[#60A5FA]/50 focus:outline-none rounded-[6px] transition-colors font-mono"
+                  className="w-full bg-[#111115] pl-9 pr-10 py-2 text-[13px] text-[#EDEDED] placeholder-[#71717A] border border-white/[0.08] focus:border-[var(--aria-accent)]/50 focus:outline-none rounded-[6px] transition-colors font-mono"
                   aria-label="Password"
                 />
                 <button
@@ -559,7 +603,7 @@ export default function LoginScreen() {
               (mode !== 'forgot' && !password) ||
               (mode === 'forgot' && resetCooldownSeconds > 0)
             }
-            className="w-full py-2.5 px-4 bg-[#EDEDED] hover:bg-white text-[#09090B] font-medium text-[13px] rounded-[6px] flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+            className="w-full py-2.5 px-4 bg-[#EDEDED] hover:bg-white text-[#09090B] font-medium text-[13px] rounded-[6px] flex items-center justify-center gap-2 transition-colors transition-transform active:scale-[0.98] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
           >
             {isSubmitting ? (
               <>
@@ -615,7 +659,7 @@ export default function LoginScreen() {
               type="button"
               onClick={handleGitHub}
               disabled={isGitHubLoading}
-              className="w-full py-2.5 px-4 bg-[#111115] hover:bg-[#18181E] border border-white/[0.08] hover:border-white/[0.16] text-[#EDEDED] text-[13px] font-medium rounded-[6px] flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 px-4 bg-[#111115] hover:bg-[#18181E] border border-white/[0.08] hover:border-white/[0.16] text-[#EDEDED] text-[13px] font-medium rounded-[6px] flex items-center justify-center gap-2.5 transition-colors transition-transform active:scale-[0.98] cursor-pointer disabled:opacity-50"
             >
               {isGitHubLoading ? (
                 <>

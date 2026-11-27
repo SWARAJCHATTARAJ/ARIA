@@ -149,6 +149,16 @@ export function SettingsContextProvider({ children }: { children: ReactNode }) {
         root.classList.add('light');
         root.classList.remove('dark');
       }
+      const themeColors: Record<string, Record<'dark' | 'light', string>> = {
+        'cyber-cyan': { dark: '#050811', light: '#F8FAFC' },
+        'emerald-biolab': { dark: '#040B08', light: '#F4F9F6' },
+        'obsidian-gold': { dark: '#09090B', light: '#FAF9F5' },
+        'solaris-paper': { dark: '#141210', light: '#F7F4ED' },
+      };
+      const metaHex = themeColors[settings.themePreset]?.[effectiveTheme] || (effectiveTheme === 'dark' ? '#050811' : '#F7F4ED');
+      document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+        meta.setAttribute('content', metaHex);
+      });
       if (effectiveTheme !== settings.theme && settings.surfaceMode === 'system') {
         setSettings((prev) => ({ ...prev, theme: effectiveTheme }));
       }

@@ -305,7 +305,7 @@ export default function SettingsView() {
                 key={sec.id}
                 type="button"
                 onClick={() => setActiveSection(sec.id)}
-                className={`w-full text-left px-3 py-2.5 rounded-[7px] text-[12.5px] font-medium flex items-center gap-2.5 transition-all cursor-pointer ${
+                className={`w-full text-left px-3 py-2.5 rounded-[7px] text-[12.5px] font-medium flex items-center gap-2.5 transition-colors transition-transform cursor-pointer ${
                   active
                     ? 'bg-[#18181E] text-[#EDEDED] border border-white/[0.08]'
                     : 'text-[#8B8B8E] hover:text-[#EDEDED] hover:bg-white/[0.03] border border-transparent'
@@ -374,7 +374,7 @@ export default function SettingsView() {
                           key={st.id}
                           type="button"
                           onClick={() => onUpdateSettings({ defaultCitationStyle: st.id })}
-                          className={`py-2 px-3 rounded-[6px] border text-[12px] font-mono transition-all cursor-pointer ${
+                          className={`py-2 px-3 rounded-[6px] border text-[12px] font-mono transition-colors transition-transform cursor-pointer ${
                             settings.defaultCitationStyle === st.id
                               ? 'border-[var(--aria-accent)] bg-[#18181E] text-[var(--aria-accent)] font-semibold'
                               : 'border-white/[0.07] bg-[#09090B] text-[#8B8B8E] hover:text-[#EDEDED]'
@@ -403,7 +403,7 @@ export default function SettingsView() {
                             key={opt.id}
                             type="button"
                             onClick={() => onUpdateSettings({ defaultSourceTier: opt.id })}
-                            className={`py-2 px-2.5 rounded-[6px] border text-[11.5px] font-mono transition-all cursor-pointer ${
+                            className={`py-2 px-2.5 rounded-[6px] border text-[11.5px] font-mono transition-colors transition-transform cursor-pointer ${
                               settings.defaultSourceTier === opt.id
                                 ? 'border-[var(--aria-accent)] bg-[#18181E] text-[var(--aria-accent)] font-semibold'
                                 : 'border-white/[0.07] bg-[#09090B] text-[#8B8B8E] hover:text-[#EDEDED]'
@@ -431,7 +431,7 @@ export default function SettingsView() {
                             key={opt.id}
                             type="button"
                             onClick={() => onUpdateSettings({ defaultRecency: opt.id })}
-                            className={`py-2 px-2 rounded-[6px] border text-[11.5px] font-mono transition-all cursor-pointer ${
+                            className={`py-2 px-2 rounded-[6px] border text-[11.5px] font-mono transition-colors transition-transform cursor-pointer ${
                               settings.defaultRecency === opt.id
                                 ? 'border-[var(--aria-accent)] bg-[#18181E] text-[var(--aria-accent)] font-semibold'
                                 : 'border-white/[0.07] bg-[#09090B] text-[#8B8B8E] hover:text-[#EDEDED]'
@@ -461,7 +461,7 @@ export default function SettingsView() {
                             key={opt.id}
                             type="button"
                             onClick={() => onUpdateSettings({ entailmentStrictness: opt.id })}
-                            className={`p-2.5 rounded-[6px] border text-left transition-all cursor-pointer ${
+                            className={`p-2.5 rounded-[6px] border text-left transition-colors transition-transform cursor-pointer ${
                               settings.entailmentStrictness === opt.id
                                 ? 'border-[var(--aria-accent)] bg-[#18181E]'
                                 : 'border-white/[0.07] bg-[#09090B] hover:border-white/[0.14]'
@@ -489,7 +489,7 @@ export default function SettingsView() {
                             key={opt.id}
                             type="button"
                             onClick={() => onUpdateSettings({ defaultMode: opt.id })}
-                            className={`p-2.5 rounded-[6px] border text-left transition-all cursor-pointer ${
+                            className={`p-2.5 rounded-[6px] border text-left transition-colors transition-transform cursor-pointer ${
                               settings.defaultMode === opt.id
                                 ? 'border-[var(--aria-accent)] bg-[#18181E]'
                                 : 'border-white/[0.07] bg-[#09090B] hover:border-white/[0.14]'
@@ -520,7 +520,7 @@ export default function SettingsView() {
                           key={dom.id}
                           type="button"
                           onClick={() => onUpdateSettings({ defaultDomain: dom.id })}
-                          className={`p-3 rounded-[6px] text-left border transition-all cursor-pointer ${
+                          className={`p-3 rounded-[6px] text-left border transition-colors transition-transform cursor-pointer ${
                             isSelected
                               ? 'border-[var(--aria-accent)] bg-[#18181E]'
                               : 'border-white/[0.07] bg-[#09090B] hover:border-white/[0.14]'
@@ -562,7 +562,7 @@ export default function SettingsView() {
                           key={preset.id}
                           type="button"
                           onClick={() => onUpdateSettings({ themePreset: preset.id })}
-                          className={`p-3.5 rounded-[7px] text-left border transition-all cursor-pointer ${
+                          className={`p-3.5 rounded-[7px] text-left border transition-colors transition-transform cursor-pointer ${
                             active
                               ? 'border-[var(--aria-accent)] bg-[#18181E]'
                               : 'border-white/[0.07] bg-[#09090B] hover:border-white/[0.14]'
@@ -597,7 +597,7 @@ export default function SettingsView() {
                           key={mode}
                           type="button"
                           onClick={() => onUpdateSettings({ surfaceMode: mode })}
-                          className={`py-2 px-2 rounded-[6px] border text-[11px] font-mono capitalize cursor-pointer transition-all ${
+                          className={`py-2 px-2 rounded-[6px] border text-[11px] font-mono capitalize cursor-pointer transition-colors transition-transform ${
                             settings.surfaceMode === mode
                               ? 'border-[var(--aria-accent)] bg-[#18181E] text-[var(--aria-accent)] font-semibold'
                               : 'border-white/[0.07] bg-[#09090B] text-[#8B8B8E]'
@@ -624,7 +624,7 @@ export default function SettingsView() {
                           key={tp.id}
                           type="button"
                           onClick={() => onUpdateSettings({ readingTypography: tp.id })}
-                          className={`py-2 px-2 rounded-[6px] border text-[11px] font-mono cursor-pointer transition-all ${
+                          className={`py-2 px-2 rounded-[6px] border text-[11px] font-mono cursor-pointer transition-colors transition-transform ${
                             settings.readingTypography === tp.id
                               ? 'border-[var(--aria-accent)] bg-[#18181E] text-[var(--aria-accent)] font-semibold'
                               : 'border-white/[0.07] bg-[#09090B] text-[#8B8B8E]'
@@ -652,7 +652,7 @@ export default function SettingsView() {
                           key={sc.id}
                           type="button"
                           onClick={() => onUpdateSettings({ fontScale: sc.id })}
-                          className={`py-2 px-1.5 rounded-[6px] border text-[11px] font-mono cursor-pointer transition-all ${
+                          className={`py-2 px-1.5 rounded-[6px] border text-[11px] font-mono cursor-pointer transition-colors transition-transform ${
                             settings.fontScale === sc.id
                               ? 'border-[var(--aria-accent)] bg-[#18181E] text-[var(--aria-accent)] font-semibold'
                               : 'border-white/[0.07] bg-[#09090B] text-[#8B8B8E]'
@@ -731,7 +731,7 @@ export default function SettingsView() {
                         key={layout.id}
                         type="button"
                         onClick={() => onUpdateSettings({ pdfLayoutStyle: layout.id })}
-                        className={`p-4 rounded-[8px] text-left border transition-all cursor-pointer ${
+                        className={`p-4 rounded-[8px] text-left border transition-colors transition-transform cursor-pointer ${
                           settings.pdfLayoutStyle === layout.id
                             ? 'border-[var(--aria-accent)] bg-[#18181E]'
                             : 'border-white/[0.07] bg-[#09090B] hover:border-white/[0.14]'

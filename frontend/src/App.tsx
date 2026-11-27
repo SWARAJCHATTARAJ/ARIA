@@ -2,9 +2,7 @@ import { useState, Suspense, lazy, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ThreadView from './components/ThreadView';
 import SourcePanel from './components/SourcePanel';
-import { HistoryView, CollectionsView, OkfSpaceView, SettingsView } from './components/HubViews';
 import { MobileTopBar } from './components/ui/MobileNavBar';
-import CommandPalette from './components/ui/CommandPalette';
 import { AuditClaim, Citation, MessageTelemetry } from './types';
 import { AuthProvider, useAuth, isNativeRuntime } from './context/AuthContext';
 import { SettingsProvider, useSettingsStore } from './context/SettingsContext';
@@ -15,6 +13,11 @@ import { recordSourceExplored } from './utils/researchPulse';
 import { Loader2, X, Keyboard } from 'lucide-react';
 
 const MarkdownTestHarness = lazy(() => import('./components/MarkdownTestHarness'));
+const CommandPalette = lazy(() => import('./components/ui/CommandPalette'));
+const HistoryView = lazy(() => import('./components/HubViews').then((m) => ({ default: m.HistoryView })));
+const CollectionsView = lazy(() => import('./components/HubViews').then((m) => ({ default: m.CollectionsView })));
+const OkfSpaceView = lazy(() => import('./components/HubViews').then((m) => ({ default: m.OkfSpaceView })));
+const SettingsView = lazy(() => import('./components/HubViews').then((m) => ({ default: m.SettingsView })));
 
 /** Offline connection banner — obsidian matte, never flashes white. */
 function ConnectivityBanner() {
@@ -86,6 +89,7 @@ function RootGate() {
 
 const DESKTOP_SHORTCUTS = [
   { keys: '/', desc: 'Focus research prompt bar' },
+  { keys: 'F', desc: 'Toggle Focus / Manuscript reading mode' },
   { keys: '⌘ / Ctrl + K', desc: 'Start a fresh research thread' },
   { keys: '⌘ / Ctrl + P', desc: 'Open quick command palette' },
   { keys: '[  /  ]', desc: 'Step backward / forward through cited sources' },
@@ -185,6 +189,9 @@ function AppShell() {
         window.setTimeout(() => {
           window.dispatchEvent(new CustomEvent('aria:focus-composer'));
         }, 20);
+      } else if (e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setIsFocusMode((prev) => !prev);
       } else if (e.key === '?') {
         e.preventDefault();
         setShowShortcutsModal((prev) => !prev);
@@ -253,20 +260,22 @@ function AppShell() {
       data-preset={settings.themePreset}
       className="flex flex-col md:flex-row h-[100dvh] min-h-[100dvh] bg-[#09090B] text-[#EDEDED] font-sans overflow-hidden relative select-none"
     >
-      {/* Mobile Top Bar (< 768px): Unified minimal 48px header */}
-      <MobileTopBar
-        activeTab={activeTab}
-        hasQuery={hasQuery}
-        isInspectorOpen={isSourcePanelOpen}
-        onTabChange={handleTabChange}
-        onOpenDrawer={handleOpenDrawer}
-        onNewQuestion={startNewThread}
-        onToggleInspector={handleToggleInspector}
-      />
+      {/* Mobile Top Bar (< 768px): hidden in Focus / Manuscript Mode */}
+      {!isFocusMode && (
+        <MobileTopBar
+          activeTab={activeTab}
+          hasQuery={hasQuery}
+          isInspectorOpen={isSourcePanelOpen}
+          onTabChange={handleTabChange}
+          onOpenDrawer={handleOpenDrawer}
+          onNewQuestion={startNewThread}
+          onToggleInspector={handleToggleInspector}
+        />
+      )}
 
       {/* Mobile Slide-Over Navigation Drawer (< 768px) */}
       <div
-        className={`md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-200 ${
+        className={`md:hidden fixed inset-0 bg-black/60 manuscript-backdrop-blur z-40 transition-opacity duration-200 ${
           isMobileDrawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={handleCloseDrawer}
@@ -285,22 +294,24 @@ function AppShell() {
         />
       </aside>
 
-      {/* Desktop Sidebar (>= 768px md:block): fluid GPU-accelerated collapsible */}
-      <div className="hidden md:block shrink-0 h-full bg-[#0C0C0F]">
-        <Sidebar
-          activeTab={activeTab}
-          onTabChange={handleTabChange}
-          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-          collapsed={isRailCollapsed}
-          onToggleCollapsed={() => setIsRailCollapsed((prev) => !prev)}
-        />
-      </div>
+      {/* Desktop Sidebar (>= 768px): collapsed in Focus / Manuscript Mode */}
+      {!isFocusMode && (
+        <div className="hidden md:block shrink-0 h-full bg-[#0C0C0F]">
+          <Sidebar
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+            collapsed={isRailCollapsed}
+            onToggleCollapsed={() => setIsRailCollapsed((prev) => !prev)}
+          />
+        </div>
+      )}
 
       {/* Center Thread Workspace */}
       <ErrorBoundary surface="Workspace">
         <main
           key={activeTab}
-          className="flex-1 flex flex-col h-full md:border-r border-white/[0.07] bg-[#09090B] transition-all w-full overflow-hidden animate-fade-slide relative"
+          className="flex-1 flex flex-col h-full md:border-r border-white/[0.07] bg-[#09090B] w-full overflow-hidden animate-fade-slide relative"
         >
           {activeTab === 'query' && (
             <ThreadView
@@ -325,15 +336,17 @@ function AppShell() {
               onOpenShortcuts={() => setShowShortcutsModal(true)}
             />
           )}
-          {activeTab === 'history' && <HistoryView onOpenQuery={handleOpenQuery} />}
-          {activeTab === 'collections' && <CollectionsView />}
-          {activeTab === 'okf' && <OkfSpaceView />}
-          {activeTab === 'settings' && <SettingsView />}
+          <Suspense fallback={<div className="p-8 font-mono text-xs text-[#71717A]">Loading workspace view...</div>}>
+            {activeTab === 'history' && <HistoryView onOpenQuery={handleOpenQuery} />}
+            {activeTab === 'collections' && <CollectionsView />}
+            {activeTab === 'okf' && <OkfSpaceView />}
+            {activeTab === 'settings' && <SettingsView />}
+          </Suspense>
         </main>
       </ErrorBoundary>
 
-      {/* Right Source Panel / Research Inspector */}
-      {isSourcePanelOpen && (
+      {/* Right Source Panel / Research Inspector: hidden in Focus Mode */}
+      {isSourcePanelOpen && !isFocusMode && (
         <>
           <div
             className="lg:hidden fixed inset-0 bg-black/60 z-40 transition-opacity duration-200"
@@ -351,6 +364,17 @@ function AppShell() {
               onSelectCitation={(id, quote) => {
                 setSelectedCitationId(id);
                 setHighlightedEvidenceQuote(quote ?? null);
+              }}
+              onOpenFigureLightbox={(idx) => {
+                window.dispatchEvent(
+                  new CustomEvent('aria:open-lightbox', {
+                    detail: {
+                      figures: activeTelemetry?.figures || [],
+                      index: idx,
+                      queryTitle: activeTelemetry?.query,
+                    },
+                  })
+                );
               }}
               isMockActive={isMockActive}
               hasError={hasActiveError}
@@ -401,12 +425,16 @@ function AppShell() {
       )}
 
       {/* Global Modals */}
-      <CommandPalette
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        onNavigate={handleTabChange}
-        onStartQuery={(q) => handleOpenQuery(q)}
-      />
+      {isCommandPaletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            isOpen={isCommandPaletteOpen}
+            onClose={() => setIsCommandPaletteOpen(false)}
+            onNavigate={handleTabChange}
+            onStartQuery={(q) => handleOpenQuery(q)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

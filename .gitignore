@@ -38,6 +38,7 @@ Thumbs.db
 # Internal Session History
 SESSION_MEMORY.md
 share/
+.agents/
 
 # Native Build Outputs (Tauri / Capacitor)
 src-tauri/target/

@@ -521,6 +521,106 @@ def test_account_deletion_reauth_and_cleanup():
     print("  -> PASS: DELETE /api/account re-auth and permanent deletion ledger verified.")
 
 
+def test_universal_domain_planner_and_pdf_titles():
+    print("[Test 9] Universal Domain-Cognitive Planner ('Singing', 'Soil', 'Japan', 'Microscope')...")
+    from pipeline.nodes import (
+        classify_domain_discipline,
+        build_specialist_outline,
+        build_synthesis_prompt,
+        heuristic_reformulation,
+        generate_followup_cards,
+    )
+    from utils.pdf_generator import generate_academic_paper_title
+
+    cases = [
+        ("How does singing work acoustically?", "singing", "arts_performance"),
+        ("What determines soil fertility and horizons?", "soil", "zoology_botany_earth"),
+        ("Japan", "Japan", "geography_history_social"),
+        ("How does an optical microscope resolve sub-micron specimens?", "microscope", "instruments_engineering"),
+    ]
+    for query, topic, expected_disc in cases:
+        disc = classify_domain_discipline(query, topic)
+        assert disc == expected_disc, f"Expected discipline '{expected_disc}' for {query!r}, got '{disc}'"
+        outline = build_specialist_outline(disc, query, is_debated=False)
+        assert len(outline) >= 5, f"Outline too short for {query!r}: {outline}"
+        joined = " | ".join(outline).lower()
+        if disc != "instruments_engineering":
+            assert "theoretical formulation" not in joined and "core mechanisms, architecture" not in joined, (
+                f"CS heading leaked into {disc}: {outline}"
+            )
+        prompt = build_synthesis_prompt(domain_discipline=disc, planned_outline=outline)
+        assert outline[0] in prompt
+
+        plan = heuristic_reformulation(query)
+        assert len(plan.get("sub_queries", [])) >= 3, f"Expected multi-faceted sub-queries for {query!r}"
+
+        cards = generate_followup_cards(query, f"## {outline[0]}\nVocal Folds and Acoustic Formants govern pitch [c:0].", canonical_topic=topic)
+        assert len(cards) == 3
+        assert [c["label"] for c in cards] == ["Deep Dive", "Counter-View", "Applied"]
+
+        title = generate_academic_paper_title(topic, topic)
+        assert ":" in title and len(title) > 10
+
+    print("  -> PASS: All 4 domain planners, multi-faceted sub-queries, follow-ups, and titles verified.")
+
+
+def test_retraction_exclusion_polarity_and_feedback_cleanup():
+    print("[Test 10] Retraction exclusion, claim polarity, & DELETE feedback cleanup...")
+    from pipeline.nodes import synthesize_answer, run_claim_audit
+    from utils import supabase_client
+    import utils.academic_search as ac_search
+
+    assert ac_search._is_retracted_title("RETRACTED: Spurious soil horizon correlation") is True
+    assert ac_search._is_retracted_title("Soil Organic Carbon Dynamics") is False
+
+    # Claim audit must emit valid polarity + confidence fields
+    async def run_audit_check():
+        chunks = [
+            {
+                "title": "Vocal Tract Acoustics",
+                "snippet": "Human singing relies on vocal fold oscillation and supraglottal formant tuning between 300 Hz and 3500 Hz.",
+                "venue": "Journal of Voice",
+                "source_type": "peer_reviewed",
+            }
+        ]
+        ans = "Human singing relies on vocal fold oscillation and supraglottal formant tuning [[c:0]]. Unrelated claim lacking source support [[c:0]]."
+        claims = await run_claim_audit(ans, chunks)
+        assert len(claims) >= 1
+        for c in claims:
+            assert c.get("polarity") in ("supported", "contested", "partial"), f"Missing polarity: {c}"
+            assert isinstance(c.get("confidence"), float), f"Missing float confidence: {c}"
+
+    asyncio.run(run_audit_check())
+
+    # permanently_delete_user_account must delete from feedback as well as all other user tables
+    called_urls = []
+
+    class FakeResp:
+        def __init__(self, status_code=204):
+            self.status_code = status_code
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return False
+        async def delete(self, url, headers=None, params=None):
+            called_urls.append(url)
+            return FakeResp(204)
+
+    async def run_del_check():
+        with patch.object(supabase_client.settings, "supabase_url", "https://example.supabase.co"), \
+             patch.object(supabase_client.settings, "supabase_service_role_key", "srv_test_key"), \
+             patch("utils.supabase_client.httpx.AsyncClient", return_value=FakeClient()):
+            res = await supabase_client.permanently_delete_user_account("11111111-1111-1111-1111-111111111111")
+            assert res == {"deleted": True}
+
+    asyncio.run(run_del_check())
+    assert any(u.endswith("/rest/v1/feedback") for u in called_urls), f"feedback cleanup missing: {called_urls}"
+    assert any("/auth/v1/admin/users/" in u for u in called_urls)
+    print("  -> PASS: Retraction gate, claim polarity, and feedback deletion cleanup verified.")
+
+
 if __name__ == "__main__":
     test_wikipedia_clean_extraction()
     test_export_pdf_endpoint_styles()
@@ -530,4 +630,6 @@ if __name__ == "__main__":
     test_peer_reviewed_and_recency_filters()
     test_mandatory_auth_and_no_guest_bypass()
     test_account_deletion_reauth_and_cleanup()
+    test_universal_domain_planner_and_pdf_titles()
+    test_retraction_exclusion_polarity_and_feedback_cleanup()
     print("\nALL UPGRADE VERIFICATION TESTS PASSED!")
