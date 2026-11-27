@@ -6,6 +6,7 @@ export type ClaimStatus = 'supported' | 'partially_supported' | 'unsupported' | 
 
 export type SourceTierFilter = 'all' | 'peer_reviewed';
 export type RecencyFilter = 'all' | '5y' | '2y';
+export type ReadingDepth = 'foundational' | 'graduate' | 'specialist';
 export type CitationStyle = 'apa7' | 'ieee' | 'chicago' | 'bibtex';
 export type EntailmentStrictness = 'standard' | 'strict';
 export type ResearchModePref = 'synthesis' | 'deep_compare';
@@ -123,6 +124,11 @@ export interface RouteTelemetry {
   dristi_available?: boolean;
   dristi_engine?: 'V1' | 'V2' | string;
   route_decision?: string;
+  domain_discipline?: string;
+  compare_mode?: boolean;
+  compare_entities?: string[];
+  is_debated_or_empirical?: boolean;
+  direct_paper_mode?: boolean;
   escalated?: boolean;
   v1_confidence?: number | null;
   v2_confidence?: number | null;
@@ -161,10 +167,21 @@ export interface Citation {
   arxiv_id?: string | null;
   is_retracted?: boolean;
   review_status?: ReviewStatus | string;
+  study_type?: string | null;
+  is_open_access?: boolean;
+  rigor_badges?: string[];
   similarity?: number | null;
   cited?: boolean;
   rank?: number;
   published?: string;
+}
+
+export interface ConsensusBreakdown {
+  supporting: number;
+  mixed: number;
+  contrasting: number;
+  total_claims: number;
+  total_sources: number;
 }
 
 export interface AuditResult {
@@ -178,6 +195,8 @@ export interface AuditResult {
   tier_agreement?: string | null;
   answer_final?: string;
   repaired?: boolean;
+  is_debated_or_empirical?: boolean;
+  consensus?: ConsensusBreakdown;
 }
 
 export type PipelineStage = 'idle' | 'routing' | 'retrieving' | 'streaming' | 'auditing' | 'complete' | 'error';

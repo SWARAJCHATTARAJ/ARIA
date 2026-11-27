@@ -36,6 +36,7 @@ import {
   FontFamilyPref,
   FontScalePref,
   PdfLayoutStyle,
+  ReadingDepth,
   RecencyFilter,
   ResearchModePref,
   SourceTierFilter,
@@ -500,6 +501,36 @@ export default function SettingsView() {
                           </button>
                         ))}
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Reading Depth Dial Default */}
+                  <div className="space-y-1.5 pt-1">
+                    <label className="text-[11px] font-mono uppercase tracking-wider text-[#8B8B8E]">
+                      Default Reading Depth
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {(
+                        [
+                          { id: 'foundational', label: 'Foundational', desc: 'Intuitive explanations & first principles' },
+                          { id: 'graduate', label: 'Graduate', desc: 'Formal terminology, equations & benchmarks' },
+                          { id: 'specialist', label: 'Specialist', desc: 'Boundary conditions, derivations & critique' },
+                        ] as Array<{ id: ReadingDepth; label: string; desc: string }>
+                      ).map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => onUpdateSettings({ defaultDepth: opt.id })}
+                          className={`p-2.5 rounded-[6px] border text-left transition-colors cursor-pointer ${
+                            (settings.defaultDepth || 'graduate') === opt.id
+                              ? 'border-[var(--aria-accent)] bg-[#18181E]'
+                              : 'border-white/[0.07] bg-[#09090B] hover:border-white/[0.14]'
+                          }`}
+                        >
+                          <div className="text-[12px] font-mono font-semibold text-[var(--aria-accent)]">{opt.label}</div>
+                          <div className="text-[10px] text-[#8B8B8E] mt-0.5 leading-snug">{opt.desc}</div>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </section>

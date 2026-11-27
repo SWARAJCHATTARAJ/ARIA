@@ -1,10 +1,12 @@
 import { API_BASE_URL } from './config';
 import { supabase } from '../lib/supabase';
+import { ReadingDepth } from '../types';
 
 export interface SSEClientOptions {
   query: string;
   topic?: string;
   compareMode?: boolean;
+  depth?: ReadingDepth;
   sourceTier?: 'all' | 'peer_reviewed';
   recency?: 'all' | '5y' | '2y';
   strictAcademic?: boolean;
@@ -21,6 +23,7 @@ export async function streamQuery({
   query,
   topic,
   compareMode = false,
+  depth = 'graduate',
   sourceTier = 'all',
   recency = 'all',
   strictAcademic = false,
@@ -141,6 +144,7 @@ export async function streamQuery({
         query,
         topic: topic || undefined,
         compare_mode: compareMode,
+        depth,
         source_tier: sourceTier,
         recency,
         strict_academic: strictAcademic,

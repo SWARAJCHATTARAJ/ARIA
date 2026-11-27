@@ -12,6 +12,10 @@ class AgentState(TypedDict):
     thread_id: Optional[str]
     user_id: Optional[str]
     compare_mode: bool
+    compare_entities: Optional[List[str]]
+    depth: Optional[str]
+    direct_paper_mode: Optional[bool]
+    direct_paper_id: Optional[Dict[str, str]]
     source_tier: Optional[str]
     recency: Optional[str]
     strict_academic: Optional[bool]

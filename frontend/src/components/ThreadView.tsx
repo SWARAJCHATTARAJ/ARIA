@@ -46,6 +46,7 @@ import {
   FigureData,
   ChartData,
   FollowUpCard,
+  ReadingDepth,
   RecencyFilter,
   SourceTierFilter,
 } from '../types';
@@ -344,7 +345,11 @@ function ResearchTraceBar({
 
           <span className="text-slate-300 dark:text-white/15 hidden sm:inline">·</span>
           <span className="hidden sm:inline text-[10px] tracking-wider text-slate-500 dark:text-[#71717A] uppercase">
-            {activeTierLabel}
+            {telemetry?.route?.direct_paper_mode
+              ? 'Paper Microscope'
+              : telemetry?.route?.compare_mode
+              ? 'Compare Matrix'
+              : activeTierLabel}
           </span>
 
           <ChevronDown
@@ -658,6 +663,82 @@ function SearchSubmitButton({
   );
 }
 
+function EvidenceConsensusGauge({
+  telemetry,
+  citationsCount,
+}: {
+  telemetry?: MessageTelemetry;
+  citationsCount: number;
+}) {
+  const isDebatedOrEmpirical = Boolean(
+    telemetry?.audit?.is_debated_or_empirical ?? telemetry?.route?.is_debated_or_empirical
+  );
+  if (!isDebatedOrEmpirical) return null;
+
+  const explicit = telemetry?.audit?.consensus;
+  let supporting = explicit?.supporting ?? 0;
+  let mixed = explicit?.mixed ?? 0;
+  let contrasting = explicit?.contrasting ?? 0;
+
+  if (!explicit && Array.isArray(telemetry?.audit?.claims)) {
+    for (const c of telemetry!.audit!.claims!) {
+      if (typeof c === 'string') continue;
+      if (c.polarity === 'supported' || c.status === 'supported') supporting += 1;
+      else if (c.polarity === 'contested' || c.status === 'unsupported') contrasting += 1;
+      else mixed += 1;
+    }
+  }
+
+  const total = supporting + mixed + contrasting;
+  if (total === 0) return null;
+
+  const supPct = Math.round((supporting / total) * 100);
+  const mixPct = Math.round((mixed / total) * 100);
+  const conPct = Math.max(0, 100 - supPct - mixPct);
+  const studyCount = explicit?.total_sources || citationsCount;
+
+  return (
+    <div className="p-2.5 bg-slate-50/80 dark:bg-[#09090B] border border-slate-200 dark:border-white/[0.07] rounded-[7px] space-y-1.5 font-mono text-[10.5px]">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-slate-700 dark:text-[#EDEDED] font-semibold uppercase tracking-wider text-[10px]">
+          Evidence Consensus
+        </span>
+        <span className="text-slate-500 dark:text-[#71717A] tabular-nums">
+          across {studyCount} {studyCount === 1 ? 'source' : 'sources'}
+        </span>
+      </div>
+
+      <div className="h-1.5 w-full rounded-full overflow-hidden bg-slate-200 dark:bg-white/[0.06] flex">
+        {supporting > 0 && (
+          <div className="h-full bg-emerald-400" style={{ width: `${(supporting / total) * 100}%` }} />
+        )}
+        {mixed > 0 && (
+          <div className="h-full bg-amber-400" style={{ width: `${(mixed / total) * 100}%` }} />
+        )}
+        {contrasting > 0 && (
+          <div className="h-full bg-rose-400" style={{ width: `${(contrasting / total) * 100}%` }} />
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 text-[10px] tabular-nums text-slate-600 dark:text-[#94A3B8]">
+        <span className="inline-flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          Supporting {supPct}%
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          Mixed {mixPct}%
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+          Contrasting {conPct}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
+
 interface MessageItemProps {
   msg: Message;
   isCopied: boolean;
@@ -754,6 +835,11 @@ const MessageItem = React.memo(
                 </button>
               )}
             </div>
+          )}
+
+          {/* Calibrated Evidence Consensus Gauge (Empirical / Clinical / Debated queries) */}
+          {!msg.isStreaming && msg.content && (
+            <EvidenceConsensusGauge telemetry={msg.telemetry} citationsCount={(msg.citations || []).length} />
           )}
 
           {/* Markdown Content */}
@@ -1032,6 +1118,7 @@ export default function ThreadView({
   const [selectedTopic, setSelectedTopic] = useState<string>(() => settings.defaultDomain || 'auto');
   const [sourceTier, setSourceTier] = useState<SourceTierFilter>(() => settings.defaultSourceTier || 'all');
   const [recency, setRecency] = useState<RecencyFilter>(() => settings.defaultRecency || 'all');
+  const [readingDepth, setReadingDepth] = useState<ReadingDepth>(() => settings.defaultDepth || 'graduate');
 
   useEffect(() => {
     if (settings.defaultDomain) setSelectedTopic(settings.defaultDomain);
@@ -1042,6 +1129,9 @@ export default function ThreadView({
   useEffect(() => {
     if (settings.defaultRecency) setRecency(settings.defaultRecency);
   }, [settings.defaultRecency]);
+  useEffect(() => {
+    if (settings.defaultDepth) setReadingDepth(settings.defaultDepth);
+  }, [settings.defaultDepth]);
 
   // Listen for global '/' & Cmd+K focus composer events
   useEffect(() => {
@@ -1326,6 +1416,11 @@ export default function ThreadView({
           updatedTelemetry.stage = 'retrieving';
           updatedTelemetry.route = {
             route_decision: evt.route_decision || 'cascade',
+            domain_discipline: evt.domain_discipline,
+            compare_mode: Boolean(evt.compare_mode),
+            compare_entities: Array.isArray(evt.compare_entities) ? evt.compare_entities : [],
+            is_debated_or_empirical: Boolean(evt.is_debated_or_empirical),
+            direct_paper_mode: Boolean(evt.direct_paper_mode),
           };
           break;
 
@@ -1372,6 +1467,9 @@ export default function ThreadView({
             arxiv_id: evt.arxiv_id,
             is_retracted: evt.is_retracted,
             review_status: evt.review_status,
+            study_type: evt.study_type,
+            is_open_access: evt.is_open_access,
+            rigor_badges: Array.isArray(evt.rigor_badges) ? evt.rigor_badges : undefined,
           };
           if (!updatedCitations.some((c) => c.id === newCit.id)) {
             updatedCitations.push(newCit);
@@ -1400,6 +1498,8 @@ export default function ThreadView({
             tier_agreement: evt.tier_agreement,
             answer_final: evt.answer_final,
             repaired: evt.repaired ?? false,
+            is_debated_or_empirical: Boolean(evt.is_debated_or_empirical ?? updatedTelemetry.route?.is_debated_or_empirical),
+            consensus: evt.consensus,
           };
           if (evt.sources) {
             updatedTelemetry.retrieval = {
@@ -1570,6 +1670,7 @@ export default function ThreadView({
           query: queryText.trim(),
           topic: selectedTopic !== 'auto' ? selectedTopic : undefined,
           compareMode: settings.defaultMode === 'deep_compare',
+          depth: readingDepth,
           sourceTier,
           recency,
           strictAcademic: settings.entailmentStrictness === 'strict',
@@ -2137,6 +2238,39 @@ export default function ThreadView({
                   >
                     {recency === '2y' ? 'Time: 2Y' : recency === '5y' ? 'Time: 5Y' : 'Time: Any'}
                   </button>
+
+                  {/* 3-Step Reading Depth Dial */}
+                  <div
+                    className="inline-flex items-center p-0.5 rounded-lg border border-white/[0.08] bg-white/[0.03] text-[10.5px] font-mono"
+                    role="group"
+                    aria-label="Reading Depth"
+                    title="Calibrate synthesis depth: Foundational | Graduate | Specialist"
+                  >
+                    {(
+                      [
+                        { id: 'foundational', short: 'Found.', full: 'Foundational' },
+                        { id: 'graduate', short: 'Grad.', full: 'Graduate' },
+                        { id: 'specialist', short: 'Spec.', full: 'Specialist' },
+                      ] as Array<{ id: ReadingDepth; short: string; full: string }>
+                    ).map((d) => {
+                      const active = readingDepth === d.id;
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => setReadingDepth(d.id)}
+                          className={`px-1.5 sm:px-2 py-0.5 rounded-[5px] transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-[var(--aria-accent)]/18 text-[var(--aria-accent)] font-semibold'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          <span className="sm:hidden">{d.short}</span>
+                          <span className="hidden sm:inline">{d.full}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 ml-auto">
@@ -2309,6 +2443,26 @@ export default function ThreadView({
                 title="Recency window: Any Time / Last 5 Years / Last 2 Years"
               >
                 {recency === '2y' ? 'Time: 2Y' : recency === '5y' ? 'Time: 5Y' : 'Time: Any'}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setReadingDepth((prev) =>
+                    prev === 'foundational' ? 'graduate' : prev === 'graduate' ? 'specialist' : 'foundational'
+                  )
+                }
+                className={`px-2 py-1 rounded-lg border text-[10.5px] font-mono whitespace-nowrap transition-colors cursor-pointer ${
+                  readingDepth !== 'graduate'
+                    ? 'border-[var(--aria-accent)] bg-[var(--aria-accent)]/12 text-[var(--aria-accent)] font-semibold'
+                    : 'border-white/[0.08] bg-white/[0.04] text-zinc-400 hover:text-zinc-200'
+                }`}
+                title="Cycle Reading Depth: Foundational -> Graduate -> Specialist"
+              >
+                {readingDepth === 'foundational'
+                  ? 'Depth: Foundational'
+                  : readingDepth === 'specialist'
+                  ? 'Depth: Specialist'
+                  : 'Depth: Graduate'}
               </button>
             </div>
 

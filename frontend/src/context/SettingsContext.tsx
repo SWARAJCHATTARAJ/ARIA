@@ -5,6 +5,7 @@ import {
   FontFamilyPref,
   FontScalePref,
   PdfLayoutStyle,
+  ReadingDepth,
   RecencyFilter,
   ResearchModePref,
   SourceTierFilter,
@@ -28,6 +29,7 @@ export interface WorkspaceSettings {
   defaultCitationStyle: CitationStyle;
   defaultSourceTier: SourceTierFilter;
   defaultRecency: RecencyFilter;
+  defaultDepth: ReadingDepth;
   entailmentStrictness: EntailmentStrictness;
   defaultMode: ResearchModePref;
   defaultDomain: string;
@@ -69,6 +71,7 @@ const DEFAULT_SETTINGS: WorkspaceSettings = {
   defaultCitationStyle: 'apa7',
   defaultSourceTier: 'all',
   defaultRecency: 'all',
+  defaultDepth: 'graduate',
   entailmentStrictness: 'standard',
   defaultMode: 'synthesis',
   defaultDomain: 'auto',

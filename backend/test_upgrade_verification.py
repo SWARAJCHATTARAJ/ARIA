@@ -621,6 +621,139 @@ def test_retraction_exclusion_polarity_and_feedback_cleanup():
     print("  -> PASS: Retraction gate, claim polarity, and feedback deletion cleanup verified.")
 
 
+def test_depth_consensus_badges_compare_and_direct_paper():
+    print("[Test 11] Reading Depth Dial, Consensus Breakdown, Rigor Badges, Auto Compare, Direct Paper Microscope...")
+    from pipeline.nodes import (
+        build_synthesis_prompt,
+        compute_consensus_breakdown,
+        detect_compare_query,
+        heuristic_reformulation,
+        plan_retrieval,
+    )
+    from main import QueryRequest
+    import utils.academic_search as ac_search
+
+    # 1. Reading Depth Dial calibration & request schema
+    req_spec = QueryRequest(query="Quantum Hall effect", depth="specialist")
+    assert req_spec.depth == "specialist"
+    p_found = build_synthesis_prompt(depth="foundational")
+    p_spec = build_synthesis_prompt(depth="specialist")
+    assert "READING DEPTH — FOUNDATIONAL" in p_found
+    assert "READING DEPTH — SPECIALIST" in p_spec
+
+    # 2. Evidence Consensus Gauge breakdown
+    claims = [
+        {"polarity": "supported", "status": "supported"},
+        {"polarity": "supported", "status": "supported"},
+        {"polarity": "partial", "status": "partially_supported"},
+        {"polarity": "contested", "status": "unsupported"},
+    ]
+    bd = compute_consensus_breakdown(claims, total_sources=3)
+    assert bd == {"supporting": 2, "mixed": 1, "contrasting": 1, "total_claims": 4, "total_sources": 3}, bd
+
+    # 3. Study-Type & Rigor Badges
+    meta_c = ac_search.normalize_source_metadata({
+        "source_type": "pubmed",
+        "title": "Efficacy of treatment X: a randomized controlled trial",
+        "snippet": "Double-blind randomized controlled trial across 420 patients showing improved outcomes.",
+        "is_open_access": True,
+        "publication_types": ["Randomized Controlled Trial"],
+    })
+    assert "RCT" in meta_c["rigor_badges"] and "Peer-Reviewed" in meta_c["rigor_badges"] and "Open Access" in meta_c["rigor_badges"]
+    ma_c = ac_search.normalize_source_metadata({
+        "source_type": "openalex",
+        "title": "A systematic review and meta-analysis of neural scaling laws",
+        "snippet": "Comprehensive meta-analysis evaluating empirical scaling curves.",
+        "is_open_access": False,
+    })
+    assert ma_c["study_type"] == "Meta-Analysis" and "Meta-Analysis" in ma_c["rigor_badges"]
+    ax_c = ac_search.normalize_source_metadata({"source_type": "arxiv", "title": "Sparse Attention", "snippet": "We propose sparse attention kernels."})
+    assert "Preprint" in ax_c["rigor_badges"] and "Open Access" in ax_c["rigor_badges"]
+    ret_c = ac_search.normalize_source_metadata({"source_type": "crossref", "title": "Paper", "snippet": "Body", "is_retracted": True})
+    assert ret_c["rigor_badges"][0] == "Retracted"
+
+    # 4. Auto Compare Mode ('A vs B')
+    is_cmp, ents = detect_compare_query("CRISPR-Cas9 vs Prime Editing in mammalian cells")
+    assert is_cmp is True and ents == ["CRISPR-Cas9", "Prime Editing"], (is_cmp, ents)
+    cmp_plan = heuristic_reformulation("Lithium-ion vs Sodium-ion batteries")
+    assert cmp_plan["compare_mode"] is True and len(cmp_plan["compare_entities"]) == 2
+    pr = plan_retrieval({
+        "query": "Lithium-ion vs Sodium-ion batteries",
+        "compare_mode": True,
+        "compare_entities": ["Lithium-ion", "Sodium-ion batteries"],
+        "academic_search_query": "Lithium-ion vs Sodium-ion batteries",
+        "canonical_topic": "Lithium-ion vs Sodium-ion batteries",
+        "planned_outline": cmp_plan["planned_outline"],
+    })
+    assert len(pr["sub_queries"]) == 3
+    cmp_prompt = build_synthesis_prompt(compare_mode=True, compare_entities=["Lithium-ion", "Sodium-ion"])
+    assert "AUTO COMPARE MODE" in cmp_prompt
+
+    # 5. DOI / arXiv / PMID Direct Microscope detection & mocked resolution
+    assert ac_search.detect_direct_paper_identifier("10.1038/s41586-021-03819-2") == {"kind": "doi", "value": "10.1038/s41586-021-03819-2"}
+    assert ac_search.detect_direct_paper_identifier("https://arxiv.org/abs/1706.03762") == {"kind": "arxiv", "value": "1706.03762"}
+    assert ac_search.detect_direct_paper_identifier("PMID: 32511329") == {"kind": "pmid", "value": "32511329"}
+
+    mic_plan = heuristic_reformulation("https://arxiv.org/abs/1706.03762")
+    assert mic_plan["direct_paper_mode"] is True
+    assert mic_plan["planned_outline"][0] == "Core Claim & Bibliographic Profile"
+    mic_prompt = build_synthesis_prompt(direct_paper_mode=True)
+    assert "DIRECT PAPER MICROSCOPE DISSECTION" in mic_prompt
+
+    class FakeHttpResp:
+        def __init__(self, status_code, payload=None, text=""):
+            self.status_code = status_code
+            self._payload = payload or {}
+            self.text = text
+        def json(self):
+            return self._payload
+
+    class FakeDirectClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return False
+        async def get(self, url, headers=None):
+            if "api.openalex.org/works/https://doi.org/" in url:
+                return FakeHttpResp(200, {
+                    "id": "https://openalex.org/W1234567",
+                    "title": "Highly accurate protein structure prediction with AlphaFold",
+                    "publication_year": 2021,
+                    "publication_date": "2021-07-15",
+                    "cited_by_count": 25000,
+                    "type": "article",
+                    "open_access": {"is_oa": True},
+                    "primary_location": {"source": {"display_name": "Nature"}},
+                    "authorships": [{"author": {"display_name": "John Jumper"}}],
+                    "abstract_inverted_index": {"AlphaFold": [0], "predicts": [1], "atomic": [2], "protein": [3], "structures.": [4]},
+                })
+            if "filter=cites:W1234567" in url:
+                return FakeHttpResp(200, {
+                    "results": [{
+                        "title": "Following AlphaFold across Structural Proteomics",
+                        "publication_year": 2023,
+                        "cited_by_count": 120,
+                        "type": "review",
+                        "open_access": {"is_oa": True},
+                        "doi": "https://doi.org/10.1000/citing1",
+                        "primary_location": {"source": {"display_name": "Nature Reviews"}},
+                        "authorships": [{"author": {"display_name": "Jane Doe"}}],
+                    }]
+                })
+            return FakeHttpResp(404)
+
+    async def run_direct_check():
+        with patch("utils.academic_search.httpx.AsyncClient", return_value=FakeDirectClient()):
+            res = await ac_search.resolve_direct_paper({"kind": "doi", "value": "10.1038/s41586-021-03819-2"})
+            assert len(res) == 2
+            assert res[0]["doi"] == "10.1038/s41586-021-03819-2"
+            assert "Open Access" in res[0]["rigor_badges"]
+            assert res[1]["title"].startswith("Following AlphaFold")
+
+    asyncio.run(run_direct_check())
+    print("  -> PASS: Depth Dial, Consensus Breakdown, Rigor Badges, Auto Compare, and Direct Paper Microscope verified.")
+
+
 if __name__ == "__main__":
     test_wikipedia_clean_extraction()
     test_export_pdf_endpoint_styles()
@@ -632,4 +765,5 @@ if __name__ == "__main__":
     test_account_deletion_reauth_and_cleanup()
     test_universal_domain_planner_and_pdf_titles()
     test_retraction_exclusion_polarity_and_feedback_cleanup()
+    test_depth_consensus_badges_compare_and_direct_paper()
     print("\nALL UPGRADE VERIFICATION TESTS PASSED!")

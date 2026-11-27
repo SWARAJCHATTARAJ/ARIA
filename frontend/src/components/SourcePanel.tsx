@@ -665,6 +665,39 @@ export default function SourcePanel({
                           {showVenueSeparately ? ` · ${cit.venue}` : ''}
                         </div>
 
+                        {/* Study-Type & Rigor Badges */}
+                        {((cit.rigor_badges && cit.rigor_badges.length > 0) || cit.is_retracted || cit.study_type || cit.is_open_access) && (
+                          <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                            {(cit.rigor_badges && cit.rigor_badges.length > 0
+                              ? cit.rigor_badges
+                              : [
+                                  ...(cit.is_retracted ? ['Retracted'] : []),
+                                  ...(cit.study_type ? [cit.study_type] : []),
+                                  ...(cit.is_open_access ? ['Open Access'] : []),
+                                ]
+                            ).map((badge) => {
+                              const badgeCls =
+                                badge === 'Retracted'
+                                  ? 'border-rose-500/45 bg-rose-500/12 text-rose-400 font-semibold'
+                                  : badge === 'Meta-Analysis' || badge === 'Systematic Review' || badge === 'RCT'
+                                  ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-400 font-semibold'
+                                  : badge === 'Open Access'
+                                  ? 'border-[var(--aria-accent)]/35 bg-[var(--aria-accent)]/10 text-[var(--aria-accent)]'
+                                  : badge === 'Preprint'
+                                  ? 'border-amber-500/35 bg-amber-500/10 text-amber-400'
+                                  : 'border-slate-300 dark:border-white/[0.10] bg-slate-100 dark:bg-white/[0.04] text-slate-600 dark:text-[#94A3B8]';
+                              return (
+                                <span
+                                  key={badge}
+                                  className={`px-1.5 py-[1px] rounded-[4px] border text-[9.5px] font-mono leading-tight ${badgeCls}`}
+                                >
+                                  {badge}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+
                         {cit.snippet && (
                           <div className="space-y-1">
                             <div

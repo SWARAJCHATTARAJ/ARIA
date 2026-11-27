@@ -211,6 +211,30 @@ def classify_domain_discipline(
     return best_disc
 
 
+def detect_compare_query(query: str) -> Tuple[bool, List[str]]:
+    """
+    Detects comparative 'A vs B' queries and extracts normalized [entity_a, entity_b] targets.
+    """
+    if not query:
+        return False, []
+    q = query.strip().rstrip("?.!")
+    patterns = [
+        r'^(?:compare\s+)?(.+?)\s+(?:vs\.?|versus|compared\s+(?:with|to))\s+(.+)$',
+        r'^(?:difference\s+between|comparison\s+(?:of|between))\s+(.+?)\s+and\s+(.+)$',
+        r'^compare\s+(.+?)\s+and\s+(.+)$',
+    ]
+    for pat in patterns:
+        m = re.match(pat, q, re.IGNORECASE)
+        if m:
+            a = strip_question_boilerplate(m.group(1)).strip(" ,:;\"'") or m.group(1).strip(" ,:;\"'")
+            b = m.group(2).strip(" ,:;\"'")
+            # Trim trailing context clause after 'in / for / across / on' when concise entities exist
+            b_head = re.split(r'\s+(?:in|for|across|during)\s+', b, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+            if a and (b_head or b):
+                return True, [a[:80], (b_head or b)[:80]]
+    return False, []
+
+
 def detect_debated_or_empirical_query(query: str, compare_mode: bool = False) -> bool:
     """Detects empirical, clinical, comparative, or debated questions needing Evidence Consensus."""
     if compare_mode:
@@ -227,12 +251,24 @@ def build_specialist_outline(
     query: str,
     canonical_topic: Optional[str] = None,
     is_debated: bool = False,
+    direct_paper_mode: bool = False,
+    compare_mode: bool = False,
 ) -> List[str]:
     """Returns a domain-native Specialist Monograph Outline tailored to how experts think."""
+    if direct_paper_mode:
+        return [
+            "Core Claim & Bibliographic Profile",
+            "Methodology & Experimental Design",
+            "Key Quantitative Numbers & Findings",
+            "Methodological Limitations & Boundary Conditions",
+            "Citing Context & Disciplinary Impact",
+        ]
     base = list(DOMAIN_OUTLINE_TEMPLATES.get(discipline, DOMAIN_OUTLINE_TEMPLATES["general"]))
+    if compare_mode and not any("matrix" in h.lower() or "comparative" in h.lower() or "trade" in h.lower() for h in base):
+        base.insert(2, "Side-by-Side Quantitative Matrix & Trade-Offs")
     if is_debated and not any("consensus" in h.lower() for h in base):
         base.append("Evidence Consensus & Methodological Assessment")
-    return base
+    return base[:6]
 
 
 _IDENTITY_SECURITY = (
@@ -277,14 +313,23 @@ def build_synthesis_prompt(
     domain_discipline: Optional[str] = None,
     planned_outline: Optional[List[str]] = None,
     is_debated_or_empirical: bool = False,
+    depth: Optional[str] = "graduate",
+    compare_mode: bool = False,
+    compare_entities: Optional[List[str]] = None,
+    direct_paper_mode: bool = False,
 ) -> str:
     """
-    Composes the full synthesis system prompt with a dynamic Specialist Monograph Outline
-    tailored to the query's true discipline, optional Evidence Consensus breakdown,
-    and strict grounding/citation rules.
+    Composes the full synthesis system prompt with a dynamic Specialist Monograph Outline,
+    Reading Depth calibration, Auto Compare Mode table directives, or Direct Paper Dissection.
     """
     disc = domain_discipline or "general"
-    outline = planned_outline if planned_outline else build_specialist_outline(disc, "", is_debated=is_debated_or_empirical)
+    outline = planned_outline if planned_outline else build_specialist_outline(
+        disc,
+        "",
+        is_debated=is_debated_or_empirical,
+        direct_paper_mode=direct_paper_mode,
+        compare_mode=compare_mode,
+    )
     outline_lines = "\n".join(f"{idx + 1}. ## {heading}" for idx, heading in enumerate(outline))
     structure_block = (
         f"SPECIALIST MONOGRAPH OUTLINE (Discipline: {disc.replace('_', ' ')}):\n"
@@ -296,6 +341,44 @@ def build_synthesis_prompt(
     )
 
     clauses: List[str] = []
+    norm_depth = (depth or "graduate").strip().lower()
+    if norm_depth == "foundational":
+        clauses.append(
+            "READING DEPTH — FOUNDATIONAL:\n"
+            "Introduce core concepts intuitively with concrete physical analogies and clear definitions before technical notation; "
+            "explain every key term on first use while remaining strictly factual [[c:0]]."
+        )
+    elif norm_depth == "specialist":
+        clauses.append(
+            "READING DEPTH — SPECIALIST:\n"
+            "Write for active field researchers: prioritize governing LaTeX equations, experimental boundary conditions, "
+            "quantitative tolerances, instrumentation/assay limits, and critical methodological trade-offs [[c:0]]."
+        )
+    else:
+        clauses.append(
+            "READING DEPTH — GRADUATE:\n"
+            "Write at graduate/publication rigor combining formal domain terminology, governing equations where relevant, "
+            "and verified empirical metrics [[c:0]]."
+        )
+
+    if direct_paper_mode:
+        clauses.append(
+            "DIRECT PAPER MICROSCOPE DISSECTION:\n"
+            "Source [[c:0]] is the primary target paper under dissection; sources [[c:1]]+ provide citing/related context.\n"
+            "Cover: (1) Core Claim & Bibliographic Identity [[c:0]], (2) Study Design / Methodology, "
+            "(3) Key Quantitative Results/Metrics table or exact numbers, (4) Scope Limits & Caveats, and "
+            "(5) Citing Context & Subsequent Literature Impact."
+        )
+
+    if compare_mode:
+        pair_label = " vs. ".join(compare_entities[:2]) if compare_entities and len(compare_entities) >= 2 else "the compared subjects"
+        clauses.append(
+            f"AUTO COMPARE MODE ({pair_label}):\n"
+            "1. Render a structured side-by-side GFM Markdown Quantitative Comparison Matrix contrasting the compared subjects "
+            "across measurable criteria, mechanisms, scales, or empirical benchmarks grounded in [[c:N]].\n"
+            "2. Follow with a dedicated domain-specific trade-off and suitability synthesis stating exact conditions favoring each option."
+        )
+
     if is_debated_or_empirical:
         clauses.append(
             "EVIDENCE CONSENSUS REQUIREMENT:\n"
@@ -475,13 +558,27 @@ def derive_outline_subqueries(subject: str, outline: List[str], limit: int = 4) 
 def heuristic_reformulation(query: str, topic: Optional[str] = None, compare_mode: bool = False) -> Dict[str, Any]:
     """
     Deterministic domain-agnostic fallback reformulation + specialist outline planner.
-    Contains NO hardcoded CS bias: identifies the query's true discipline dynamically.
+    Detects direct DOI/arXiv/PMID identifiers, A vs B compare queries, and empirical/debated topics.
     """
+    from utils.academic_search import detect_direct_paper_identifier
+
     raw_q = (query or "").strip()
+    direct_id = detect_direct_paper_identifier(raw_q)
+    direct_paper_mode = bool(direct_id)
+    auto_cmp, cmp_entities = detect_compare_query(raw_q)
+    is_compare = bool(compare_mode or auto_cmp) and not direct_paper_mode
+
     clean_topic = strip_question_boilerplate(raw_q) or raw_q
     discipline = classify_domain_discipline(raw_q, clean_topic, topic)
-    is_debated = detect_debated_or_empirical_query(raw_q, compare_mode=compare_mode)
-    outline = build_specialist_outline(discipline, raw_q, clean_topic, is_debated=is_debated)
+    is_debated = detect_debated_or_empirical_query(raw_q, compare_mode=is_compare) and not direct_paper_mode
+    outline = build_specialist_outline(
+        discipline,
+        raw_q,
+        clean_topic,
+        is_debated=is_debated,
+        direct_paper_mode=direct_paper_mode,
+        compare_mode=is_compare,
+    )
 
     if not clean_topic:
         return {
@@ -493,20 +590,33 @@ def heuristic_reformulation(query: str, topic: Optional[str] = None, compare_mod
             "planned_outline": outline,
             "sub_queries": [],
             "is_debated_or_empirical": is_debated,
+            "compare_mode": is_compare,
+            "compare_entities": cmp_entities,
+            "direct_paper_mode": direct_paper_mode,
+            "direct_paper_id": direct_id,
         }
     wiki_title = " ".join(
         w if (w.isupper() and len(w) <= 4) or w.isdigit() else w.capitalize()
         for w in clean_topic.split()
     )
+    sub_qs = (
+        [f"{ent} properties mechanisms benchmarks" for ent in cmp_entities[:2]] + [clean_topic]
+        if is_compare and len(cmp_entities) >= 2
+        else derive_outline_subqueries(clean_topic, outline, limit=4)
+    )
     return {
         "canonical_topic": clean_topic,
         "academic_search_query": clean_topic,
-        "wikipedia_exact_title": wiki_title,
+        "wikipedia_exact_title": "" if direct_paper_mode else wiki_title,
         "query_is_english": is_english_text(raw_q),
         "domain_discipline": discipline,
         "planned_outline": outline,
-        "sub_queries": derive_outline_subqueries(clean_topic, outline, limit=4),
+        "sub_queries": sub_qs[:4],
         "is_debated_or_empirical": is_debated,
+        "compare_mode": is_compare,
+        "compare_entities": cmp_entities,
+        "direct_paper_mode": direct_paper_mode,
+        "direct_paper_id": direct_id,
     }
 
 
@@ -551,12 +661,16 @@ def _sanitize_reformulation(raw: Dict[str, Any], query: str, topic: Optional[str
     return {
         "canonical_topic": canonical[:300],
         "academic_search_query": academic_q[:300],
-        "wikipedia_exact_title": wiki_title[:200],
+        "wikipedia_exact_title": "" if fallback.get("direct_paper_mode") else wiki_title[:200],
         "query_is_english": is_english_text(query),
         "domain_discipline": discipline,
-        "planned_outline": cleaned_outline[:6],
-        "sub_queries": derive_outline_subqueries(canonical, cleaned_outline[:6], limit=4),
+        "planned_outline": fallback["planned_outline"] if fallback.get("direct_paper_mode") else cleaned_outline[:6],
+        "sub_queries": fallback["sub_queries"] if (fallback.get("direct_paper_mode") or fallback.get("compare_mode")) else derive_outline_subqueries(canonical, cleaned_outline[:6], limit=4),
         "is_debated_or_empirical": bool(raw.get("is_debated_or_empirical", fallback["is_debated_or_empirical"])),
+        "compare_mode": bool(fallback.get("compare_mode", compare_mode)),
+        "compare_entities": fallback.get("compare_entities", []),
+        "direct_paper_mode": bool(fallback.get("direct_paper_mode", False)),
+        "direct_paper_id": fallback.get("direct_paper_id"),
     }
 
 
@@ -787,6 +901,10 @@ async def route_query(state: AgentState) -> dict:
         "domain_discipline": reform.get("domain_discipline", "general"),
         "planned_outline": reform.get("planned_outline", []),
         "is_debated_or_empirical": bool(reform.get("is_debated_or_empirical", False)),
+        "compare_mode": bool(reform.get("compare_mode", state.get("compare_mode", False))),
+        "compare_entities": reform.get("compare_entities", []),
+        "direct_paper_mode": bool(reform.get("direct_paper_mode", False)),
+        "direct_paper_id": reform.get("direct_paper_id"),
     }
 
 def plan_retrieval(state: AgentState) -> dict:
@@ -814,6 +932,20 @@ def plan_retrieval(state: AgentState) -> dict:
         state["domain_discipline"] = discipline
         state["planned_outline"] = outline
         state["is_debated_or_empirical"] = reform["is_debated_or_empirical"]
+        state["compare_mode"] = reform["compare_mode"]
+        state["compare_entities"] = reform["compare_entities"]
+        state["direct_paper_mode"] = reform["direct_paper_mode"]
+        state["direct_paper_id"] = reform["direct_paper_id"]
+
+    if state.get("compare_mode") and len(state.get("compare_entities") or []) >= 2:
+        ents = state["compare_entities"][:2]
+        return {
+            "sub_queries": [
+                f"{ents[0]} properties mechanisms benchmarks",
+                f"{ents[1]} properties mechanisms benchmarks",
+                f"{ents[0]} versus {ents[1]}",
+            ]
+        }
 
     core_subject = strip_question_boilerplate(canonical or reformulated or query) or reformulated
     sub_queries: List[str] = []
@@ -1009,6 +1141,13 @@ async def retrieve_cascade(state: AgentState) -> dict:
     async def _fetch_live():
         _live_chunks = []
         try:
+            direct_id = state.get("direct_paper_id")
+            if direct_id:
+                from utils.academic_search import resolve_direct_paper
+                direct_sources = await resolve_direct_paper(direct_id)
+                if direct_sources:
+                    return direct_sources
+
             free_sources = await search_all_free_sources(
                 active_query,
                 wikipedia_title=wiki_title,
@@ -1043,8 +1182,8 @@ async def retrieve_cascade(state: AgentState) -> dict:
             logger.error(f"External multi-source search failed: {e}")
         return _live_chunks
 
-    # Run OKF, RAG, and LIVE concurrently (skip OKF & RAG general notes when Peer-Reviewed Only is active)
-    if peer_reviewed_only:
+    # Run OKF, RAG, and LIVE concurrently (skip OKF & RAG when Peer-Reviewed Only or Direct Paper Microscope is active)
+    if peer_reviewed_only or state.get("direct_paper_mode"):
         okf_chunks, okf_paths = ([], [])
         rag_chunks, r_scores = ([], [])
         try:
@@ -1549,6 +1688,10 @@ def synthesize_answer(state: AgentState) -> dict:
         domain_discipline=state.get("domain_discipline"),
         planned_outline=state.get("planned_outline"),
         is_debated_or_empirical=bool(state.get("is_debated_or_empirical", False)),
+        depth=state.get("depth") or "graduate",
+        compare_mode=bool(state.get("compare_mode", False)),
+        compare_entities=state.get("compare_entities") or [],
+        direct_paper_mode=bool(state.get("direct_paper_mode", False)),
     )
     
     user_prompt = f"Query: {state['query']}\n\nContext:\n{context}"
@@ -2097,6 +2240,31 @@ def count_detected_factual_units(text: str) -> int:
             if len(clean_t.split()) >= 3:
                 count += 1
     return count
+
+def compute_consensus_breakdown(claims: List[Dict[str, Any]], total_sources: int) -> Dict[str, int]:
+    """Summarizes Supporting / Mixed / Contrasting evidence counts across audited claims."""
+    supporting = 0
+    mixed = 0
+    contrasting = 0
+    for c in claims or []:
+        if not isinstance(c, dict):
+            continue
+        pol = (c.get("polarity") or "").lower()
+        st = (c.get("status") or "").lower()
+        if pol == "supported" or st == "supported":
+            supporting += 1
+        elif pol == "contested" or st == "unsupported":
+            contrasting += 1
+        elif pol == "partial" or st in ("partially_supported", "uncited", "audit_incomplete"):
+            mixed += 1
+    return {
+        "supporting": supporting,
+        "mixed": mixed,
+        "contrasting": contrasting,
+        "total_claims": supporting + mixed + contrasting,
+        "total_sources": max(0, int(total_sources or 0)),
+    }
+
 
 async def run_claim_audit(answer_final: str, chunks: list, tracker: Optional[Any] = None, prior_claims: Optional[list] = None) -> list:
     """

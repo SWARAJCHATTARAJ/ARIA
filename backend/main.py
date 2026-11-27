@@ -135,6 +135,7 @@ class QueryRequest(BaseModel):
     thread_id: Optional[str] = Field(default=None, max_length=64)
     user_id: Optional[str] = Field(default=None, max_length=64)
     compare_mode: bool = False
+    depth: Literal["foundational", "graduate", "specialist"] = "graduate"
     source_tier: Literal["all", "peer_reviewed"] = "all"
     recency: Literal["all", "5y", "2y"] = "all"
     strict_academic: bool = False
@@ -297,6 +298,7 @@ async def query_pipeline(req: QueryRequest, request: Request):
         "thread_id": thread_id,
         "user_id": user_id,
         "compare_mode": req.compare_mode,
+        "depth": req.depth,
         "source_tier": req.source_tier,
         "recency": req.recency,
         "strict_academic": req.strict_academic,
@@ -420,7 +422,12 @@ async def query_pipeline(req: QueryRequest, request: Request):
             current_state.update(route_res)
             route_evt = {
                 "event": "route",
-                "route_decision": "cascade"
+                "route_decision": "cascade",
+                "domain_discipline": current_state.get("domain_discipline"),
+                "compare_mode": bool(current_state.get("compare_mode", False)),
+                "compare_entities": current_state.get("compare_entities") or [],
+                "is_debated_or_empirical": bool(current_state.get("is_debated_or_empirical", False)),
+                "direct_paper_mode": bool(current_state.get("direct_paper_mode", False)),
             }
             yield f"data: {json.dumps(route_evt)}\n\n"
 
@@ -496,6 +503,9 @@ async def query_pipeline(req: QueryRequest, request: Request):
                     "arxiv_id": chunk.get("arxiv_id") or None,
                     "is_retracted": bool(chunk.get("is_retracted", False)),
                     "review_status": rev_status,
+                    "study_type": chunk.get("study_type"),
+                    "is_open_access": bool(chunk.get("is_open_access", False)),
+                    "rigor_badges": chunk.get("rigor_badges") or [],
                     "similarity": chunk.get("similarity"),
                     "cited": False,
                     "rank": chunk.get("rank"),
@@ -538,6 +548,10 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 domain_discipline=current_state.get("domain_discipline"),
                 planned_outline=current_state.get("planned_outline"),
                 is_debated_or_empirical=bool(current_state.get("is_debated_or_empirical", False)),
+                depth=current_state.get("depth") or "graduate",
+                compare_mode=bool(current_state.get("compare_mode", False)),
+                compare_entities=current_state.get("compare_entities") or [],
+                direct_paper_mode=bool(current_state.get("direct_paper_mode", False)),
             )
             messages = [
                 SystemMessage(content=synthesis_prompt),
@@ -669,10 +683,13 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 {**s, "cited": (idx in cited_ids)}
                 for idx, s in enumerate(sources_summary)
             ]
+            from pipeline.nodes import compute_consensus_breakdown
+            claims_list = audit_res.get("claims", [])
+            consensus_data = compute_consensus_breakdown(claims_list, len(chunks))
             audit_evt = {
                 "event": "audit",
                 "answer_final": final_answer,
-                "claims": audit_res.get("claims", []),
+                "claims": claims_list,
                 "removed_claims": audit_res.get("removed_claims", []),
                 "conflicts": audit_res.get("conflicts_found", []),
                 "retractions": audit_res.get("retractions_found", []),
@@ -681,6 +698,8 @@ async def query_pipeline(req: QueryRequest, request: Request):
                 "verification_status": audit_res.get("verification_status") or "verified",
                 "tier_agreement": audit_res.get("tier_agreement"),
                 "repaired": bool(audit_res.get("repaired", False)),
+                "is_debated_or_empirical": bool(current_state.get("is_debated_or_empirical", False)),
+                "consensus": consensus_data,
                 "sources": sources_with_cited
             }
             yield f"data: {json.dumps(audit_evt)}\n\n"

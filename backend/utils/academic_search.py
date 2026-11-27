@@ -87,8 +87,96 @@ def _is_retracted_title(title: str) -> bool:
     )
 
 
+def classify_study_rigor(chunk: Dict[str, Any]) -> Tuple[Optional[str], bool, List[str]]:
+    """
+    Extracts study-type & rigor metadata (Meta-Analysis, Systematic Review, RCT,
+    Peer-Reviewed, Preprint, Open Access, Retracted) cleanly from provider metadata.
+    """
+    stype = (chunk.get("source_type") or "").lower()
+    title = (chunk.get("title") or "").lower()
+    snippet = (chunk.get("snippet") or chunk.get("content") or "").lower()
+    pub_types = [str(p).lower() for p in (chunk.get("publication_types") or []) if p]
+    work_type = str(chunk.get("work_type") or "").lower()
+    is_retracted = bool(chunk.get("is_retracted", False)) or _is_retracted_title(title)
+    is_oa = bool(chunk.get("is_open_access", False) or chunk.get("is_oa", False))
+
+    if stype == "arxiv" and not is_oa:
+        is_oa = True
+
+    blob = f"{title} {snippet[:400]} {' '.join(pub_types)}"
+    study_type: Optional[str] = None
+    if "meta-analysis" in blob or "meta analysis" in blob:
+        study_type = "Meta-Analysis"
+    elif "systematic review" in blob:
+        study_type = "Systematic Review"
+    elif any("randomized controlled trial" in pt or "clinical trial" in pt for pt in pub_types) or re.search(
+        r'\b(?:randomized controlled trial|randomised controlled trial|double-blind placebo|phase\s+(?:i|ii|iii)\s+trial)\b',
+        blob,
+    ):
+        study_type = "RCT"
+    elif stype == "arxiv" or work_type == "preprint":
+        study_type = "Preprint"
+    elif stype in ("openalex", "crossref", "semantic_scholar", "pubmed"):
+        study_type = "Peer-Reviewed"
+
+    badges: List[str] = []
+    if is_retracted:
+        badges.append("Retracted")
+    if study_type in ("Meta-Analysis", "Systematic Review", "RCT"):
+        badges.append(study_type)
+    if stype in ("openalex", "crossref", "semantic_scholar", "pubmed") and not is_retracted:
+        if "Peer-Reviewed" not in badges:
+            badges.append("Peer-Reviewed")
+    elif stype == "arxiv" and "Preprint" not in badges:
+        badges.append("Preprint")
+    if is_oa and "Open Access" not in badges:
+        badges.append("Open Access")
+
+    return study_type, is_oa, badges
+
+
+def detect_direct_paper_identifier(query: str) -> Optional[Dict[str, str]]:
+    """
+    Detects a pasted DOI, arXiv ID/URL, or PubMed PMID/URL at the start of or anywhere in a short query.
+    Returns {'kind': 'doi' | 'arxiv' | 'pmid', 'value': normalized_id} or None.
+    """
+    if not query:
+        return None
+    q = query.strip()
+
+    doi_url = re.search(r'(?:https?://(?:dx\.)?doi\.org/|doi:\s*)(10\.\d{4,9}/[^\s\]\)>,;]+)', q, re.IGNORECASE)
+    if doi_url:
+        return {"kind": "doi", "value": doi_url.group(1).rstrip(".")}
+
+    bare_doi = re.match(r'^\s*(?:dissect|analyze|explain|summarize)?\s*(10\.\d{4,9}/[^\s\]\)>,;]+)\s*$', q, re.IGNORECASE)
+    if bare_doi:
+        return {"kind": "doi", "value": bare_doi.group(1).rstrip(".")}
+
+    arxiv_match = re.search(
+        r'(?:https?://arxiv\.org/(?:abs|pdf)/|arxiv:\s*)(\d{4}\.\d{4,5}(?:v\d+)?)',
+        q,
+        re.IGNORECASE,
+    )
+    if arxiv_match:
+        return {"kind": "arxiv", "value": arxiv_match.group(1)}
+
+    bare_arxiv = re.match(r'^\s*(?:dissect|analyze|explain|summarize)?\s*(\d{4}\.\d{4,5}(?:v\d+)?)\s*$', q, re.IGNORECASE)
+    if bare_arxiv:
+        return {"kind": "arxiv", "value": bare_arxiv.group(1)}
+
+    pmid_url = re.search(r'https?://pubmed\.ncbi\.nlm\.nih\.gov/(\d{5,9})/?', q, re.IGNORECASE)
+    if pmid_url:
+        return {"kind": "pmid", "value": pmid_url.group(1)}
+
+    pmid_prefix = re.search(r'\bpmid\s*[:#]?\s*(\d{5,9})\b', q, re.IGNORECASE)
+    if pmid_prefix:
+        return {"kind": "pmid", "value": pmid_prefix.group(1)}
+
+    return None
+
+
 def normalize_source_metadata(chunk: Dict[str, Any]) -> Dict[str, Any]:
-    """Ensures every retrieved chunk carries clean authors, venue, title, and readable prose."""
+    """Ensures every retrieved chunk carries clean authors, venue, title, study rigor, and readable prose."""
     c = dict(chunk)
     title = (c.get("title") or "").strip()
     if not title or title.lower() == "unknown":
@@ -122,6 +210,11 @@ def normalize_source_metadata(chunk: Dict[str, Any]) -> Dict[str, Any]:
     if snip:
         c["snippet"] = snip
         c["content"] = snip
+
+    study_type, is_oa, rigor_badges = classify_study_rigor(c)
+    c["study_type"] = study_type
+    c["is_open_access"] = is_oa
+    c["rigor_badges"] = rigor_badges
     return c
 
 
@@ -580,6 +673,7 @@ async def search_openalex(
                     review_bonus = 7.0 if is_review else 0.0
                     retracted_flag = is_retracted or _is_retracted_title(title)
                     authoritative_score = rel_score + citation_weight + review_bonus
+                    is_oa = bool((work.get("open_access") or {}).get("is_oa", False))
 
                     candidates.append((authoritative_score, normalize_source_metadata({
                         "tier": "LIVE",
@@ -596,6 +690,8 @@ async def search_openalex(
                         "doi": doi,
                         "arxiv_id": arxiv_id,
                         "is_retracted": retracted_flag,
+                        "is_open_access": is_oa,
+                        "work_type": work_type,
                         "published": pub_date,
                         "cited_by_count": cited_by_count
                     })))
@@ -1091,6 +1187,7 @@ async def search_crossref(
 
                     cited_by_count = int(item.get("is-referenced-by-count") or 0)
                     work_url = f"https://doi.org/{doi}" if doi else None
+                    is_oa = bool(item.get("license"))
                     auth_score = rel_score + math.log10(max(1, cited_by_count) + 1.0) * 2.5
                     candidates.append((auth_score, normalize_source_metadata({
                         "tier": "LIVE",
@@ -1107,6 +1204,8 @@ async def search_crossref(
                         "doi": doi,
                         "arxiv_id": None,
                         "is_retracted": retracted_flag,
+                        "is_open_access": is_oa,
+                        "work_type": item_type,
                         "published": str(year) if year else None,
                         "cited_by_count": cited_by_count,
                     })))
@@ -1187,10 +1286,20 @@ async def search_pubmed(
                     continue
 
                 doi = None
+                is_oa = False
                 for aid in art.findall(".//ArticleIdList/ArticleId"):
-                    if aid.attrib.get("IdType") == "doi" and aid.text:
+                    id_type = aid.attrib.get("IdType")
+                    if id_type == "doi" and aid.text:
                         doi = aid.text.strip()
-                        break
+                    elif id_type == "pmc" and aid.text:
+                        is_oa = True
+
+                pub_types = [
+                    pt.text.strip()
+                    for pt in art.findall(".//PublicationTypeList/PublicationType")
+                    if pt.text and pt.text.strip()
+                ]
+                retracted_flag = _is_retracted_title(title) or any("retract" in pt.lower() for pt in pub_types)
 
                 raw_authors = []
                 for au in art.findall(".//AuthorList/Author"):
@@ -1202,10 +1311,10 @@ async def search_pubmed(
                 authors = clean_authors_list(raw_authors)
 
                 pub_url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else (f"https://doi.org/{doi}" if doi else None)
-                candidates.append((rel_score, {
+                candidates.append((rel_score, normalize_source_metadata({
                     "tier": "LIVE",
                     "source_type": "pubmed",
-                    "review_status": "scholarly",
+                    "review_status": "retracted" if retracted_flag else "scholarly",
                     "title": title,
                     "path": None,
                     "url": pub_url,
@@ -1216,9 +1325,11 @@ async def search_pubmed(
                     "source": pub_url or venue,
                     "doi": doi,
                     "arxiv_id": None,
-                    "is_retracted": False,
+                    "is_retracted": retracted_flag,
+                    "is_open_access": is_oa,
+                    "publication_types": pub_types,
                     "published": str(year) if year else None,
-                }))
+                })))
     except Exception as e:
         status_str = f"failed: {type(e).__name__}"
         logger.debug(f"PubMed search error: {e}")
@@ -1730,3 +1841,246 @@ async def search_all_free_sources(
     retrieval_tracker.record("live_retrieval_end", t_retrieval_end, t_retrieval_end, iso_end, iso_end, f"total={t_retrieval_end - t_retrieval_start:.2f}s")
         
     return scored_chunks
+
+
+async def resolve_direct_paper(identifier: Dict[str, str]) -> List[Dict[str, Any]]:
+    """
+    Resolves a specific pasted DOI, arXiv ID, or PubMed PMID cleanly via authoritative
+    scholarly APIs and returns [primary_paper, citing_context_1, ...] normalized chunks.
+    """
+    kind = (identifier or {}).get("kind")
+    val = (identifier or {}).get("value", "").strip()
+    if not kind or not val:
+        return []
+
+    headers = {
+        "User-Agent": "ARIA-Research-Assistant/2.0 (mailto:swarajchattaraj@users.noreply.github.com)"
+    }
+    primary: Optional[Dict[str, Any]] = None
+    openalex_id_short: Optional[str] = None
+    citing_chunks: List[Dict[str, Any]] = []
+
+    try:
+        transport = SSRFSafeTransport()
+        async with httpx.AsyncClient(transport=transport, timeout=EXTERNAL_SEARCH_TIMEOUT, follow_redirects=True) as client:
+            if kind == "doi":
+                oa_url = f"https://api.openalex.org/works/https://doi.org/{urllib.parse.quote(val, safe='/')}"
+                if is_safe_url(oa_url)[0]:
+                    r_oa = await client.get(oa_url, headers=headers)
+                    if r_oa.status_code == 200:
+                        work = r_oa.json()
+                        raw_wid = work.get("id") or ""
+                        openalex_id_short = raw_wid.rsplit("/", 1)[-1] if raw_wid else None
+                        title = work.get("title") or f"DOI {val}"
+                        inv_index = work.get("abstract_inverted_index")
+                        abstract = ""
+                        if isinstance(inv_index, dict):
+                            words = sorted([(pos, word) for word, positions in inv_index.items() for pos in positions])
+                            abstract = " ".join(w[1] for w in words[:320])
+                        venue = ((work.get("primary_location") or {}).get("source") or {}).get("display_name") or "Crossref / OpenAlex"
+                        authors = clean_authors_list([
+                            (au.get("author") or {}).get("display_name", "")
+                            for au in work.get("authorships", [])
+                        ])
+                        yr = work.get("publication_year")
+                        cited_by = int(work.get("cited_by_count") or 0)
+                        retracted = bool(work.get("is_retracted", False)) or _is_retracted_title(title)
+                        primary = normalize_source_metadata({
+                            "tier": "LIVE",
+                            "source_type": "openalex",
+                            "review_status": "retracted" if retracted else "scholarly",
+                            "title": title,
+                            "url": f"https://doi.org/{val}",
+                            "authors": authors,
+                            "year": int(yr) if yr else None,
+                            "venue": venue,
+                            "snippet": clean_scraped_reference_text(abstract) or f"Primary work {title} ({venue}, {yr or 'n.d.'}, {cited_by} citations).",
+                            "source": f"doi:{val}",
+                            "doi": val,
+                            "arxiv_id": None,
+                            "is_retracted": retracted,
+                            "is_open_access": bool((work.get("open_access") or {}).get("is_oa", False)),
+                            "work_type": (work.get("type") or "").lower(),
+                            "published": work.get("publication_date") or (str(yr) if yr else None),
+                            "cited_by_count": cited_by,
+                            "rank": 1,
+                        })
+
+                if primary is None:
+                    cr_url = f"https://api.crossref.org/works/{urllib.parse.quote(val, safe='/')}"
+                    if is_safe_url(cr_url)[0]:
+                        r_cr = await client.get(cr_url, headers=headers)
+                        if r_cr.status_code == 200:
+                            item = r_cr.json().get("message") or {}
+                            title = ((item.get("title") or [f"DOI {val}"])[0]).strip()
+                            raw_abs = re.sub(r"<[^>]+>", " ", item.get("abstract") or "")
+                            authors = clean_authors_list([
+                                f"{(a.get('given') or '').strip()} {(a.get('family') or '').strip()}".strip()
+                                for a in item.get("author") or []
+                            ])
+                            venue = ((item.get("container-title") or ["Crossref Scholarly Archive"])[0]).strip()
+                            dp = ((item.get("published-print") or item.get("published-online") or item.get("issued") or {}).get("date-parts") or [])
+                            yr = dp[0][0] if dp and dp[0] else None
+                            retracted = str(item.get("type") or "").lower() == "retraction" or _is_retracted_title(title)
+                            primary = normalize_source_metadata({
+                                "tier": "LIVE",
+                                "source_type": "crossref",
+                                "review_status": "retracted" if retracted else "scholarly",
+                                "title": title,
+                                "url": f"https://doi.org/{val}",
+                                "authors": authors,
+                                "year": yr,
+                                "venue": venue,
+                                "snippet": clean_scraped_reference_text(html.unescape(raw_abs)) or f"Indexed work at DOI {val} ({venue}).",
+                                "source": f"doi:{val}",
+                                "doi": val,
+                                "arxiv_id": None,
+                                "is_retracted": retracted,
+                                "is_open_access": bool(item.get("license")),
+                                "work_type": str(item.get("type") or "").lower(),
+                                "published": str(yr) if yr else None,
+                                "cited_by_count": int(item.get("is-referenced-by-count") or 0),
+                                "rank": 1,
+                            })
+
+            elif kind == "arxiv":
+                ax_url = f"https://export.arxiv.org/api/query?id_list={urllib.parse.quote(val)}"
+                if is_safe_url(ax_url)[0]:
+                    r_ax = await client.get(ax_url, headers=headers)
+                    if r_ax.status_code == 200 and r_ax.text:
+                        root = ET.fromstring(r_ax.text)
+                        ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+                        entry = root.find("atom:entry", ns)
+                        if entry is not None:
+                            title = (entry.findtext("atom:title", "", ns) or f"arXiv:{val}").replace("\n", " ").strip()
+                            summary = (entry.findtext("atom:summary", "", ns) or "").replace("\n", " ").strip()
+                            pub_str = (entry.findtext("atom:published", "", ns) or "")[:10]
+                            yr = int(pub_str[:4]) if len(pub_str) >= 4 and pub_str[:4].isdigit() else None
+                            doi_txt = entry.findtext("arxiv:doi", None, ns)
+                            authors = clean_authors_list([
+                                au.findtext("atom:name", "", ns).strip()
+                                for au in entry.findall("atom:author", ns)
+                            ])
+                            primary = normalize_source_metadata({
+                                "tier": "LIVE",
+                                "source_type": "arxiv",
+                                "review_status": "preprint",
+                                "title": title,
+                                "url": f"https://arxiv.org/abs/{val}",
+                                "authors": authors,
+                                "year": yr,
+                                "venue": "arXiv Preprint",
+                                "snippet": clean_scraped_reference_text(summary)[:1800],
+                                "source": f"arXiv:{val}",
+                                "doi": doi_txt.strip() if doi_txt else None,
+                                "arxiv_id": val,
+                                "is_retracted": _is_retracted_title(title),
+                                "is_open_access": True,
+                                "work_type": "preprint",
+                                "published": pub_str or None,
+                                "rank": 1,
+                            })
+
+            elif kind == "pmid":
+                ef_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={urllib.parse.quote(val)}&retmode=xml"
+                if is_safe_url(ef_url)[0]:
+                    r_pm = await client.get(ef_url, headers=headers)
+                    if r_pm.status_code == 200 and r_pm.text:
+                        root = ET.fromstring(r_pm.text)
+                        art = root.find(".//PubmedArticle")
+                        if art is not None:
+                            title = (art.findtext(".//ArticleTitle", "") or f"PMID:{val}").strip()
+                            abs_parts = ["".join(ab.itertext()).strip() for ab in art.findall(".//AbstractText")]
+                            abstract = clean_scraped_reference_text(" ".join(p for p in abs_parts if p))
+                            venue = (art.findtext(".//Journal/Title") or "PubMed / MEDLINE").strip()
+                            yr_txt = art.findtext(".//JournalIssue/PubDate/Year") or art.findtext(".//JournalIssue/PubDate/MedlineDate") or ""
+                            ym = re.search(r"\b(19|20)\d{2}\b", yr_txt)
+                            yr = int(ym.group(0)) if ym else None
+                            doi = None
+                            is_oa = False
+                            for aid in art.findall(".//ArticleIdList/ArticleId"):
+                                if aid.attrib.get("IdType") == "doi" and aid.text:
+                                    doi = aid.text.strip()
+                                elif aid.attrib.get("IdType") == "pmc" and aid.text:
+                                    is_oa = True
+                            pub_types = [pt.text.strip() for pt in art.findall(".//PublicationTypeList/PublicationType") if pt.text]
+                            authors = clean_authors_list([
+                                f"{(au.findtext('ForeName') or '').strip()} {(au.findtext('LastName') or '').strip()}".strip()
+                                for au in art.findall(".//AuthorList/Author")
+                            ])
+                            primary = normalize_source_metadata({
+                                "tier": "LIVE",
+                                "source_type": "pubmed",
+                                "review_status": "scholarly",
+                                "title": title,
+                                "url": f"https://pubmed.ncbi.nlm.nih.gov/{val}/",
+                                "authors": authors,
+                                "year": yr,
+                                "venue": venue,
+                                "snippet": abstract[:1800] or f"Indexed PubMed record PMID:{val} ({venue}).",
+                                "source": f"PMID:{val}",
+                                "doi": doi,
+                                "arxiv_id": None,
+                                "is_retracted": _is_retracted_title(title),
+                                "is_open_access": is_oa,
+                                "publication_types": pub_types,
+                                "published": str(yr) if yr else None,
+                                "rank": 1,
+                            })
+
+            # Fetch citing / related scholarly context via OpenAlex
+            if primary and openalex_id_short:
+                cites_url = (
+                    f"https://api.openalex.org/works?filter=cites:{urllib.parse.quote(openalex_id_short)}"
+                    "&sort=cited_by_count:desc&per-page=3"
+                )
+                if is_safe_url(cites_url)[0]:
+                    rc = await client.get(cites_url, headers=headers)
+                    if rc.status_code == 200:
+                        for c_idx, cw in enumerate((rc.json().get("results") or [])[:3], start=2):
+                            ctitle = cw.get("title") or "Citing Paper"
+                            cinv = cw.get("abstract_inverted_index")
+                            cabs = ""
+                            if isinstance(cinv, dict):
+                                cw_words = sorted([(p, w) for w, ps in cinv.items() for p in ps])
+                                cabs = " ".join(w[1] for w in cw_words[:180])
+                            c_doi = (cw.get("doi") or "").replace("https://doi.org/", "") or None
+                            c_venue = ((cw.get("primary_location") or {}).get("source") or {}).get("display_name") or "OpenAlex Citing Work"
+                            citing_chunks.append(normalize_source_metadata({
+                                "tier": "LIVE",
+                                "source_type": "openalex",
+                                "review_status": "retracted" if cw.get("is_retracted") else "scholarly",
+                                "title": ctitle,
+                                "url": cw.get("doi") or cw.get("id"),
+                                "authors": clean_authors_list([(a.get("author") or {}).get("display_name", "") for a in cw.get("authorships", [])]),
+                                "year": cw.get("publication_year"),
+                                "venue": c_venue,
+                                "snippet": clean_scraped_reference_text(cabs) or f"Citing follow-up work in {c_venue} ({cw.get('publication_year') or 'n.d.'}).",
+                                "source": cw.get("doi") or c_venue,
+                                "doi": c_doi,
+                                "arxiv_id": None,
+                                "is_retracted": bool(cw.get("is_retracted", False)),
+                                "is_open_access": bool((cw.get("open_access") or {}).get("is_oa", False)),
+                                "work_type": (cw.get("type") or "").lower(),
+                                "published": cw.get("publication_date"),
+                                "cited_by_count": int(cw.get("cited_by_count") or 0),
+                                "rank": c_idx,
+                            }))
+    except Exception as exc:
+        logger.warning(f"Direct paper resolution failed for {identifier}: {exc}")
+
+    if primary and not citing_chunks and primary.get("title"):
+        try:
+            related = await search_openalex(primary["title"], max_results=2, canonical_topic=primary["title"])
+            p_doi = (primary.get("doi") or "").lower()
+            for r_item in related:
+                if p_doi and (r_item.get("doi") or "").lower() == p_doi:
+                    continue
+                if r_item.get("title", "").lower() == primary.get("title", "").lower():
+                    continue
+                r_item["rank"] = len(citing_chunks) + 2
+                citing_chunks.append(r_item)
+        except Exception:
+            pass
+
+    return ([primary] + citing_chunks) if primary else []
